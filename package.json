@@ -1,0 +1,30 @@
+{
+  "name": "df-jira",
+  "version": "1.0.0",
+  "description": "DevFlow - Jira CLI for developers",
+  "main": "dist/cli/index.js",
+  "bin": {
+    "jdf": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/cli/index.ts",
+    "start": "node dist/cli/index.js",
+    "link": "npm run build && npm link"
+  },
+  "dependencies": {
+    "axios": "^1.6.7",
+    "chalk": "^4.1.2",
+    "commander": "^12.0.0",
+    "fs-extra": "^11.2.0",
+    "inquirer": "^8.2.6",
+    "open": "^8.4.2"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/inquirer": "^8.2.10",
+    "@types/node": "^20.11.20",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
