@@ -1,10 +1,34 @@
 import * as readline from 'readline';
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs-extra';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import { globalConfigExists, loadGlobalConfig } from '../config/loader';
 import { setSession, clearSession } from '../utils/session';
 import { buildProgram } from '../cli/program';
 import { error, success } from '../utils/format';
+
+class CommandAborted extends Error {}
+
+const HISTORY_FILE = path.join(os.homedir(), '.jira-tool', 'shell_history');
+const MAX_HISTORY = 200;
+
+async function loadHistory(): Promise<string[]> {
+  try {
+    const raw = await fs.readFile(HISTORY_FILE, 'utf8');
+    return raw.split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function saveHistory(history: string[]): Promise<void> {
+  try {
+    await fs.ensureDir(path.dirname(HISTORY_FILE));
+    await fs.writeFile(HISTORY_FILE, history.slice(-MAX_HISTORY).join('\n'));
+  } catch { /* no fatal */ }
+}
 
 export async function shellCommand(): Promise<void> {
   const configured = await globalConfigExists();
@@ -14,17 +38,15 @@ export async function shellCommand(): Promise<void> {
   }
 
   console.log(chalk.bold.cyan('\n  DevFlow — Modo interactivo'));
-  console.log(chalk.dim('  Escribe un comando (sin "jdf") o "exit" para salir.\n'));
+  console.log(chalk.dim('  Usa ↑ ↓ para navegar el historial. "exit" para salir.\n'));
 
-  const { pin } = await inquirer.prompt([
-    {
-      type: 'password',
-      name: 'pin',
-      message: 'PIN:',
-      mask: '*',
-      validate: (val: string) => val.length >= 4 ? true : 'Mínimo 4 caracteres',
-    },
-  ]);
+  const { pin } = await inquirer.prompt([{
+    type: 'password',
+    name: 'pin',
+    message: 'PIN:',
+    mask: '*',
+    validate: (val: string) => val.length >= 4 ? true : 'Mínimo 4 caracteres',
+  }]);
 
   let config;
   try {
@@ -37,18 +59,38 @@ export async function shellCommand(): Promise<void> {
   setSession(config);
   success(`Sesión iniciada. Escribe "exit" para cerrar.\n`);
 
-  // Loop: pedimos input manualmente después de cada comando,
-  // así inquirer no interfiere con el readline.
+  // Cargar historial persistido de sesiones anteriores
+  // readline espera el historial en orden inverso (más reciente primero)
+  const persistedHistory = await loadHistory();
+  let history: string[] = [...persistedHistory].reverse();
+
+  // ── Interceptar process.exit ──────────────────────────────────
+  const realExit = process.exit.bind(process);
+  let intentionalExit = false;
+
+  (process.exit as unknown as (code?: number) => never) = (code?: number) => {
+    if (intentionalExit || code === 0) {
+      clearSession();
+      realExit(code ?? 0);
+    }
+    throw new CommandAborted();
+  };
+
   while (true) {
-    const line = await askLine();
+    const { line, updatedHistory } = await askLine(history);
+    history = updatedHistory;
 
     const trimmed = line.trim();
     if (!trimmed) continue;
 
     if (trimmed === 'exit' || trimmed === 'salir' || trimmed === 'quit') {
+      intentionalExit = true;
       clearSession();
+      process.exit = realExit;
+      // Guardar historial (orden cronológico: más antiguo primero)
+      await saveHistory([...history].reverse());
       console.log(chalk.dim('\n  Sesión cerrada. ¡Hasta luego!\n'));
-      process.exit(0);
+      realExit(0);
     }
 
     const args = parseArgs(trimmed);
@@ -57,9 +99,13 @@ export async function shellCommand(): Promise<void> {
     try {
       await program.parseAsync(['node', 'jdf', ...args]);
     } catch (err: unknown) {
-      const e = err as { code?: string; message?: string };
-      if (!e.code?.startsWith('commander.')) {
-        error(e.message ?? String(err));
+      if (err instanceof CommandAborted) {
+        // Comando fallido — continuar el shell
+      } else {
+        const e = err as { code?: string; message?: string };
+        if (!e.code?.startsWith('commander.')) {
+          error(e.message ?? String(err));
+        }
       }
     }
 
@@ -67,31 +113,26 @@ export async function shellCommand(): Promise<void> {
   }
 }
 
-// Pide una línea de input sin dejar readline abierto entre comandos.
-// Esto evita que inquirer cierre el stream compartido.
-function askLine(): Promise<string> {
+function askLine(history: string[]): Promise<{ line: string; updatedHistory: string[] }> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     terminal: true,
-  });
-
-  // Evitar que Ctrl+C cierre el proceso — solo limpia la línea
-  rl.on('SIGINT', () => {
-    rl.close();
-    console.log();
-    process.emit('SIGINT');
+    // Pasamos el historial acumulado — readline lo usa para ↑ ↓
+    history: [...history],
+    historySize: MAX_HISTORY,
   });
 
   return new Promise((resolve) => {
     rl.question(chalk.cyan('jdf') + chalk.dim('> '), (answer) => {
+      // rl.history tiene el historial actualizado en orden inverso
+      const updatedHistory = (rl as unknown as { history: string[] }).history ?? history;
       rl.close();
-      resolve(answer);
+      resolve({ line: answer, updatedHistory: [...updatedHistory] });
     });
   });
 }
 
-// Parsea respetando comillas simples y dobles
 function parseArgs(line: string): string[] {
   const args: string[] = [];
   let current = '';

@@ -5,6 +5,7 @@ import { requireAuth } from '../utils/auth';
 import { parseTime } from '../utils/time';
 import { success, error, info, issueTypeIcon } from '../utils/format';
 import { transitionWithFallback } from '../utils/transition';
+import { getLevel, getAvailableTypes } from '../utils/issueTypes';
 import chalk from 'chalk';
 
 interface DoOptions {
@@ -14,9 +15,6 @@ interface DoOptions {
   assign?: string;
   type?: string;
 }
-
-// Tipos que NO se ofrecen como opción al crear (son contenedores o internos)
-const EXCLUDED_TYPES = ['epic', 'épica', 'epica'];
 
 export async function doCommand(summary: string, timeArg: string | undefined, options: DoOptions): Promise<void> {
   const rawTime = timeArg ?? options.estimate;
@@ -46,68 +44,43 @@ export async function doCommand(summary: string, timeArg: string | undefined, op
   }
 
   const jira = new JiraService(globalConfig);
+  const ctx = await loadContext();
 
-  // ── Resolver contexto como padre automático ───────────────────
+  // ── Padre automático desde contexto ──────────────────────────
   let parentKey = options.parent;
-  if (!parentKey) {
-    const ctx = await loadContext();
-    if (ctx) {
-      parentKey = ctx.issueKey;
-      info(`Creando dentro de: ${issueTypeIcon(ctx.issueType ?? '')} ${chalk.bold(ctx.issueKey)} — ${ctx.summary}`);
-    }
+  if (!parentKey && ctx) {
+    parentKey = ctx.issueKey;
+    info(`Creando dentro de: ${issueTypeIcon(ctx.issueType ?? '')} ${chalk.bold(ctx.issueKey)} — ${ctx.summary}`);
   }
 
-  // ── Elegir tipo de issue según jerarquía actual ───────────────
+  // ── Nivel jerárquico y tipos disponibles ─────────────────────
+  const level = getLevel(ctx);
+
+  if (level === 'subtask') {
+    error(`No se pueden crear issues dentro de una subtarea (${ctx!.issueKey}).`);
+    info(`Usa ${chalk.cyan('jdf up')} para subir al nivel correcto.`);
+    process.exit(1);
+  }
+
   let issueTypeName = options.type;
   if (!issueTypeName) {
-    let types: Array<{ id: string; name: string; subtask: boolean }> = [];
-    try {
-      types = await jira.getIssueTypes(projectConfig.projectKey);
-    } catch {
-      // Si falla la consulta, seguir con lista vacía
-    }
-
-    const ctx = await loadContext();
-    const ctxType = ctx?.issueType?.toLowerCase() ?? '';
-    const isInsideSubtask = ctx && (ctxType.includes('subtask') || ctxType.includes('subtarea'));
-    const isInsideEpicOrRoot = !ctx || ctxType.includes('epic') || ctxType.includes('épica') || ctxType.includes('epica');
-
-    if (isInsideSubtask) {
-      error(`No se pueden crear issues dentro de una subtarea (${ctx!.issueKey}).`);
-      info(`Usa ${chalk.cyan('jdf up')} para subir al nivel correcto.`);
-      process.exit(1);
-    }
-
-    let available: typeof types;
-
-    if (isInsideEpicOrRoot) {
-      // Dentro de épica o en raíz → solo tipos que NO son subtarea ni épica
-      available = types.filter((t) => {
-        const lower = t.name.toLowerCase();
-        return !t.subtask && !EXCLUDED_TYPES.some((ex) => lower.includes(ex));
-      });
-    } else {
-      // Dentro de Historia/Tarea/Bug → solo subtareas
-      available = types.filter((t) => t.subtask);
-    }
+    const available = await getAvailableTypes(jira, projectConfig.projectKey, level);
 
     if (available.length === 0) {
-      issueTypeName = isInsideEpicOrRoot ? 'Task' : 'Subtask';
+      issueTypeName = 'Task';
     } else if (available.length === 1) {
       issueTypeName = available[0].name;
     } else {
-      const { chosen } = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'chosen',
-          message: 'Tipo de issue:',
-          choices: available.map((t) => ({
-            name: `${issueTypeIcon(t.name)}  ${t.name}`,
-            value: t.name,
-            short: t.name,
-          })),
-        },
-      ]);
+      const { chosen } = await inquirer.prompt([{
+        type: 'list',
+        name: 'chosen',
+        message: 'Tipo de issue:',
+        choices: available.map((t) => ({
+          name: `${issueTypeIcon(t.name)}  ${t.name}`,
+          value: t.name,
+          short: t.name,
+        })),
+      }]);
       issueTypeName = chosen;
     }
   }
@@ -132,18 +105,12 @@ export async function doCommand(summary: string, timeArg: string | undefined, op
   }
 
   success(`Creado ${chalk.bold(issue.key)}`);
-  if (issue.estimateSkipped) {
-    info('La estimación no pudo guardarse (campo no habilitado en este proyecto).');
-  }
-  if (parentKey) {
-    success(`Enlazado como hijo de ${chalk.bold(parentKey)}`);
-  }
+  if (issue.estimateSkipped) info('La estimación no pudo guardarse (campo no habilitado en este proyecto).');
+  if (parentKey) success(`Enlazado como hijo de ${chalk.bold(parentKey)}`);
 
   try {
     await transitionWithFallback(jira, issue.key, 'In Progress');
-  } catch {
-    // No es fatal si la transición no existe
-  }
+  } catch { /* no fatal */ }
 
   console.log(chalk.underline.blue(jira.getBrowseUrl(issue.key)));
 }

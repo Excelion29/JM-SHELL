@@ -10,8 +10,16 @@
     "build": "tsc",
     "dev": "ts-node src/cli/index.ts",
     "start": "node dist/cli/index.js",
-    "link": "npm run build && npm link"
+    "link": "npm run build && npm link",
+    "postinstall": "node dist/scripts/postinstall.js",
+    "pack:dist": "npm run build && npm pack",
+    "installer": "npm run pack:dist && node scripts/build-installer.js"
   },
+  "files": [
+    "dist/",
+    "install.ps1",
+    "uninstall.ps1"
+  ],
   "dependencies": {
     "axios": "^1.6.7",
     "chalk": "^4.1.2",

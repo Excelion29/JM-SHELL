@@ -13,6 +13,8 @@ import { whereCommand } from '../commands/where';
 import { projectsCommand } from '../commands/projects';
 import { helpCommand } from '../commands/help';
 import { upCommand } from '../commands/up';
+import { bulkCommand } from '../commands/bulk';
+import { typesCommand } from '../commands/types';
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -86,6 +88,14 @@ export function buildProgram(): Command {
   program.command('use <issueKey>')
     .description('Entrar a un issue y establecerlo como contexto')
     .action(useCommand);
+
+  program.command('bulk')
+    .description('Crear múltiples tareas de una vez (estado inicial: Por hacer)')
+    .action(bulkCommand);
+
+  program.command('types')
+    .description('Ver qué tipos de issue puedes crear según tu ubicación actual')
+    .action(typesCommand);
 
   program.command('up')
     .description('Subir un nivel en la jerarquía')

@@ -152,6 +152,13 @@ export class JiraService {
     });
   }
 
+  async getAssignableUsers(projectKey: string): Promise<JiraUser[]> {
+    const res = await this.client.get<JiraUser[]>('/user/assignable/search', {
+      params: { project: projectKey, maxResults: 50 },
+    });
+    return res.data;
+  }
+
   async getIssueTypes(projectKey: string): Promise<Array<{ id: string; name: string; subtask: boolean }>> {
     const res = await this.client.get<{ issueTypes: Array<{ id: string; name: string; subtask: boolean }> }>(
       `/project/${projectKey}`
