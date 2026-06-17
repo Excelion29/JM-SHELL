@@ -15,6 +15,7 @@ import { helpCommand } from '../commands/help';
 import { upCommand } from '../commands/up';
 import { bulkCommand } from '../commands/bulk';
 import { typesCommand } from '../commands/types';
+import { movesCommand } from '../commands/moves';
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -104,6 +105,10 @@ export function buildProgram(): Command {
   program.command('where')
     .description('Mostrar proyecto y contexto actual')
     .action(whereCommand);
+
+  program.command('moves [issueKey]')
+    .description('Ver estados disponibles para el issue')
+    .action(movesCommand);
 
   return program;
 }

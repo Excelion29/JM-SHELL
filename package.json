@@ -11,7 +11,7 @@
     "dev": "ts-node src/cli/index.ts",
     "start": "node dist/cli/index.js",
     "link": "npm run build && npm link",
-    "postinstall": "node dist/scripts/postinstall.js",
+    "postinstall": "node -e \"if(require('fs').existsSync('dist/scripts/postinstall.js')){require('./dist/scripts/postinstall.js')}\"",
     "pack:dist": "npm run build && npm pack",
     "installer": "npm run pack:dist && node scripts/build-installer.js"
   },

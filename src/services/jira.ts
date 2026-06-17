@@ -67,6 +67,7 @@ export class JiraService {
     projectKey: string;
     summary: string;
     issueTypeName: string;
+    issueTypeId?: string;
     assigneeId: string;
     estimateSeconds?: number;
     dueDate?: string;
@@ -75,7 +76,7 @@ export class JiraService {
     const fields: Record<string, unknown> = {
       project: { key: params.projectKey },
       summary: params.summary,
-      issuetype: { name: params.issueTypeName },
+      issuetype: params.issueTypeId ? { id: params.issueTypeId } : { name: params.issueTypeName },
       assignee: { accountId: params.assigneeId },
     };
 

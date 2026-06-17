@@ -7,7 +7,7 @@ import chalk from 'chalk';
 
 export async function useCommand(issueKey: string): Promise<void> {
   const normalized = issueKey.toUpperCase().trim();
-  if (!/^[A-Z]+-\d+$/.test(normalized)) {
+  if (!/^[A-Z][A-Z0-9]+-\d+$/.test(normalized)) {
     error(`Clave inválida: "${issueKey}". Formato esperado: AUTH-123`);
     process.exit(1);
   }

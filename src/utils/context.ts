@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import { loadContext } from '../config/loader';
 
-const ISSUE_KEY_PATTERN = /([A-Z]+-\d+)/;
+const ISSUE_KEY_PATTERN = /([A-Z][A-Z0-9]+-\d+)/;
 
 export async function resolveIssueKey(arg?: string): Promise<string> {
   // 1. Argumento directo

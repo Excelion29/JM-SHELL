@@ -208,6 +208,18 @@ const SECTIONS: Section[] = [
         ],
       },
       {
+        cmd: 'moves',
+        args: '[CLAVE]',
+        description: 'Ver qué estados están disponibles para mover el issue.',
+        detail: [
+          'Útil para saber a qué estados puedes avanzar o retroceder.',
+        ],
+        examples: [
+          'jdf moves',
+          'jdf moves PM-100',
+        ],
+      },
+      {
         cmd: 'move',
         args: '[CLAVE] <estado>',
         description: 'Mueve un issue a un nuevo estado.',

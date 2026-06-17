@@ -46,11 +46,13 @@ export async function bulkCommand(): Promise<void> {
   // ── Tipo de issue ─────────────────────────────────────────────
   const available = await getAvailableTypes(jira, projectConfig.projectKey, level);
   let issueTypeName: string;
+  let issueTypeId: string | undefined;
 
   if (available.length === 0) {
     issueTypeName = 'Task';
   } else if (available.length === 1) {
     issueTypeName = available[0].name;
+    issueTypeId = available[0].id;
   } else {
     const { chosen } = await inquirer.prompt([{
       type: 'list',
@@ -63,6 +65,10 @@ export async function bulkCommand(): Promise<void> {
       })),
     }]);
     issueTypeName = chosen;
+    const found = available.find((t) => t.name === chosen);
+    if (found) {
+      issueTypeId = found.id;
+    }
   }
 
   // ── Cargar usuarios asignables ────────────────────────────────
@@ -128,6 +134,7 @@ export async function bulkCommand(): Promise<void> {
         projectKey: projectConfig.projectKey,
         summary: summary.trim(),
         issueTypeName,
+        issueTypeId,
         assigneeId: extras.assignee,
         estimateSeconds,
         dueDate: extras.due?.trim() || undefined,

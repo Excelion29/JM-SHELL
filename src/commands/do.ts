@@ -63,13 +63,24 @@ export async function doCommand(summary: string, timeArg: string | undefined, op
   }
 
   let issueTypeName = options.type;
-  if (!issueTypeName) {
-    const available = await getAvailableTypes(jira, projectConfig.projectKey, level);
+  let issueTypeId: string | undefined;
 
+  const available = await getAvailableTypes(jira, projectConfig.projectKey, level);
+
+  if (issueTypeName) {
+    const found = available.find(
+      (t) => t.name.toLowerCase() === issueTypeName!.toLowerCase() || t.id === issueTypeName
+    );
+    if (found) {
+      issueTypeName = found.name;
+      issueTypeId = found.id;
+    }
+  } else {
     if (available.length === 0) {
       issueTypeName = 'Task';
     } else if (available.length === 1) {
       issueTypeName = available[0].name;
+      issueTypeId = available[0].id;
     } else {
       const { chosen } = await inquirer.prompt([{
         type: 'list',
@@ -82,6 +93,10 @@ export async function doCommand(summary: string, timeArg: string | undefined, op
         })),
       }]);
       issueTypeName = chosen;
+      const found = available.find((t) => t.name === chosen);
+      if (found) {
+        issueTypeId = found.id;
+      }
     }
   }
 
@@ -94,6 +109,7 @@ export async function doCommand(summary: string, timeArg: string | undefined, op
       projectKey: projectConfig.projectKey,
       summary,
       issueTypeName: issueTypeName!,
+      issueTypeId,
       assigneeId: options.assign ?? projectConfig.defaultAssignee ?? me.accountId,
       estimateSeconds,
       dueDate,
