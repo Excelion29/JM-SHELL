@@ -29,6 +29,7 @@ export interface JiraIssue {
     issuetype: { name: string; iconUrl?: string };
     parent?: { key: string; fields: { summary: string; issuetype?: { name: string } } };
     subtasks?: Array<{ key: string; fields: { summary: string; status: { name: string } } }>;
+    description?: unknown; // Atlassian Document Format (ADF) — usar adfToMarkdown() para convertir
   };
 }
 

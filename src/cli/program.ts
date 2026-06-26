@@ -16,6 +16,7 @@ import { upCommand } from '../commands/up';
 import { bulkCommand } from '../commands/bulk';
 import { typesCommand } from '../commands/types';
 import { movesCommand } from '../commands/moves';
+import { exportCommand } from '../commands/export';
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -109,6 +110,14 @@ export function buildProgram(): Command {
   program.command('moves [issueKey]')
     .description('Ver estados disponibles para el issue')
     .action(movesCommand);
+
+  program.command('export [epicKey]')
+    .description('Exportar épica(s) con todas sus historias y descripciones a markdown')
+    .option('--out <ruta>', 'Escribir output a un archivo en lugar de stdout')
+    .option('--all', 'Exportar todas las épicas del proyecto')
+    .option('--type <tipo>', 'Filtrar por tipo de issue: Historia, Bug, Tarea, etc.')
+    .option('--jql <query>', 'JQL directo para búsqueda personalizada')
+    .action(exportCommand);
 
   return program;
 }

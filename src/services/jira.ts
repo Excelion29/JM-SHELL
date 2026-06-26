@@ -63,6 +63,15 @@ export class JiraService {
     return res.data;
   }
 
+  async getIssueWithDescription(issueKey: string): Promise<JiraIssue> {
+    const res = await this.client.get<JiraIssue>(`/issue/${issueKey}`, {
+      params: {
+        fields: 'summary,status,assignee,duedate,timeoriginalestimate,issuetype,parent,subtasks,description',
+      },
+    });
+    return res.data;
+  }
+
   async createIssue(params: {
     projectKey: string;
     summary: string;
