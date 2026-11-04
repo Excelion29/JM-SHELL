@@ -1,4 +1,5 @@
-import { loadContext, saveContext } from '../config/loader';
+import * as fs from 'fs-extra';
+import { loadContext, saveContext, findFileUpward } from '../config/loader';
 import { JiraService } from '../services/jira';
 import { requireAuth } from '../utils/auth';
 import { issueTypeIcon, success, info, error } from '../utils/format';
@@ -42,10 +43,8 @@ export async function upCommand(): Promise<void> {
 
   // No tiene padre → volver al nivel raíz (épicas), limpiar contexto
   // Guardamos un contexto vacío borrando el archivo
-  const { findFileUpward } = await import('../config/loader');
   const contextPath = findFileUpward('.jira-context.json');
   if (contextPath) {
-    const fs = await import('fs-extra');
     await fs.remove(contextPath);
   }
 

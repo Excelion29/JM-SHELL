@@ -22,3 +22,9 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Talos metrics (generadas por hooks locales)
+talos/
+
+# Adjuntos temporales de refinamiento
+.jdf/**/adjuntos/

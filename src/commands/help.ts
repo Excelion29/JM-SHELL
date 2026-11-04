@@ -1,15 +1,15 @@
 import chalk from 'chalk';
 
 const C = {
-  title:   (s: string) => chalk.bold.cyan(s),
-  cmd:     (s: string) => chalk.cyan(s),
-  arg:     (s: string) => chalk.yellow(s),
-  opt:     (s: string) => chalk.yellow(s),
-  dim:     (s: string) => chalk.dim(s),
-  url:     (s: string) => chalk.underline.blue(s),
+  title: (s: string) => chalk.bold.cyan(s),
+  cmd: (s: string) => chalk.cyan(s),
+  arg: (s: string) => chalk.yellow(s),
+  opt: (s: string) => chalk.yellow(s),
+  dim: (s: string) => chalk.dim(s),
+  url: (s: string) => chalk.underline.blue(s),
   section: (s: string) => chalk.bold.white(s),
-  good:    (s: string) => chalk.green(s),
-  tag:     (s: string) => chalk.dim(`(${s})`),
+  good: (s: string) => chalk.green(s),
+  tag: (s: string) => chalk.dim(`(${s})`),
 };
 
 interface Section {
@@ -38,16 +38,12 @@ const SECTIONS: Section[] = [
           'Si ya existe config, verifica el PIN antes de permitir cambios.',
           'Crea ~/.jira-tool/config.json (cifrado con PIN) y .jira.json en el directorio actual.',
         ],
-        examples: [
-          'jdf init',
-        ],
+        examples: ['jdf init'],
       },
       {
         cmd: 'projects',
         description: 'Lista todos los proyectos Jira a los que tienes acceso.',
-        examples: [
-          'jdf projects',
-        ],
+        examples: ['jdf projects'],
       },
       {
         cmd: 'shell',
@@ -56,13 +52,13 @@ const SECTIONS: Section[] = [
           'Dentro del shell escribe los comandos sin el prefijo "jdf".',
           'Cierra la sesión con: exit, salir, quit o Ctrl+C.',
         ],
-        examples: [
-          'jdf shell',
-          '  jdf> list',
-          '  jdf> use PM-100',
-          '  jdf> bulk',
-          '  jdf> exit',
-        ],
+        examples: ['jdf shell', '  jdf> list', '  jdf> use PM-100', '  jdf> bulk', '  jdf> exit'],
+      },
+      {
+        cmd: 'app',
+        description: 'Abre la app de terminal de DevFlow (también con `jdf` sin argumentos).',
+        detail: ['Pide el PIN una vez y muestra dónde te quedaste en tus historias.', 'Sal con q o Ctrl+C.'],
+        examples: ['jdf', 'jdf app'],
       },
     ],
   },
@@ -77,9 +73,7 @@ const SECTIONS: Section[] = [
           'El contexto afecta a list, do, bulk, edit, get, start, move y open.',
           'Se guarda en .jira-context.json del directorio del proyecto.',
         ],
-        examples: [
-          'jdf use PM-100',
-        ],
+        examples: ['jdf use PM-100'],
       },
       {
         cmd: 'up',
@@ -89,16 +83,12 @@ const SECTIONS: Section[] = [
           'Desde una Épica → vuelve al nivel raíz (limpia el contexto).',
           'Desde una Subtarea → sube a la Historia/Tarea padre.',
         ],
-        examples: [
-          'jdf up',
-        ],
+        examples: ['jdf up'],
       },
       {
         cmd: 'where',
         description: 'Muestra en qué proyecto, directorio y contexto estás.',
-        examples: [
-          'jdf where',
-        ],
+        examples: ['jdf where'],
       },
       {
         cmd: 'types',
@@ -109,9 +99,7 @@ const SECTIONS: Section[] = [
           'Dentro de Historia  → solo Subtareas',
           'Dentro de Subtarea  → no se puede crear (muestra aviso)',
         ],
-        examples: [
-          'jdf types',
-        ],
+        examples: ['jdf types'],
       },
     ],
   },
@@ -129,9 +117,9 @@ const SECTIONS: Section[] = [
           'Agrupa los resultados por tipo de issue.',
         ],
         options: [
-          { flag: '--mine',           description: 'Solo issues asignados a ti' },
+          { flag: '--mine', description: 'Solo issues asignados a ti' },
           { flag: '--status <estado>', description: 'Filtra por estado' },
-          { flag: '--jql <query>',    description: 'Query JQL personalizado (ignora el contexto)' },
+          { flag: '--jql <query>', description: 'Query JQL personalizado (ignora el contexto)' },
         ],
         examples: [
           'jdf list                          # épicas o hijos del contexto',
@@ -157,10 +145,10 @@ const SECTIONS: Section[] = [
         ],
         options: [
           { flag: '--estimate <tiempo>', description: 'Estimación: 1h, 30m, 1h30m' },
-          { flag: '--due <fecha>',       description: 'Fecha de vencimiento YYYY-MM-DD (default: hoy)' },
-          { flag: '--parent <CLAVE>',    description: 'Issue padre (override del contexto)' },
-          { flag: '--assign <id>',       description: 'Account ID del asignado' },
-          { flag: '--type <tipo>',       description: 'Tipo explícito: Tarea, Bug, Historia…' },
+          { flag: '--due <fecha>', description: 'Fecha de vencimiento YYYY-MM-DD (default: hoy)' },
+          { flag: '--parent <CLAVE>', description: 'Issue padre (override del contexto)' },
+          { flag: '--assign <id>', description: 'Account ID del asignado' },
+          { flag: '--type <tipo>', description: 'Tipo explícito: Tarea, Bug, Historia…' },
         ],
         examples: [
           'jdf do "Fix bug de login" 1h',
@@ -178,9 +166,7 @@ const SECTIONS: Section[] = [
           'Por cada tarea pide: título (requerido), asignado, fecha y estimación.',
           'Deja el título vacío para terminar y ver el resumen.',
         ],
-        examples: [
-          'jdf bulk',
-        ],
+        examples: ['jdf bulk'],
       },
     ],
   },
@@ -191,15 +177,13 @@ const SECTIONS: Section[] = [
         cmd: 'edit',
         args: '[CLAVE]',
         description: 'Edita campos de un issue.',
-        detail: [
-          'Sin CLAVE usa el contexto activo o el branch de git.',
-        ],
+        detail: ['Sin CLAVE usa el contexto activo o el branch de git.'],
         options: [
-          { flag: '--title <texto>',    description: 'Nuevo título' },
-          { flag: '--estimate <tiempo>',description: 'Estimación: 1h, 30m, 1h30m' },
-          { flag: '--due <fecha>',      description: 'Fecha de vencimiento YYYY-MM-DD' },
-          { flag: '--assign <id>',      description: 'Account ID del asignado' },
-          { flag: '--status <estado>',  description: 'Nuevo estado (si no existe, muestra lista)' },
+          { flag: '--title <texto>', description: 'Nuevo título' },
+          { flag: '--estimate <tiempo>', description: 'Estimación: 1h, 30m, 1h30m' },
+          { flag: '--due <fecha>', description: 'Fecha de vencimiento YYYY-MM-DD' },
+          { flag: '--assign <id>', description: 'Account ID del asignado' },
+          { flag: '--status <estado>', description: 'Nuevo estado (si no existe, muestra lista)' },
         ],
         examples: [
           'jdf edit --status "In Review"',
@@ -211,13 +195,8 @@ const SECTIONS: Section[] = [
         cmd: 'moves',
         args: '[CLAVE]',
         description: 'Ver qué estados están disponibles para mover el issue.',
-        detail: [
-          'Útil para saber a qué estados puedes avanzar o retroceder.',
-        ],
-        examples: [
-          'jdf moves',
-          'jdf moves PM-100',
-        ],
+        detail: ['Útil para saber a qué estados puedes avanzar o retroceder.'],
+        examples: ['jdf moves', 'jdf moves PM-100'],
       },
       {
         cmd: 'move',
@@ -227,27 +206,19 @@ const SECTIONS: Section[] = [
           'Acepta match parcial e insensible a mayúsculas.',
           'Si el estado no existe, muestra una lista para elegir.',
         ],
-        examples: [
-          'jdf move "In Review"',
-          'jdf move PM-100 Done',
-        ],
+        examples: ['jdf move "In Review"', 'jdf move PM-100 Done'],
       },
       {
         cmd: 'start',
         args: '[CLAVE]',
         description: 'Mueve un issue a "In Progress" (atajo rápido).',
-        examples: [
-          'jdf start',
-          'jdf start PM-100',
-        ],
+        examples: ['jdf start', 'jdf start PM-100'],
       },
       {
         cmd: 'reparent',
         args: '<CLAVE> <NUEVO_PADRE>',
         description: 'Cambia el issue padre.',
-        examples: [
-          'jdf reparent PM-110 PM-100',
-        ],
+        examples: ['jdf reparent PM-110 PM-100'],
       },
     ],
   },
@@ -258,26 +229,15 @@ const SECTIONS: Section[] = [
         cmd: 'get',
         args: '[CLAVE]',
         description: 'Muestra los detalles completos de un issue.',
-        detail: [
-          'Sin CLAVE usa el contexto activo o el branch de git.',
-        ],
-        examples: [
-          'jdf get',
-          'jdf get PM-100',
-        ],
+        detail: ['Sin CLAVE usa el contexto activo o el branch de git.'],
+        examples: ['jdf get', 'jdf get PM-100'],
       },
       {
         cmd: 'open',
         args: '[CLAVE]',
         description: 'Abre el issue en el navegador e imprime la URL.',
-        options: [
-          { flag: '--no-browser', description: 'Solo imprime la URL, no abre el navegador' },
-        ],
-        examples: [
-          'jdf open',
-          'jdf open PM-100',
-          'jdf open PM-100 --no-browser',
-        ],
+        options: [{ flag: '--no-browser', description: 'Solo imprime la URL, no abre el navegador' }],
+        examples: ['jdf open', 'jdf open PM-100', 'jdf open PM-100 --no-browser'],
       },
     ],
   },
@@ -286,9 +246,9 @@ const SECTIONS: Section[] = [
 const TIME_FORMATS = ['1h', '30m', '1h30m', '2h15m'];
 
 const CONTEXT_RESOLUTION = [
-  { step: '1', label: 'Argumento directo',  example: 'jdf get PM-100' },
+  { step: '1', label: 'Argumento directo', example: 'jdf get PM-100' },
   { step: '2', label: 'Contexto (jdf use)', example: 'jdf use PM-100  →  jdf get' },
-  { step: '3', label: 'Branch de git',      example: 'git checkout feature/PM-100  →  jdf get' },
+  { step: '3', label: 'Branch de git', example: 'git checkout feature/PM-100  →  jdf get' },
 ];
 
 export function helpCommand(): void {
@@ -304,10 +264,7 @@ export function helpCommand(): void {
 
     for (const doc of section.commands) {
       // Cabecera del comando
-      const cmdLine = [
-        C.cmd(`jdf ${doc.cmd}`),
-        doc.args ? C.arg(doc.args) : '',
-      ].filter(Boolean).join(' ');
+      const cmdLine = [C.cmd(`jdf ${doc.cmd}`), doc.args ? C.arg(doc.args) : ''].filter(Boolean).join(' ');
 
       console.log(`  ${cmdLine}`);
       console.log(`  ${chalk.dim('→')} ${doc.description}`);

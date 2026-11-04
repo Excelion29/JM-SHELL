@@ -7,13 +7,14 @@
     "jdf": "dist/cli/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-tui-package.js",
     "dev": "ts-node src/cli/index.ts",
     "start": "node dist/cli/index.js",
     "link": "npm run build && npm link",
     "postinstall": "node -e \"if(require('fs').existsSync('dist/scripts/postinstall.js')){require('./dist/scripts/postinstall.js')}\"",
     "pack:dist": "npm run build && npm pack",
-    "installer": "npm run pack:dist && node scripts/build-installer.js"
+    "installer": "npm run pack:dist && node scripts/build-installer.js",
+    "test": "npm run build && node --test \"dist/**/*.test.js\""
   },
   "files": [
     "dist/",
@@ -25,13 +26,18 @@
     "chalk": "^4.1.2",
     "commander": "^12.0.0",
     "fs-extra": "^11.2.0",
+    "ink": "^6.8.0",
+    "ink-text-input": "^6.0.0",
     "inquirer": "^8.2.6",
-    "open": "^8.4.2"
+    "open": "^8.4.2",
+    "react": "^19.3.1"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
     "@types/inquirer": "^8.2.10",
     "@types/node": "^20.11.20",
+    "@types/react": "^19.3.0",
+    "ink-testing-library": "^4.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }
