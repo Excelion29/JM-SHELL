@@ -17,7 +17,7 @@ import {
 } from './state';
 
 async function tempRoot(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), 'jdf-state-'));
+  return fs.mkdtemp(path.join(os.tmpdir(), 'jm-state-'));
 }
 
 test('ensureStory crea carpeta, bitácora y estado inicial', async () => {
@@ -25,8 +25,8 @@ test('ensureStory crea carpeta, bitácora y estado inicial', async () => {
   const state = await ensureStory(root, 'AQ-45', 'Login', 'AQ-1');
   assert.equal(state.phase, 'spec');
   assert.equal(state.parentKey, 'AQ-1');
-  assert.ok(await fs.pathExists(path.join(root, '.jdf', 'historias', 'AQ-45', 'bitacora.md')));
-  assert.ok(await fs.pathExists(path.join(root, '.jdf', 'historias', 'AQ-45', 'adjuntos')));
+  assert.ok(await fs.pathExists(path.join(root, '.jm', 'historias', 'AQ-45', 'bitacora.md')));
+  assert.ok(await fs.pathExists(path.join(root, '.jm', 'historias', 'AQ-45', 'adjuntos')));
   await assert.rejects(ensureStory(root, 'mala clave', 'x', null), /inválida/);
 });
 
@@ -66,21 +66,21 @@ test('listStories ordena por updatedAt descendente e ignora carpetas ajenas', as
   await ensureStory(root, 'AQ-2', 'Nueva', null);
   const old = await fs.readJson(statePath(root, 'AQ-1'));
   await fs.writeJson(statePath(root, 'AQ-1'), { ...old, updatedAt: '2020-01-01T00:00:00.000Z' });
-  await fs.ensureDir(path.join(root, '.jdf', 'historias', 'basura'));
+  await fs.ensureDir(path.join(root, '.jm', 'historias', 'basura'));
   assert.deepEqual(
     (await listStories(root)).map((s) => s.key),
     ['AQ-2', 'AQ-1'],
   );
 });
 
-test('listStories devuelve vacío sin carpeta .jdf', async () => {
+test('listStories devuelve vacío sin carpeta .jm', async () => {
   assert.deepEqual(await listStories(await tempRoot()), []);
 });
 
 test('nextStepFor menciona el bloque en debate', async () => {
   const root = await tempRoot();
   const state = await ensureStory(root, 'AQ-45', 'Login', null);
-  assert.match(nextStepFor({ ...state, phase: 'debate', block: 'risks' }), /riesgos.*jdf refinar AQ-45/);
+  assert.match(nextStepFor({ ...state, phase: 'debate', block: 'risks' }), /riesgos.*jm refinar AQ-45/);
   assert.match(nextStepFor({ ...state, phase: 'plan' }), /Revisa el plan/);
 });
 

@@ -10,7 +10,7 @@ import { streamToFileWithCap } from './attachments';
 import { Readable } from 'stream';
 
 async function tempRoot(): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), 'jdf-safe-'));
+  return fs.mkdtemp(path.join(os.tmpdir(), 'jm-safe-'));
 }
 
 // Devuelve false (y salta el test) si la plataforma no permite crear el enlace
@@ -31,7 +31,7 @@ test('stripControlChars quita escapes y saltos de línea', () => {
 test('rechaza un directorio de historia que es junction hacia fuera', async (t) => {
   const root = await tempRoot();
   const outside = await tempRoot();
-  await fs.ensureDir(path.join(root, '.jdf', 'historias'));
+  await fs.ensureDir(path.join(root, '.jm', 'historias'));
   if (!link(t, outside, storyDir(root, 'AQ-1'), 'junction')) return;
   await assert.rejects(ensureStory(root, 'AQ-1', 'x', null), /seguridad/);
   assert.deepEqual(await fs.readdir(outside), []);
@@ -70,7 +70,7 @@ test('estado.json enlazado: la historia aparece como ilegible y no se lee', asyn
   assert.match((await listStories(root))[0].summary, /estado ilegible/);
 });
 
-test('rechaza rutas fuera de .jdf', async () => {
+test('rechaza rutas fuera de .jm', async () => {
   const root = await tempRoot();
   assert.throws(() => safeEnsureDir(root, path.join(root, 'otra')), /fuera de/);
 });

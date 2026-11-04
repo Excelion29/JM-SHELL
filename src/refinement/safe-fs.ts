@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 
-export const JDF_DIR = '.jdf';
+export const JM_DIR = '.jm';
 
 function refuse(target: string, reason: string): never {
   throw new Error(`Por seguridad no escribo en ${target}: ${reason}.`);
@@ -24,13 +24,13 @@ function isInside(parent: string, child: string): boolean {
 
 // En Windows lstat también reporta las junctions como enlaces simbólicos
 export function assertNoLinks(root: string, target: string): void {
-  const jdf = path.resolve(root, JDF_DIR);
+  const jmDir = path.resolve(root, JM_DIR);
   const resolved = path.resolve(target);
-  if (!isInside(jdf, resolved)) refuse(resolved, `queda fuera de ${jdf}`);
+  if (!isInside(jmDir, resolved)) refuse(resolved, `queda fuera de ${jmDir}`);
 
-  let current = jdf;
+  let current = jmDir;
   let deepestExisting: string | null = null;
-  const parts = path.relative(jdf, resolved).split(path.sep).filter(Boolean);
+  const parts = path.relative(jmDir, resolved).split(path.sep).filter(Boolean);
   for (const part of ['', ...parts]) {
     current = path.join(current, part);
     const stat = lstatOrNull(current);
@@ -38,8 +38,8 @@ export function assertNoLinks(root: string, target: string): void {
     if (stat.isSymbolicLink()) refuse(resolved, `${current} es un enlace simbólico o junction`);
     deepestExisting = current;
   }
-  if (deepestExisting && !isInside(fs.realpathSync(jdf), fs.realpathSync(deepestExisting))) {
-    refuse(resolved, 'su ruta real sale de la carpeta .jdf');
+  if (deepestExisting && !isInside(fs.realpathSync(jmDir), fs.realpathSync(deepestExisting))) {
+    refuse(resolved, 'su ruta real sale de la carpeta .jm');
   }
 }
 

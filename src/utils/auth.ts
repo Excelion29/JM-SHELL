@@ -11,7 +11,7 @@ export async function requireAuth(): Promise<GlobalConfig> {
 
   const configured = await globalConfigExists();
   if (!configured) {
-    error('No inicializado. Ejecuta `jdf init` primero.');
+    error('No inicializado. Ejecuta `jm init` primero.');
     process.exit(1);
   }
 

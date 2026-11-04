@@ -8,7 +8,7 @@ import { runRefine } from './refine';
 // import() real: el CJS no puede hacer require() de la isla ESM (ink)
 const loadTui = () => import('../tui/app.js');
 
-const BACK_PROMPT = '\nPulsa Enter para volver a DevFlow...';
+const BACK_PROMPT = '\nPulsa Enter para volver a JM-SHELL...';
 
 async function readProjectKey(): Promise<string | null> {
   try {
@@ -22,7 +22,7 @@ async function loadSummaries() {
   try {
     return (await listStories(projectRoot())).map(toSummary);
   } catch (err: unknown) {
-    error(`No pude leer tus historias de .jdf: ${(err as Error).message}`);
+    error(`No pude leer tus historias de .jm: ${(err as Error).message}`);
     return [];
   }
 }
@@ -44,7 +44,7 @@ async function refineAndReturn(key: string): Promise<void> {
 
 export async function appCommand(): Promise<void> {
   if (!(await globalConfigExists())) {
-    error('No inicializado. Ejecuta `jdf init` primero.');
+    error('No inicializado. Ejecuta `jm init` primero.');
     process.exit(1);
   }
 

@@ -44,7 +44,7 @@ export async function exportCommand(epicArg?: string, options: ExportOptions = {
     info(`Buscando ${options.type}s: ${jql}`);
     const issues = await searchSafe(jira, jql, FIELDS);
     if (!issues.length) {
-      info(`0 issues encontrados. El tipo exacto puede diferir — corre "jdf types" para ver los nombres reales.`);
+      info(`0 issues encontrados. El tipo exacto puede diferir — corre "jm types" para ver los nombres reales.`);
       return;
     }
     const slug = options.type.toLowerCase().replace(/\s+/g, '-');
@@ -68,11 +68,11 @@ export async function exportCommand(epicArg?: string, options: ExportOptions = {
       } else if (ctx.parentKey) {
         epicKeys.push(ctx.parentKey);
       } else {
-        error('El contexto actual no es una épica. Usa: jdf export <CLAVE-EPICA> o jdf export --type <tipo>');
+        error('El contexto actual no es una épica. Usa: jm export <CLAVE-EPICA> o jm export --type <tipo>');
         process.exit(1);
       }
     } else {
-      error('Sin argumento ni contexto. Ejemplos:\n  jdf export SFBI-6\n  jdf export --type Historia\n  jdf export --all');
+      error('Sin argumento ni contexto. Ejemplos:\n  jm export SFBI-6\n  jm export --type Historia\n  jm export --all');
       process.exit(1);
     }
   }

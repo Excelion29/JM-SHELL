@@ -58,7 +58,7 @@ export async function doCommand(summary: string, timeArg: string | undefined, op
 
   if (level === 'subtask') {
     error(`No se pueden crear issues dentro de una subtarea (${ctx!.issueKey}).`);
-    info(`Usa ${chalk.cyan('jdf up')} para subir al nivel correcto.`);
+    info(`Usa ${chalk.cyan('jm up')} para subir al nivel correcto.`);
     process.exit(1);
   }
 

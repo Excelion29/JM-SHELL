@@ -9,7 +9,7 @@ export async function upCommand(): Promise<void> {
   const ctx = await loadContext();
 
   if (!ctx) {
-    info('Ya estás en el nivel raíz. Ejecuta `jdf list` para ver las Épicas.');
+    info('Ya estás en el nivel raíz. Ejecuta `jm list` para ver las Épicas.');
     return;
   }
 
@@ -37,7 +37,7 @@ export async function upCommand(): Promise<void> {
     await saveContext(newCtx);
     const icon = issueTypeIcon(newCtx.issueType);
     success(`Subiste a: ${icon} ${chalk.bold(newCtx.issueKey)} — ${newCtx.summary}`);
-    info(`Ejecuta ${chalk.cyan('jdf list')} para ver el contenido.`);
+    info(`Ejecuta ${chalk.cyan('jm list')} para ver el contenido.`);
     return;
   }
 
@@ -49,5 +49,5 @@ export async function upCommand(): Promise<void> {
   }
 
   success(`Volviste al nivel raíz — ${chalk.bold('Épicas del proyecto')}`);
-  info(`Ejecuta ${chalk.cyan('jdf list')} para ver las Épicas.`);
+  info(`Ejecuta ${chalk.cyan('jm list')} para ver las Épicas.`);
 }

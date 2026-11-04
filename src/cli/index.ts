@@ -5,16 +5,16 @@ import { buildProgram } from './program';
 
 const program = buildProgram();
 
-// jdf shell — modo interactivo sin PIN repetido
+// jm shell — modo interactivo sin PIN repetido
 program
   .command('shell')
   .description('Iniciar modo interactivo (PIN una sola vez, escribe "exit" para salir)')
   .action(shellCommand);
 
-// jdf app — app de terminal (también se abre con `jdf` sin argumentos)
+// jm app — app de terminal (también se abre con `jm` sin argumentos)
 program
   .command('app')
-  .description('Abrir la app de terminal de DevFlow')
+  .description('Abrir la app de terminal de JM-SHELL')
   .action(appCommand);
 
 program.exitOverride(); // ya está en buildProgram pero por si acaso

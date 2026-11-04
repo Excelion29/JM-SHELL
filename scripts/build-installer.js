@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Genera DevFlow-Setup.ps1 con el .tgz embebido en base64
+// Genera JM-SHELL-Setup.ps1 con el .tgz embebido en base64
 // Uso: node scripts/build-installer.js
 
 const fs = require('fs');
@@ -9,12 +9,12 @@ const rootDir = path.join(__dirname, '..');
 
 // Encontrar el .tgz más reciente
 const tgzFiles = fs.readdirSync(rootDir)
-  .filter((f) => f.startsWith('df-jira-') && f.endsWith('.tgz'))
+  .filter((f) => f.startsWith('jm-shell-') && f.endsWith('.tgz'))
   .sort()
   .reverse();
 
 if (tgzFiles.length === 0) {
-  console.error('Error: No se encontró df-jira-*.tgz. Ejecuta npm run pack:dist primero.');
+  console.error('Error: No se encontró jm-shell-*.tgz. Ejecuta npm run pack:dist primero.');
   process.exit(1);
 }
 
@@ -25,7 +25,7 @@ const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8
 
 console.log(`Empaquetando ${tgzFile} (${(tgzBase64.length / 1024).toFixed(0)} KB en base64)...`);
 
-const script = `# DevFlow (jdf) v${pkg.version} — Instalador
+const script = `# JM-SHELL (jm) v${pkg.version} — Instalador
 # Clic derecho → "Ejecutar con PowerShell"
 # ================================================================
 $ErrorActionPreference = "Stop"
@@ -37,7 +37,7 @@ function Write-Fail($msg) { Write-Host "  x $msg" -ForegroundColor Red; exit 1 }
 function Write-Hr         { Write-Host "  $('-' * 50)" -ForegroundColor DarkGray }
 
 Write-Host ""
-Write-Host "  DevFlow (jdf) v${pkg.version} — Instalador" -ForegroundColor Cyan -BackgroundColor DarkBlue
+Write-Host "  JM-SHELL (jm) v${pkg.version} — Instalador" -ForegroundColor Cyan -BackgroundColor DarkBlue
 Write-Host ""
 
 # ── 1. Verificar Node.js ─────────────────────────────────────────
@@ -63,7 +63,7 @@ try {
 Write-Hr
 Write-Step "Preparando paquete..."
 
-$tempDir = Join-Path $env:TEMP "devflow-setup-${pkg.version}"
+$tempDir = Join-Path $env:TEMP "jm-shell-setup-${pkg.version}"
 New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 $tgzPath = Join-Path $tempDir "${tgzFile}"
 
@@ -74,11 +74,18 @@ Write-Ok "Paquete listo."
 
 # ── 3. Instalar globalmente ──────────────────────────────────────
 Write-Hr
-Write-Step "Instalando DevFlow globalmente..."
+& npm ls -g df-jira 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    Write-Step "Desinstalando el paquete anterior (df-jira)..."
+    & npm uninstall -g df-jira
+    if ($LASTEXITCODE -ne 0) { Write-Fail "No se pudo desinstalar df-jira." }
+    Write-Ok "Paquete anterior desinstalado."
+}
+Write-Step "Instalando JM-SHELL globalmente..."
 
 & npm install -g $tgzPath
 if ($LASTEXITCODE -ne 0) { Write-Fail "Error al instalar el paquete npm." }
-Write-Ok "DevFlow instalado correctamente."
+Write-Ok "JM-SHELL instalado correctamente."
 
 # ── 4. Configurar VS Code ────────────────────────────────────────
 Write-Hr
@@ -97,13 +104,14 @@ if (Test-Path $vscodeSettings) {
 
         $profileObj = [PSCustomObject]@{
             path  = "powershell.exe"
-            args  = @("-NoExit", "-Command", "jdf shell")
+            args  = @("-NoExit", "-Command", "jm")
             icon  = "rocket"
             color = "terminal.ansiCyan"
         }
-        $settings.$profileKey | Add-Member -NotePropertyName "DevFlow (jdf)" -NotePropertyValue $profileObj -Force
+        $settings.$profileKey.PSObject.Properties.Remove("DevFlow (jdf)")
+        $settings.$profileKey | Add-Member -NotePropertyName "JM-SHELL (jm)" -NotePropertyValue $profileObj -Force
         $settings | ConvertTo-Json -Depth 10 | Set-Content $vscodeSettings -Encoding UTF8
-        Write-Ok 'Perfil "DevFlow (jdf)" agregado al terminal de VS Code.'
+        Write-Ok 'Perfil "JM-SHELL (jm)" agregado al terminal de VS Code.'
     } catch {
         Write-Warn "No se pudo configurar VS Code automaticamente: $_"
     }
@@ -127,20 +135,20 @@ Write-Host "    - API token desde: https://id.atlassian.com/manage-profile/secur
 Write-Host ""
 Read-Host "  Presiona Enter para comenzar la configuracion"
 Write-Host ""
-& jdf init
+& jm init
 
 Write-Host ""
-Write-Host "  Listo! Abre VS Code y selecciona 'DevFlow (jdf)' en el terminal." -ForegroundColor Green
+Write-Host "  Listo! Abre VS Code y selecciona 'JM-SHELL (jm)' en el terminal." -ForegroundColor Green
 Write-Host ""
 Read-Host "  Presiona Enter para salir"
 `;
 
-const outputPath = path.join(rootDir, 'DevFlow-Setup.ps1');
+const outputPath = path.join(rootDir, 'JM-SHELL-Setup.ps1');
 fs.writeFileSync(outputPath, script, 'utf8');
 
 // Borrar el .tgz intermedio — solo se necesita el .ps1 para distribuir
 fs.unlinkSync(tgzPath);
 
 const sizeMB = (fs.statSync(outputPath).size / 1024 / 1024).toFixed(2);
-console.log(`✓ Generado: DevFlow-Setup.ps1 (${sizeMB} MB)`);
+console.log(`✓ Generado: JM-SHELL-Setup.ps1 (${sizeMB} MB)`);
 console.log('  Comparte ese único archivo. El usuario solo hace clic derecho → Ejecutar con PowerShell.');

@@ -5,7 +5,7 @@ import { requireAuth } from '../utils/auth';
 import { success, error, info } from '../utils/format';
 
 export async function initCommand(): Promise<void> {
-  console.log('\n  DevFlow — Configuración inicial\n');
+  console.log('\n  JM-SHELL — Configuración inicial\n');
 
   const alreadyConfigured = await globalConfigExists();
 
@@ -58,7 +58,7 @@ export async function initCommand(): Promise<void> {
       },
     ]);
     if (newPin !== confirmPin) {
-      error('Los PINs no coinciden. Ejecuta jdf init nuevamente.');
+      error('Los PINs no coinciden. Ejecuta jm init nuevamente.');
       process.exit(1);
     }
     pin = newPin;
@@ -153,5 +153,5 @@ export async function initCommand(): Promise<void> {
 
   success(`.jira.json creado en el directorio actual`);
   success(`Configuración global guardada en ~/.jira-tool/config.json`);
-  console.log('\n  ¡Listo! Prueba: jdf do "Arreglar bug de login" 1h\n');
+  console.log('\n  ¡Listo! Prueba: jm do "Arreglar bug de login" 1h\n');
 }

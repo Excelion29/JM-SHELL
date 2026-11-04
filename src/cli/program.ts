@@ -23,8 +23,8 @@ export function buildProgram(): Command {
   const program = new Command();
 
   program
-    .name('jdf')
-    .description('DevFlow — CLI de Jira para desarrolladores')
+    .name('jm')
+    .description('JM-SHELL — CLI de Jira para desarrolladores')
     .version('1.0.0')
     .helpOption('-h, --help', 'Mostrar ayuda')
     // Evitar que commander llame a process.exit en errores dentro del shell

@@ -38,27 +38,27 @@ const SECTIONS: Section[] = [
           'Si ya existe config, verifica el PIN antes de permitir cambios.',
           'Crea ~/.jira-tool/config.json (cifrado con PIN) y .jira.json en el directorio actual.',
         ],
-        examples: ['jdf init'],
+        examples: ['jm init'],
       },
       {
         cmd: 'projects',
         description: 'Lista todos los proyectos Jira a los que tienes acceso.',
-        examples: ['jdf projects'],
+        examples: ['jm projects'],
       },
       {
         cmd: 'shell',
         description: 'Inicia una sesión interactiva: el PIN se pide una sola vez.',
         detail: [
-          'Dentro del shell escribe los comandos sin el prefijo "jdf".',
+          'Dentro del shell escribe los comandos sin el prefijo "jm".',
           'Cierra la sesión con: exit, salir, quit o Ctrl+C.',
         ],
-        examples: ['jdf shell', '  jdf> list', '  jdf> use PM-100', '  jdf> bulk', '  jdf> exit'],
+        examples: ['jm shell', '  jm> list', '  jm> use PM-100', '  jm> bulk', '  jm> exit'],
       },
       {
         cmd: 'app',
-        description: 'Abre la app de terminal de DevFlow (también con `jdf` sin argumentos).',
+        description: 'Abre la app de terminal de JM-SHELL (también con `jm` sin argumentos).',
         detail: ['Pide el PIN una vez y muestra dónde te quedaste en tus historias.', 'Sal con q o Ctrl+C.'],
-        examples: ['jdf', 'jdf app'],
+        examples: ['jm', 'jm app'],
       },
     ],
   },
@@ -73,7 +73,7 @@ const SECTIONS: Section[] = [
           'El contexto afecta a list, do, bulk, edit, get, start, move y open.',
           'Se guarda en .jira-context.json del directorio del proyecto.',
         ],
-        examples: ['jdf use PM-100'],
+        examples: ['jm use PM-100'],
       },
       {
         cmd: 'up',
@@ -83,12 +83,12 @@ const SECTIONS: Section[] = [
           'Desde una Épica → vuelve al nivel raíz (limpia el contexto).',
           'Desde una Subtarea → sube a la Historia/Tarea padre.',
         ],
-        examples: ['jdf up'],
+        examples: ['jm up'],
       },
       {
         cmd: 'where',
         description: 'Muestra en qué proyecto, directorio y contexto estás.',
-        examples: ['jdf where'],
+        examples: ['jm where'],
       },
       {
         cmd: 'types',
@@ -99,7 +99,7 @@ const SECTIONS: Section[] = [
           'Dentro de Historia  → solo Subtareas',
           'Dentro de Subtarea  → no se puede crear (muestra aviso)',
         ],
-        examples: ['jdf types'],
+        examples: ['jm types'],
       },
     ],
   },
@@ -122,11 +122,11 @@ const SECTIONS: Section[] = [
           { flag: '--jql <query>', description: 'Query JQL personalizado (ignora el contexto)' },
         ],
         examples: [
-          'jdf list                          # épicas o hijos del contexto',
-          'jdf list PM-100                   # hijos de PM-100',
-          'jdf list --mine',
-          'jdf list --mine --status "En curso"',
-          'jdf list --jql "sprint in openSprints() AND assignee = currentUser()"',
+          'jm list                          # épicas o hijos del contexto',
+          'jm list PM-100                   # hijos de PM-100',
+          'jm list --mine',
+          'jm list --mine --status "En curso"',
+          'jm list --jql "sprint in openSprints() AND assignee = currentUser()"',
         ],
       },
     ],
@@ -151,10 +151,10 @@ const SECTIONS: Section[] = [
           { flag: '--type <tipo>', description: 'Tipo explícito: Tarea, Bug, Historia…' },
         ],
         examples: [
-          'jdf do "Fix bug de login" 1h',
-          'jdf do "Revisar PR" --estimate 30m',
-          'jdf do "Nueva feature" 2h --due 2026-05-01 --type Historia',
-          'jdf do "Subtarea rápida" 1h --parent PM-100',
+          'jm do "Fix bug de login" 1h',
+          'jm do "Revisar PR" --estimate 30m',
+          'jm do "Nueva feature" 2h --due 2026-05-01 --type Historia',
+          'jm do "Subtarea rápida" 1h --parent PM-100',
         ],
       },
       {
@@ -166,7 +166,7 @@ const SECTIONS: Section[] = [
           'Por cada tarea pide: título (requerido), asignado, fecha y estimación.',
           'Deja el título vacío para terminar y ver el resumen.',
         ],
-        examples: ['jdf bulk'],
+        examples: ['jm bulk'],
       },
     ],
   },
@@ -186,9 +186,9 @@ const SECTIONS: Section[] = [
           { flag: '--status <estado>', description: 'Nuevo estado (si no existe, muestra lista)' },
         ],
         examples: [
-          'jdf edit --status "In Review"',
-          'jdf edit PM-100 --title "Nuevo título" --due 2026-05-01',
-          'jdf edit PM-100 --estimate 2h --assign abc123',
+          'jm edit --status "In Review"',
+          'jm edit PM-100 --title "Nuevo título" --due 2026-05-01',
+          'jm edit PM-100 --estimate 2h --assign abc123',
         ],
       },
       {
@@ -196,7 +196,7 @@ const SECTIONS: Section[] = [
         args: '[CLAVE]',
         description: 'Ver qué estados están disponibles para mover el issue.',
         detail: ['Útil para saber a qué estados puedes avanzar o retroceder.'],
-        examples: ['jdf moves', 'jdf moves PM-100'],
+        examples: ['jm moves', 'jm moves PM-100'],
       },
       {
         cmd: 'move',
@@ -206,19 +206,19 @@ const SECTIONS: Section[] = [
           'Acepta match parcial e insensible a mayúsculas.',
           'Si el estado no existe, muestra una lista para elegir.',
         ],
-        examples: ['jdf move "In Review"', 'jdf move PM-100 Done'],
+        examples: ['jm move "In Review"', 'jm move PM-100 Done'],
       },
       {
         cmd: 'start',
         args: '[CLAVE]',
         description: 'Mueve un issue a "In Progress" (atajo rápido).',
-        examples: ['jdf start', 'jdf start PM-100'],
+        examples: ['jm start', 'jm start PM-100'],
       },
       {
         cmd: 'reparent',
         args: '<CLAVE> <NUEVO_PADRE>',
         description: 'Cambia el issue padre.',
-        examples: ['jdf reparent PM-110 PM-100'],
+        examples: ['jm reparent PM-110 PM-100'],
       },
     ],
   },
@@ -230,11 +230,11 @@ const SECTIONS: Section[] = [
         args: '[CLAVE]',
         description: 'Debate una historia con Claude Code y deja un plan con estimación PERT.',
         detail: [
-          'Descarga la historia y sus adjuntos a .jdf/historias/<CLAVE>/ en la raíz del proyecto.',
+          'Descarga la historia y sus adjuntos a .jm/historias/<CLAVE>/ en la raíz del proyecto.',
           'Abre Claude con /refinar; si ya había una sesión, la retoma.',
           'Requiere tener `claude` instalado. Sin CLAVE usa el contexto activo o el branch.',
         ],
-        examples: ['jdf refinar AQ-45', 'jdf refinar'],
+        examples: ['jm refinar AQ-45', 'jm refinar'],
       },
     ],
   },
@@ -246,14 +246,14 @@ const SECTIONS: Section[] = [
         args: '[CLAVE]',
         description: 'Muestra los detalles completos de un issue.',
         detail: ['Sin CLAVE usa el contexto activo o el branch de git.'],
-        examples: ['jdf get', 'jdf get PM-100'],
+        examples: ['jm get', 'jm get PM-100'],
       },
       {
         cmd: 'open',
         args: '[CLAVE]',
         description: 'Abre el issue en el navegador e imprime la URL.',
         options: [{ flag: '--no-browser', description: 'Solo imprime la URL, no abre el navegador' }],
-        examples: ['jdf open', 'jdf open PM-100', 'jdf open PM-100 --no-browser'],
+        examples: ['jm open', 'jm open PM-100', 'jm open PM-100 --no-browser'],
       },
     ],
   },
@@ -262,9 +262,9 @@ const SECTIONS: Section[] = [
 const TIME_FORMATS = ['1h', '30m', '1h30m', '2h15m'];
 
 const CONTEXT_RESOLUTION = [
-  { step: '1', label: 'Argumento directo', example: 'jdf get PM-100' },
-  { step: '2', label: 'Contexto (jdf use)', example: 'jdf use PM-100  →  jdf get' },
-  { step: '3', label: 'Branch de git', example: 'git checkout feature/PM-100  →  jdf get' },
+  { step: '1', label: 'Argumento directo', example: 'jm get PM-100' },
+  { step: '2', label: 'Contexto (jm use)', example: 'jm use PM-100  →  jm get' },
+  { step: '3', label: 'Branch de git', example: 'git checkout feature/PM-100  →  jm get' },
 ];
 
 export function helpCommand(): void {
@@ -272,7 +272,7 @@ export function helpCommand(): void {
   const hr = chalk.dim('─'.repeat(lineWidth));
 
   console.log();
-  console.log(C.title('  DevFlow (jdf)') + C.dim(' — CLI de Jira para desarrolladores'));
+  console.log(C.title('  JM-SHELL (jm)') + C.dim(' — CLI de Jira para desarrolladores'));
   console.log(hr);
 
   for (const section of SECTIONS) {
@@ -280,7 +280,7 @@ export function helpCommand(): void {
 
     for (const doc of section.commands) {
       // Cabecera del comando
-      const cmdLine = [C.cmd(`jdf ${doc.cmd}`), doc.args ? C.arg(doc.args) : ''].filter(Boolean).join(' ');
+      const cmdLine = [C.cmd(`jm ${doc.cmd}`), doc.args ? C.arg(doc.args) : ''].filter(Boolean).join(' ');
 
       console.log(`  ${cmdLine}`);
       console.log(`  ${chalk.dim('→')} ${doc.description}`);

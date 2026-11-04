@@ -35,7 +35,7 @@ export async function typesCommand(): Promise<void> {
 
   if (level === 'subtask') {
     info('Estás dentro de una subtarea — no se pueden crear issues aquí.');
-    console.log(`  Usa ${chalk.cyan('jdf up')} para subir un nivel.\n`);
+    console.log(`  Usa ${chalk.cyan('jm up')} para subir un nivel.\n`);
     return;
   }
 

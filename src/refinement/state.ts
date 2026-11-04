@@ -3,7 +3,7 @@ import * as path from 'path';
 import { findFileUpward } from '../config/loader';
 import { warn } from '../utils/format';
 import { sanitizeFilename } from './attachments';
-import { assertNoLinks, JDF_DIR, lexists, safeEnsureDir, safeWriteFile } from './safe-fs';
+import { assertNoLinks, JM_DIR, lexists, safeEnsureDir, safeWriteFile } from './safe-fs';
 import { stripControlChars } from './text';
 import { SESSION_ID_PATTERN } from './claude';
 import {
@@ -58,13 +58,13 @@ export function projectRoot(): string {
   return config ? path.dirname(config) : process.cwd();
 }
 
-export const storyDir = (root: string, key: string) => path.join(root, JDF_DIR, STORIES_DIR, key);
+export const storyDir = (root: string, key: string) => path.join(root, JM_DIR, STORIES_DIR, key);
 export const statePath = (root: string, key: string) => path.join(storyDir(root, key), STATE_FILE);
 export const planPath = (root: string, key: string) => path.join(storyDir(root, key), PLAN_FILE);
 export const storyDocPath = (root: string, key: string) => path.join(storyDir(root, key), STORY_FILE);
 export const logPath = (root: string, key: string) => path.join(storyDir(root, key), LOG_FILE);
 export const attachmentsDir = (root: string, key: string) => path.join(storyDir(root, key), ATTACHMENTS_DIR);
-export const dashboardPath = (root: string) => path.join(root, JDF_DIR, DASHBOARD_FILE);
+export const dashboardPath = (root: string) => path.join(root, JM_DIR, DASHBOARD_FILE);
 
 export function assertKey(key: string): void {
   if (!isValidIssueKey(key)) throw new Error(`Clave de historia inválida: "${key}". Usa el formato AQ-45.`);
@@ -167,7 +167,7 @@ async function writeState(root: string, state: StoryState): Promise<void> {
 // Lee de disco justo antes de escribir: la skill también edita estado.json (fase/bloque)
 export async function updateState(root: string, key: string, mutate: (state: StoryState) => void): Promise<StoryState> {
   const current = await readState(root, key);
-  if (!current) throw new Error(`La historia ${key} aún no tiene estado. Ejecuta \`jdf refinar ${key}\`.`);
+  if (!current) throw new Error(`La historia ${key} aún no tiene estado. Ejecuta \`jm refinar ${key}\`.`);
   mutate(current);
   await writeState(root, current);
   return current;
@@ -222,7 +222,7 @@ const UNREADABLE_STATE_EPOCH = new Date(0).toISOString();
 function unreadableStory(key: string): StoryState {
   return {
     key,
-    summary: `estado ilegible, revisa .jdf/${STORIES_DIR}/${key}/${STATE_FILE}`,
+    summary: `estado ilegible, revisa .jm/${STORIES_DIR}/${key}/${STATE_FILE}`,
     phase: 'spec',
     block: null,
     claudeSessionId: null,
@@ -243,7 +243,7 @@ async function readStateOrPlaceholder(root: string, key: string): Promise<StoryS
 }
 
 export async function listStories(root: string): Promise<StoryState[]> {
-  const base = path.join(root, JDF_DIR, STORIES_DIR);
+  const base = path.join(root, JM_DIR, STORIES_DIR);
   if (!(await fs.pathExists(base))) return [];
   const keys = (await fs.readdir(base)).filter(isValidIssueKey);
   const states = await Promise.all(keys.map((key) => readStateOrPlaceholder(root, key)));
@@ -251,8 +251,8 @@ export async function listStories(root: string): Promise<StoryState[]> {
 }
 
 const NEXT_STEPS: Record<Phase, (key: string) => string> = {
-  spec: (key) => `Ejecuta \`jdf refinar ${key}\` para empezar el debate.`,
-  debate: (key) => `Continúa el debate con \`jdf refinar ${key}\`.`,
+  spec: (key) => `Ejecuta \`jm refinar ${key}\` para empezar el debate.`,
+  debate: (key) => `Continúa el debate con \`jm refinar ${key}\`.`,
   plan: () => 'Revisa el plan y decide qué tareas crear.',
   reviewed: () => 'Crea las tareas marcadas en Jira.',
   created: () => 'Empieza con la primera tarea creada.',
@@ -262,7 +262,7 @@ const NEXT_STEPS: Record<Phase, (key: string) => string> = {
 
 export function nextStepFor(state: StoryState): string {
   if (state.phase === 'debate' && state.block) {
-    return `Retoma el debate en ${BLOCK_LABELS[state.block]} con \`jdf refinar ${state.key}\`.`;
+    return `Retoma el debate en ${BLOCK_LABELS[state.block]} con \`jm refinar ${state.key}\`.`;
   }
   return NEXT_STEPS[state.phase](state.key);
 }
@@ -283,7 +283,7 @@ const escapeCell = (text: string) => text.replace(/\|/g, '\\|').replace(/\r?\n/g
 export function renderDashboardMarkdown(stories: StoryState[]): string {
   const lines = ['# Donde te quedaste', ''];
   if (!stories.length) {
-    lines.push('Aún no hay historias en refinamiento.', '', 'Siguiente paso: ejecuta `jdf refinar <CLAVE>`.', '');
+    lines.push('Aún no hay historias en refinamiento.', '', 'Siguiente paso: ejecuta `jm refinar <CLAVE>`.', '');
     return lines.join('\n');
   }
   lines.push('| Clave | Resumen | Fase | Bloque | Siguiente paso | Actualizado |', '|---|---|---|---|---|---|');
@@ -297,6 +297,6 @@ export function renderDashboardMarkdown(stories: StoryState[]): string {
 }
 
 export async function renderDashboard(root: string): Promise<void> {
-  safeEnsureDir(root, path.join(root, JDF_DIR));
+  safeEnsureDir(root, path.join(root, JM_DIR));
   safeWriteFile(root, dashboardPath(root), renderDashboardMarkdown(await listStories(root)));
 }

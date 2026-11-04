@@ -43,13 +43,13 @@ test('assertSameOrigin rechaza otro origen', () => {
 });
 
 test('streamToFileWithCap escribe bajo el tope', async () => {
-  const dest = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'jdf-att-')), 'ok.bin');
+  const dest = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'jm-att-')), 'ok.bin');
   await streamToFileWithCap(Readable.from([Buffer.alloc(10), Buffer.alloc(10)]), dest, 100);
   assert.equal((await fs.stat(dest)).size, 20);
 });
 
 test('streamToFileWithCap aborta y borra el parcial al superar el tope', async () => {
-  const dest = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'jdf-att-')), 'big.bin');
+  const dest = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'jm-att-')), 'big.bin');
   const source = Readable.from([Buffer.alloc(60), Buffer.alloc(60), Buffer.alloc(60)]);
   await assert.rejects(streamToFileWithCap(source, dest, 100), AttachmentTooLargeError);
   assert.equal(await fs.pathExists(dest), false);

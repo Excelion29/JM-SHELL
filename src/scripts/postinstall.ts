@@ -12,9 +12,12 @@ const VSCODE_SETTINGS_CANDIDATES = [
   path.join(os.homedir(), 'Library', 'Application Support', 'Code', 'User', 'settings.json'),
 ];
 
+const LEGACY_PROFILE_NAME = 'DevFlow (jdf)';
+const PROFILE_NAME = 'JM-SHELL (jm)';
+
 const TERMINAL_PROFILE = {
   path: 'powershell.exe',
-  args: ['-NoExit', '-Command', 'jdf shell'],
+  args: ['-NoExit', '-Command', 'jm'],
   icon: 'rocket',
   color: 'terminal.ansiCyan',
 };
@@ -28,16 +31,12 @@ async function configureVSCode(): Promise<boolean> {
       const settings = JSON.parse(raw);
 
       const profiles = settings['terminal.integrated.profiles.windows'] ?? {};
-      if (profiles['DevFlow (jdf)']) {
-        console.log('  ✓ Perfil de VS Code ya estaba configurado.');
-        return true;
-      }
-
-      profiles['DevFlow (jdf)'] = TERMINAL_PROFILE;
+      delete profiles[LEGACY_PROFILE_NAME];
+      profiles[PROFILE_NAME] = TERMINAL_PROFILE;
       settings['terminal.integrated.profiles.windows'] = profiles;
 
       await fs.writeFile(settingsPath, JSON.stringify(settings, null, 4), 'utf8');
-      console.log('  ✓ Perfil "DevFlow (jdf)" agregado al terminal de VS Code.');
+      console.log(`  ✓ Perfil "${PROFILE_NAME}" agregado al terminal de VS Code.`);
       return true;
     } catch {
       // Seguir con el siguiente path
@@ -57,7 +56,7 @@ async function configureSkill(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  console.log('\n  DevFlow — Configuración automática\n');
+  console.log('\n  JM-SHELL — Configuración automática\n');
   await configureSkill();
 
   const vsConfigured = await configureVSCode();
@@ -67,7 +66,7 @@ async function main(): Promise<void> {
 
   console.log('\n  ─────────────────────────────────────────');
   console.log('  ¡Instalación completa!');
-  console.log('  Ejecuta: jdf init    para configurar tus credenciales.');
+  console.log('  Ejecuta: jm init    para configurar tus credenciales.');
   console.log('  ─────────────────────────────────────────\n');
 }
 

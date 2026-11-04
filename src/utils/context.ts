@@ -21,7 +21,7 @@ export async function resolveIssueKey(arg?: string): Promise<string> {
   }
 
   throw new Error(
-    'No se encontró ningún ticket. Proporciona uno como argumento, usa `jdf use <CLAVE>`, o usa un branch de git con formato feature/AUTH-123.'
+    'No se encontró ningún ticket. Proporciona uno como argumento, usa `jm use <CLAVE>`, o usa un branch de git con formato feature/AUTH-123.'
   );
 }
 

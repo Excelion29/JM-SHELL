@@ -27,7 +27,7 @@ for (const bad of BAD_ARGS) {
 }
 
 test('resolveExecutable en Windows ignora el script sin extensión y marca .cmd como shim', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'jdf-bin-'));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'jm-bin-'));
   const pathExt = '.EXE;.CMD';
   await fs.writeFile(path.join(dir, 'claude'), '#!/bin/sh');
   await fs.writeFile(path.join(dir, 'claude.cmd'), '@echo off');
@@ -94,7 +94,7 @@ test('si --resume duró y salió con error: no abre otra sesión', async () => {
 });
 
 test('resolveExecutable ignora entradas relativas del PATH', async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'jdf-rel-'));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'jm-rel-'));
   await fs.writeFile(path.join(dir, 'claude'), '');
   const relative = path.relative(process.cwd(), dir);
   assert.equal(resolveExecutable('claude', relative, '', false), null);

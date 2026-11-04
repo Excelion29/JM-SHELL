@@ -1,5 +1,5 @@
 // ── Textos y teclas de la app ───────────────────────────────────
-export const APP_NAME = 'DevFlow';
+export const APP_NAME = 'JM-SHELL';
 export const NO_PROJECT_LABEL = 'sin proyecto';
 
 export const KEYS = {

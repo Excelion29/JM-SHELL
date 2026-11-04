@@ -10,7 +10,7 @@ export async function whereCommand(): Promise<void> {
     const project = await loadProjectConfig();
     console.log(`${chalk.gray('Proyecto:')}   ${chalk.bold(project.projectKey)}`);
   } catch {
-    console.log(`${chalk.gray('Proyecto:')}   ${chalk.dim('Sin .jira.json — ejecuta jdf init')}`);
+    console.log(`${chalk.gray('Proyecto:')}   ${chalk.dim('Sin .jira.json — ejecuta jm init')}`);
   }
 
   console.log(`${chalk.gray('Directorio:')} ${process.cwd()}`);
@@ -19,7 +19,7 @@ export async function whereCommand(): Promise<void> {
     const global = await requireAuth();
     console.log(`${chalk.gray('Jira URL:')}   ${chalk.underline.blue(global.jiraUrl)}`);
   } catch {
-    console.log(`${chalk.gray('Jira URL:')}   ${chalk.dim('No configurado — ejecuta jdf init')}`);
+    console.log(`${chalk.gray('Jira URL:')}   ${chalk.dim('No configurado — ejecuta jm init')}`);
   }
 
   const ctx = await loadContext();
@@ -30,7 +30,7 @@ export async function whereCommand(): Promise<void> {
       const key = await resolveIssueKey();
       console.log(`${chalk.gray('Contexto:')}   ${chalk.bold.cyan(key)} ${chalk.dim('(del branch de git)')}`);
     } catch {
-      console.log(`${chalk.gray('Contexto:')}   ${chalk.dim('Ninguno — ejecuta jdf use <CLAVE>')}`);
+      console.log(`${chalk.gray('Contexto:')}   ${chalk.dim('Ninguno — ejecuta jm use <CLAVE>')}`);
     }
   }
 

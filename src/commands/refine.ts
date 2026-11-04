@@ -92,7 +92,7 @@ async function prepareStory(jira: JiraService, root: string, key: string): Promi
 async function ensureSkill(): Promise<void> {
   try {
     const result = await installSkill();
-    if (result === 'missing-asset') warn('No encontré la skill /refinar dentro del paquete. Reinstala DevFlow.');
+    if (result === 'missing-asset') warn('No encontré la skill /refinar dentro del paquete. Reinstala JM-SHELL.');
   } catch (err: unknown) {
     warn(`No pude instalar la skill /refinar: ${(err as Error).message}`);
   }
@@ -107,7 +107,7 @@ async function hasFreshPlan(planFile: string, sessionStartMs: number): Promise<b
 async function summarizeAfterClaude(root: string, key: string, sessionStartMs: number): Promise<void> {
   const planFile = planPath(root, key);
   if (!(await hasFreshPlan(planFile, sessionStartMs))) {
-    info(`Quedaste en el debate. Siguiente paso: vuelve con \`jdf refinar ${key}\` para continuar.`);
+    info(`Quedaste en el debate. Siguiente paso: vuelve con \`jm refinar ${key}\` para continuar.`);
     return;
   }
   try {
@@ -117,7 +117,7 @@ async function summarizeAfterClaude(root: string, key: string, sessionStartMs: n
     info('Siguiente paso: revisa el plan y decide qué tareas crear.');
   } catch (err: unknown) {
     warn(`El plan.json no es válido todavía. ${(err as Error).message}`);
-    info(`Siguiente paso: vuelve con \`jdf refinar ${key}\` y pide a Claude que lo corrija.`);
+    info(`Siguiente paso: vuelve con \`jm refinar ${key}\` y pide a Claude que lo corrija.`);
   }
 }
 

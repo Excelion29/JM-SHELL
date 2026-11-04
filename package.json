@@ -1,10 +1,10 @@
 {
-  "name": "df-jira",
+  "name": "jm-shell",
   "version": "1.0.0",
-  "description": "DevFlow - Jira CLI for developers",
+  "description": "JM-SHELL - Jira CLI for developers",
   "main": "dist/cli/index.js",
   "bin": {
-    "jdf": "dist/cli/index.js"
+    "jm": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc && node scripts/copy-tui-package.js",

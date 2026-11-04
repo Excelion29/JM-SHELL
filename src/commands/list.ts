@@ -57,9 +57,9 @@ export async function listCommand(parentArg?: string, options: ListOptions = {})
   const icon = issueTypeIcon(ctx.issueType ?? '');
   console.log(chalk.dim(`\n  Dentro de: ${icon} ${chalk.bold(ctx.issueKey)} — ${ctx.summary ?? ''}`));
   if (ctx.parentKey) {
-    console.log(chalk.dim(`  (usa ${chalk.cyan('jdf up')} para volver a [${ctx.parentKey}])`));
+    console.log(chalk.dim(`  (usa ${chalk.cyan('jm up')} para volver a [${ctx.parentKey}])`));
   } else {
-    console.log(chalk.dim(`  (usa ${chalk.cyan('jdf up')} para volver a las Épicas)`));
+    console.log(chalk.dim(`  (usa ${chalk.cyan('jm up')} para volver a las Épicas)`));
   }
 
   await listChildren(jira, ctx.issueKey, globalConfig.jiraUrl, options.status);
@@ -70,7 +70,7 @@ async function listEpics(jira: JiraService, projectKey: string, baseUrl: string,
   const jql = `project = ${projectKey} AND issuetype = Epic${statusClause} ORDER BY rank ASC`;
 
   console.log(chalk.bold.magenta('\n  ⬡ Épicas del proyecto\n'));
-  console.log(chalk.dim(`  Tip: usa ${chalk.cyan('jdf use <CLAVE>')} para entrar a una épica y ver su contenido.\n`));
+  console.log(chalk.dim(`  Tip: usa ${chalk.cyan('jm use <CLAVE>')} para entrar a una épica y ver su contenido.\n`));
 
   await runSearch(jira, jql, baseUrl, null);
 }
@@ -89,7 +89,7 @@ async function listChildren(jira: JiraService, parentKey: string, baseUrl: strin
 
   if (issues.length === 0) {
     info('No se encontraron issues en este nivel.');
-    console.log(chalk.dim(`  Tip: usa ${chalk.cyan('jdf up')} para subir un nivel.\n`));
+    console.log(chalk.dim(`  Tip: usa ${chalk.cyan('jm up')} para subir un nivel.\n`));
     return;
   }
 

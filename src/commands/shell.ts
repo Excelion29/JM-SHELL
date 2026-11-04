@@ -33,11 +33,11 @@ async function saveHistory(history: string[]): Promise<void> {
 export async function shellCommand(): Promise<void> {
   const configured = await globalConfigExists();
   if (!configured) {
-    error('No inicializado. Ejecuta `jdf init` primero.');
+    error('No inicializado. Ejecuta `jm init` primero.');
     process.exit(1);
   }
 
-  console.log(chalk.bold.cyan('\n  DevFlow — Modo interactivo'));
+  console.log(chalk.bold.cyan('\n  JM-SHELL — Modo interactivo'));
   console.log(chalk.dim('  Usa ↑ ↓ para navegar el historial. "exit" para salir.\n'));
 
   const { pin } = await inquirer.prompt([{
@@ -97,7 +97,7 @@ export async function shellCommand(): Promise<void> {
     const program = buildProgram();
 
     try {
-      await program.parseAsync(['node', 'jdf', ...args]);
+      await program.parseAsync(['node', 'jm', ...args]);
     } catch (err: unknown) {
       if (err instanceof CommandAborted) {
         // Comando fallido — continuar el shell
@@ -124,7 +124,7 @@ function askLine(history: string[]): Promise<{ line: string; updatedHistory: str
   });
 
   return new Promise((resolve) => {
-    rl.question(chalk.cyan('jdf') + chalk.dim('> '), (answer) => {
+    rl.question(chalk.cyan('jm') + chalk.dim('> '), (answer) => {
       // rl.history tiene el historial actualizado en orden inverso
       const updatedHistory = (rl as unknown as { history: string[] }).history ?? history;
       rl.close();

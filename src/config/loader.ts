@@ -30,7 +30,7 @@ export async function saveGlobalConfig(config: GlobalConfig, pin: string): Promi
 
 export async function loadGlobalConfig(pin: string): Promise<GlobalConfig> {
   if (!await fs.pathExists(GLOBAL_CONFIG_FILE)) {
-    throw new Error('No inicializado. Ejecuta `jdf init` primero.');
+    throw new Error('No inicializado. Ejecuta `jm init` primero.');
   }
   const stored = await fs.readJson(GLOBAL_CONFIG_FILE) as StoredConfig;
   const plaintext = decrypt(stored.encrypted, pin);
@@ -40,7 +40,7 @@ export async function loadGlobalConfig(pin: string): Promise<GlobalConfig> {
 export async function loadProjectConfig(): Promise<ProjectConfig> {
   const configPath = findFileUpward(PROJECT_CONFIG_NAME);
   if (!configPath) {
-    throw new Error('No se encontró .jira.json. Ejecuta `jdf init` en el directorio del proyecto.');
+    throw new Error('No se encontró .jira.json. Ejecuta `jm init` en el directorio del proyecto.');
   }
   return fs.readJson(configPath) as Promise<ProjectConfig>;
 }

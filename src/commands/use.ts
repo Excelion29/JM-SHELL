@@ -35,7 +35,7 @@ export async function useCommand(issueKey: string): Promise<void> {
     await saveContext(ctx);
     const icon = issueTypeIcon(ctx.issueType);
     success(`Contexto: ${icon} ${chalk.bold(normalized)} — ${ctx.summary}`);
-    info(`Ejecuta ${chalk.cyan('jdf list')} para ver el contenido.`);
+    info(`Ejecuta ${chalk.cyan('jm list')} para ver el contenido.`);
   } catch (err: unknown) {
     error(`Error al guardar contexto: ${(err as Error).message}`);
     process.exit(1);

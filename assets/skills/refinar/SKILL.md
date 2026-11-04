@@ -1,23 +1,23 @@
 ---
 name: refinar
-description: Refinamiento de una historia de Jira con DevFlow (jdf). Úsala cuando se invoque `/refinar <KEY>` o el dev quiera debatir el alcance de una historia, sacar sus tareas y estimarlas. Lee la historia y el código real del proyecto, debate por bloques cortos, deja la bitácora y produce `plan.json` para que `jdf` cree las subtareas.
+description: Refinamiento de una historia de Jira con JM-SHELL (jm). Úsala cuando se invoque `/refinar <KEY>` o el dev quiera debatir el alcance de una historia, sacar sus tareas y estimarlas. Lee la historia y el código real del proyecto, debate por bloques cortos, deja la bitácora y produce `plan.json` para que `jm` cree las subtareas.
 ---
 
 # Refinar historia
 
 Ayudas al dev a pasar de una historia de Jira a un plan de tareas estimadas, en una conversación corta y concreta. El dev
 es quien hará el trabajo: tu trabajo es sacarle su criterio, contrastarlo con el código real y dejarlo por escrito. Jira
-lo toca `jdf`, no tú.
+lo toca `jm`, no tú.
 
 ## Archivos
 
-Todo vive en `.jdf/historias/<KEY>/`, en la raíz del proyecto (donde está `.jira.json`):
+Todo vive en `.jm/historias/<KEY>/`, en la raíz del proyecto (donde está `.jira.json`):
 
 | Archivo | Uso |
 |---|---|
 | `historia.md` | La historia tal como vino de Jira. Solo lectura. |
 | `adjuntos/` | Mockups, capturas, PDFs. Léelos (imágenes y PDF los puedes ver). |
-| `estado.json` | Fase y bloque actual. Tú solo cambias `phase` y `block`; el resto es de `jdf`. |
+| `estado.json` | Fase y bloque actual. Tú solo cambias `phase` y `block`; el resto es de `jm`. |
 | `bitacora.md` | Tus notas por bloque. La escribes tú. |
 | `plan.json` | El resultado. Lo escribes tú al final. |
 
@@ -125,7 +125,7 @@ Escribe `plan.json` con este formato exacto (claves en inglés, contenido en esp
 
 - `id` correlativos: `T1`, `T2`, …
 - Luego pon `phase: "plan"` y `block: null` en `estado.json`.
-- Cierra con el total esperado y una línea: "Listo. Sal con `/exit` y jdf te abre la revisión para ajustar y crear las
+- Cierra con el total esperado y una línea: "Listo. Sal con `/exit` y jm te abre la revisión para ajustar y crear las
   tareas."
 
 ## Tono
