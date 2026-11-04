@@ -3,11 +3,21 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { App } from './app.js';
-import { HOME_TEXTS } from './texts.js';
+import { HOME_TEXTS, MANUAL_KEY_TEXTS } from './texts.js';
 
 const ENTER = '\r';
 const VALID_PIN = '1234';
 const TICK_MS = 50;
+
+const NO_ITEMS = async () => [];
+const noopProps = {
+  unlock: async () => ({ ok: true }),
+  fetchEpics: NO_ITEMS,
+  fetchStories: NO_ITEMS,
+  fetchProjects: NO_ITEMS,
+  setProject: async () => ({ ok: true }),
+  loadStories: async () => [],
+};
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, TICK_MS));
 
@@ -19,7 +29,7 @@ async function typePin(stdin: { write: (data: string) => void }, pin: string) {
 }
 
 test('muestra el inicio cuando el PIN es correcto', async () => {
-  const { stdin, lastFrame } = render(<App projectKey="AQ" stories={[]} unlock={async () => ({ ok: true })} />);
+  const { stdin, lastFrame } = render(<App projectKey="AQ" stories={[]} {...noopProps} />);
   await typePin(stdin, VALID_PIN);
   const frame = lastFrame() ?? '';
   assert.ok(frame.includes(HOME_TEXTS.title));
@@ -35,7 +45,7 @@ const DOWN = '[B';
 test('lista las historias y Enter devuelve la acción de refinar', async () => {
   const actions: Array<{ type: string; key: string }> = [];
   const { stdin, lastFrame } = render(
-    <App projectKey="AQ" stories={STORIES} unlocked unlock={async () => ({ ok: true })} onAction={(a) => actions.push(a)} />,
+    <App projectKey="AQ" stories={STORIES} unlocked {...noopProps} onAction={(a) => actions.push(a)} />,
   );
   const frame = lastFrame() ?? '';
   assert.ok(frame.includes('AQ-45') && frame.includes('AQ-46') && frame.includes('riesgos'));
@@ -46,28 +56,32 @@ test('lista las historias y Enter devuelve la acción de refinar', async () => {
   assert.deepEqual(actions, [{ type: 'refine', key: 'AQ-46' }]);
 });
 
-test('n abre la entrada de clave y rechaza una inválida', async () => {
+test('n y luego / abre la entrada de clave y rechaza una inválida', async () => {
   const actions: Array<{ type: string; key: string }> = [];
   const { stdin, lastFrame } = render(
-    <App projectKey="AQ" stories={[]} unlocked unlock={async () => ({ ok: true })} onAction={(a) => actions.push(a)} />,
+    <App projectKey="AQ" stories={[]} unlocked {...noopProps} onAction={(a) => actions.push(a)} />,
   );
   assert.ok((lastFrame() ?? '').includes(HOME_TEXTS.empty));
   stdin.write('n');
+  await tick();
+  stdin.write('/');
   await tick();
   stdin.write('abc');
   await tick();
   stdin.write(ENTER);
   await tick();
-  assert.ok((lastFrame() ?? '').includes(HOME_TEXTS.invalidKey));
+  assert.ok((lastFrame() ?? '').includes(MANUAL_KEY_TEXTS.invalidKey));
   assert.equal(actions.length, 0);
 });
 
-test('n abre la entrada de clave y acepta una válida en minúsculas', async () => {
+test('n y luego k abre la entrada de clave y acepta una válida en minúsculas', async () => {
   const actions: Array<{ type: string; key: string }> = [];
   const { stdin } = render(
-    <App projectKey="AQ" stories={[]} unlocked unlock={async () => ({ ok: true })} onAction={(a) => actions.push(a)} />,
+    <App projectKey="AQ" stories={[]} unlocked {...noopProps} onAction={(a) => actions.push(a)} />,
   );
   stdin.write('n');
+  await tick();
+  stdin.write('k');
   await tick();
   stdin.write('aq-9');
   await tick();
@@ -78,7 +92,7 @@ test('n abre la entrada de clave y acepta una válida en minúsculas', async () 
 
 test('muestra el error y permite reintentar cuando el PIN es incorrecto', async () => {
   const message = 'PIN incorrecto';
-  const { stdin, lastFrame } = render(<App projectKey="AQ" stories={[]} unlock={async () => ({ ok: false, message })} />);
+  const { stdin, lastFrame } = render(<App projectKey="AQ" stories={[]} {...noopProps} unlock={async () => ({ ok: false, message })} />);
   await typePin(stdin, VALID_PIN);
   const frame = lastFrame() ?? '';
   assert.ok(frame.includes(message));

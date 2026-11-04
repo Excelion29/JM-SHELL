@@ -63,3 +63,14 @@ export interface StorySummary {
   nextStep: string;
   updatedAt: string;
 }
+
+export interface BrowseItem {
+  key: string;
+  summary: string;
+  status: string;
+}
+
+export interface ProjectItem {
+  key: string;
+  name: string;
+}

@@ -26,8 +26,10 @@ const PLAN_FILE = 'plan.json';
 const STORY_FILE = 'historia.md';
 const LOG_FILE = 'bitacora.md';
 const DASHBOARD_FILE = 'INICIO.md';
+const GITIGNORE_FILE = '.gitignore';
+const GITIGNORE_CONTENT = `${STORIES_DIR}/*/${ATTACHMENTS_DIR}/\n`;
 // Mismo formato que ISSUE_KEY_PATTERN en src/tui/texts.ts
-const ISSUE_KEY_STRICT = /^[A-Z][A-Z0-9]+-\d+$/;
+const ISSUE_KEY_STRICT = /^[A-Z][A-Z0-9_]+-\d+$/;
 const NO_BLOCK_LABEL = '—';
 
 export const PHASE_LABELS: Record<Phase, string> = {
@@ -114,7 +116,8 @@ function readPhase(raw: RawRecord, file: string, progressed: boolean): Phase {
 
 function readBlock(raw: RawRecord, file: string): Block | null {
   if (BLOCKS.includes(raw.block as Block)) return raw.block as Block;
-  if (raw.block !== undefined && raw.block !== null) warn(`Bloque desconocido "${stripControlChars(String(raw.block))}" en ${file}.`);
+  if (raw.block !== undefined && raw.block !== null)
+    warn(`Bloque desconocido "${stripControlChars(String(raw.block))}" en ${file}.`);
   return null;
 }
 
@@ -160,8 +163,12 @@ export async function readState(root: string, key: string): Promise<StoryState |
 
 async function writeState(root: string, state: StoryState): Promise<void> {
   state.updatedAt = new Date().toISOString();
-  safeWriteFile(root, statePath(root, state.key), `${JSON.stringify(state, null, 2)}
-`);
+  safeWriteFile(
+    root,
+    statePath(root, state.key),
+    `${JSON.stringify(state, null, 2)}
+`,
+  );
 }
 
 // Lee de disco justo antes de escribir: la skill también edita estado.json (fase/bloque)
@@ -173,6 +180,14 @@ export async function updateState(root: string, key: string, mutate: (state: Sto
   return current;
 }
 
+// Los adjuntos son temporales: nunca deben llegar al repositorio
+export function ensureJmGitignore(root: string): void {
+  const jmDir = path.join(root, JM_DIR);
+  safeEnsureDir(root, jmDir);
+  const file = path.join(jmDir, GITIGNORE_FILE);
+  if (!lexists(file)) safeWriteFile(root, file, GITIGNORE_CONTENT);
+}
+
 export async function ensureStory(
   root: string,
   key: string,
@@ -180,6 +195,7 @@ export async function ensureStory(
   parentKey: string | null,
 ): Promise<StoryState> {
   assertKey(key);
+  ensureJmGitignore(root);
   safeEnsureDir(root, attachmentsDir(root, key));
   if (!lexists(logPath(root, key))) {
     safeWriteFile(root, logPath(root, key), `# Bitácora ${key}\n\n`);

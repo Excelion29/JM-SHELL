@@ -3,11 +3,13 @@ import { render, useApp } from 'ink';
 import { Frame } from './components/frame.js';
 import { HomeScreen } from './components/home-screen.js';
 // Solo tipos: se borra al compilar
-import type { StorySummary } from '../refinement/types.js';
+import type { BrowseItem, ProjectItem, StorySummary } from '../refinement/types.js';
 import { PinPrompt } from './components/pin-prompt.js';
+import { BrowseScreen } from './screens/browse-screen.js';
+import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
 import { FOOTER_HINTS, PIN_TEXTS } from './texts.js';
 
-export type { StorySummary };
+export type { StorySummary, BrowseItem, ProjectItem, SetProjectResult };
 
 export interface UnlockResult {
   ok: boolean;
@@ -24,14 +26,40 @@ export interface AppProps {
   stories: StorySummary[];
   unlocked?: boolean;
   unlock: (pin: string) => Promise<UnlockResult>;
+  fetchEpics: () => Promise<BrowseItem[]>;
+  fetchStories: (epicKey: string | null) => Promise<BrowseItem[]>;
+  fetchProjects: () => Promise<ProjectItem[]>;
+  setProject: (key: string) => Promise<SetProjectResult>;
+  loadStories: (projectKey: string | null) => Promise<StorySummary[]>;
   onAction?: (action: AppAction) => void;
 }
 
-type Stage = 'pin' | 'home';
+type Stage = 'pin' | 'home' | 'browse' | 'projects';
 
-export function App({ projectKey, stories, unlocked = false, unlock, onAction }: AppProps) {
+const STAGE_HINTS: Record<Stage, string> = {
+  pin: FOOTER_HINTS.pin,
+  home: FOOTER_HINTS.home,
+  browse: '',
+  projects: '',
+};
+
+export function App({
+  projectKey: initialProjectKey,
+  stories: initialStories,
+  unlocked = false,
+  unlock,
+  fetchEpics,
+  fetchStories,
+  fetchProjects,
+  setProject,
+  loadStories,
+  onAction,
+}: AppProps) {
   const { exit } = useApp();
   const [stage, setStage] = useState<Stage>(unlocked ? 'home' : 'pin');
+  const [projectsReturnTo, setProjectsReturnTo] = useState<Stage>('home');
+  const [projectKey, setProjectKey] = useState(initialProjectKey);
+  const [stories, setStories] = useState(initialStories);
   const [checking, setChecking] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
 
@@ -54,12 +82,45 @@ export function App({ projectKey, stories, unlocked = false, unlock, onAction }:
     exit();
   };
 
+  const openProjects = (from: Stage) => {
+    setProjectsReturnTo(from);
+    setStage('projects');
+  };
+
   return (
-    <Frame projectKey={projectKey} hint={stage === 'pin' ? FOOTER_HINTS.pin : FOOTER_HINTS.home}>
-      {stage === 'pin' ? (
-        <PinPrompt onSubmit={handlePin} error={pinError} checking={checking} />
-      ) : (
-        <HomeScreen stories={stories} onRefine={handleRefine} onQuit={exit} />
+    <Frame projectKey={projectKey} hint={STAGE_HINTS[stage]}>
+      {stage === 'pin' && <PinPrompt onSubmit={handlePin} error={pinError} checking={checking} />}
+      {stage === 'home' && (
+        <HomeScreen
+          stories={stories}
+          onRefine={handleRefine}
+          onBrowse={() => setStage('browse')}
+          onChangeProject={() => openProjects('home')}
+          onQuit={exit}
+        />
+      )}
+      {stage === 'browse' && (
+        <BrowseScreen
+          localStories={stories}
+          fetchEpics={fetchEpics}
+          fetchStories={fetchStories}
+          onRefine={handleRefine}
+          onChangeProject={() => openProjects('browse')}
+          onBack={() => setStage('home')}
+        />
+      )}
+      {stage === 'projects' && (
+        <ProjectScreen
+          currentKey={projectKey}
+          fetchProjects={fetchProjects}
+          setProject={setProject}
+          onChanged={async (key) => {
+            setProjectKey(key);
+            setStories(await loadStories(key));
+            setStage(projectsReturnTo);
+          }}
+          onBack={() => setStage(projectsReturnTo)}
+        />
       )}
     </Frame>
   );

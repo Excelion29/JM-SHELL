@@ -6,7 +6,7 @@ import { encrypt, decrypt } from '../utils/crypto';
 
 const GLOBAL_CONFIG_DIR = path.join(os.homedir(), '.jira-tool');
 const GLOBAL_CONFIG_FILE = path.join(GLOBAL_CONFIG_DIR, 'config.json');
-const PROJECT_CONFIG_NAME = '.jira.json';
+export const PROJECT_CONFIG_NAME = '.jira.json';
 const CONTEXT_FILE_NAME = '.jira-context.json';
 
 interface StoredConfig {
@@ -29,10 +29,10 @@ export async function saveGlobalConfig(config: GlobalConfig, pin: string): Promi
 }
 
 export async function loadGlobalConfig(pin: string): Promise<GlobalConfig> {
-  if (!await fs.pathExists(GLOBAL_CONFIG_FILE)) {
+  if (!(await fs.pathExists(GLOBAL_CONFIG_FILE))) {
     throw new Error('No inicializado. Ejecuta `jm init` primero.');
   }
-  const stored = await fs.readJson(GLOBAL_CONFIG_FILE) as StoredConfig;
+  const stored = (await fs.readJson(GLOBAL_CONFIG_FILE)) as StoredConfig;
   const plaintext = decrypt(stored.encrypted, pin);
   return JSON.parse(plaintext) as GlobalConfig;
 }
@@ -54,7 +54,7 @@ export async function loadContext(): Promise<JiraContext | null> {
   const contextPath = findFileUpward(CONTEXT_FILE_NAME);
   if (!contextPath) return null;
   try {
-    return await fs.readJson(contextPath) as JiraContext;
+    return (await fs.readJson(contextPath)) as JiraContext;
   } catch {
     return null;
   }

@@ -6,6 +6,7 @@ import * as path from 'path';
 import {
   advancePhase,
   dashboardPath,
+  ensureJmGitignore,
   ensureStory,
   listStories,
   nextStepFor,
@@ -179,4 +180,15 @@ test('el resumen leído de estado.json pierde los caracteres de control', async 
   const file = statePath(root, 'AQ-45');
   await fs.writeJson(file, { ...(await fs.readJson(file)), summary: 'Hola\u001b[2J\nmundo' });
   assert.equal((await readState(root, 'AQ-45'))?.summary, 'Hola[2Jmundo');
+});
+
+test('ensureStory crea .jm/.gitignore una vez y no lo sobrescribe', async () => {
+  const root = await tempRoot();
+  const gitignore = path.join(root, '.jm', '.gitignore');
+  await ensureStory(root, 'AQ-45', 'Login', null);
+  assert.equal(await fs.readFile(gitignore, 'utf8'), 'historias/*/adjuntos/\n');
+  await fs.writeFile(gitignore, 'personalizado\n');
+  await ensureStory(root, 'AQ-46', 'Otra', null);
+  ensureJmGitignore(root);
+  assert.equal(await fs.readFile(gitignore, 'utf8'), 'personalizado\n');
 });

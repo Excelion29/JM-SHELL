@@ -20,7 +20,7 @@ export function Frame({ projectKey, hint, children }: FrameProps) {
       <Box flexDirection="column" marginY={1}>
         {children}
       </Box>
-      <Text color={COLORS.muted}>{hint}</Text>
+      {hint && <Text color={COLORS.muted}>{hint}</Text>}
     </Box>
   );
 }

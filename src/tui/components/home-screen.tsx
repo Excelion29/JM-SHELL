@@ -1,69 +1,28 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import TextInput from 'ink-text-input';
 // Solo tipos: se borra al compilar, la isla ESM no importa código CJS
 import type { StorySummary } from '../../refinement/types.js';
-import { COLORS, HOME_TEXTS, ISSUE_KEY_PATTERN, KEYS } from '../texts.js';
+import { COLORS, HOME_TEXTS, KEYS } from '../texts.js';
 
 interface HomeScreenProps {
   stories: StorySummary[];
   onRefine: (key: string) => void;
+  onBrowse: () => void;
+  onChangeProject: () => void;
   onQuit: () => void;
 }
 
-type Mode = 'list' | 'new-story';
-
-export function HomeScreen({ stories, onRefine, onQuit }: HomeScreenProps) {
-  const [mode, setMode] = useState<Mode>('list');
+export function HomeScreen({ stories, onRefine, onBrowse, onChangeProject, onQuit }: HomeScreenProps) {
   const [selected, setSelected] = useState(0);
-  const [draft, setDraft] = useState('');
-  const [invalid, setInvalid] = useState(false);
 
-  useInput(
-    (input, key) => {
-      if (input === KEYS.quit) onQuit();
-      else if (input === KEYS.newStory) setMode('new-story');
-      else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
-      else if (key.downArrow) setSelected((i) => Math.min(stories.length - 1, i + 1));
-      else if (key.return && stories[selected]) onRefine(stories[selected].key);
-    },
-    { isActive: mode === 'list' },
-  );
-
-  useInput(
-    (_input, key) => {
-      if (!key.escape) return;
-      setMode('list');
-      setDraft('');
-      setInvalid(false);
-    },
-    { isActive: mode === 'new-story' },
-  );
-
-  const submitKey = (value: string) => {
-    const candidate = value.trim().toUpperCase();
-    if (!ISSUE_KEY_PATTERN.test(candidate)) {
-      setInvalid(true);
-      return;
-    }
-    onRefine(candidate);
-  };
-
-  if (mode === 'new-story') {
-    return (
-      <Box flexDirection="column">
-        <Text bold color={COLORS.accent}>
-          {HOME_TEXTS.newStoryTitle}
-        </Text>
-        <Box>
-          <Text>{HOME_TEXTS.newStoryLabel}</Text>
-          <TextInput value={draft} onChange={setDraft} onSubmit={submitKey} />
-        </Box>
-        {invalid && <Text color={COLORS.error}>{HOME_TEXTS.invalidKey}</Text>}
-        <Text color={COLORS.muted}>{HOME_TEXTS.newStoryNextStep}</Text>
-      </Box>
-    );
-  }
+  useInput((input, key) => {
+    if (input === KEYS.quit) onQuit();
+    else if (input === KEYS.newStory) onBrowse();
+    else if (input === KEYS.changeProject) onChangeProject();
+    else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
+    else if (key.downArrow) setSelected((i) => Math.min(stories.length - 1, i + 1));
+    else if (key.return && stories[selected]) onRefine(stories[selected].key);
+  });
 
   return (
     <Box flexDirection="column">

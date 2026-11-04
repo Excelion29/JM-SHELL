@@ -1,8 +1,21 @@
 import * as readline from 'readline';
-import { globalConfigExists, loadGlobalConfig, loadProjectConfig } from '../config/loader';
-import { setSession, clearSession } from '../utils/session';
+import * as fs from 'fs-extra';
+import * as path from 'path';
+import {
+  findFileUpward,
+  globalConfigExists,
+  loadGlobalConfig,
+  loadProjectConfig,
+  PROJECT_CONFIG_NAME,
+} from '../config/loader';
+import { ProjectConfig } from '../config/types';
+import { JiraService } from '../services/jira';
+import { setSession, getSession, clearSession } from '../utils/session';
+import { writeFileAtomicNoLinks } from '../utils/safe-write';
 import { error } from '../utils/format';
 import { listStories, projectRoot, toSummary } from '../refinement/state';
+import { BROWSE_LIMIT, buildEpicsJql, buildStoriesJql, filterByProject, isValidProjectKey, toBrowseItem } from '../refinement/browse';
+import { BrowseItem, ProjectItem } from '../refinement/types';
 import { runRefine } from './refine';
 
 // import() real: el CJS no puede hacer require() de la isla ESM (ink)
@@ -18,13 +31,41 @@ async function readProjectKey(): Promise<string | null> {
   }
 }
 
-async function loadSummaries() {
+async function loadSummaries(projectKey: string | null) {
   try {
-    return (await listStories(projectRoot())).map(toSummary);
+    return filterByProject((await listStories(projectRoot())).map(toSummary), projectKey);
   } catch (err: unknown) {
     error(`No pude leer tus historias de .jm: ${(err as Error).message}`);
     return [];
   }
+}
+
+function sessionJira(): JiraService {
+  const session = getSession();
+  if (!session) throw new Error('La sesión no está abierta. Reinicia jm e ingresa tu PIN.');
+  return new JiraService(session);
+}
+
+function requireProjectKey(projectKey: string | null): string {
+  if (!projectKey) throw new Error('Aún no hay un proyecto elegido. Pulsa p para elegir uno.');
+  return projectKey;
+}
+
+function writeProjectConfig(file: string, config: ProjectConfig): void {
+  writeFileAtomicNoLinks(file, `${JSON.stringify(config, null, 2)}
+`);
+}
+
+// Con .jira.json existente solo cambia projectKey; sin él, se crea en el directorio actual
+async function persistProjectKey(jira: JiraService, key: string): Promise<void> {
+  const existing = findFileUpward(PROJECT_CONFIG_NAME);
+  if (existing) {
+    const config = (await fs.readJson(existing)) as ProjectConfig;
+    writeProjectConfig(existing, { ...config, projectKey: key });
+    return;
+  }
+  const me = await jira.getMyself();
+  writeProjectConfig(path.join(process.cwd(), PROJECT_CONFIG_NAME), { projectKey: key, defaultAssignee: me.accountId });
 }
 
 function waitForEnter(): Promise<void> {
@@ -49,15 +90,34 @@ export async function appCommand(): Promise<void> {
   }
 
   const { runApp } = await loadTui();
-  const projectKey = await readProjectKey();
+  let projectKey = await readProjectKey();
   let unlocked = false;
 
   try {
     for (;;) {
       const action = await runApp({
         projectKey,
-        stories: await loadSummaries(),
+        stories: await loadSummaries(projectKey),
+        loadStories: loadSummaries,
         unlocked,
+        fetchEpics: async (): Promise<BrowseItem[]> =>
+          (await sessionJira().searchIssues(buildEpicsJql(requireProjectKey(projectKey)))).slice(0, BROWSE_LIMIT).map(toBrowseItem),
+        fetchStories: async (epicKey): Promise<BrowseItem[]> =>
+          (await sessionJira().searchIssues(buildStoriesJql(requireProjectKey(projectKey), epicKey)))
+            .slice(0, BROWSE_LIMIT)
+            .map(toBrowseItem),
+        fetchProjects: async (): Promise<ProjectItem[]> =>
+          (await sessionJira().getProjects()).map(({ key, name }) => ({ key, name })),
+        setProject: async (key) => {
+          try {
+            if (!isValidProjectKey(key)) throw new Error(`La clave de proyecto "${key}" no es válida.`);
+            await persistProjectKey(sessionJira(), key);
+            projectKey = key;
+            return { ok: true };
+          } catch (err: unknown) {
+            return { ok: false, message: (err as Error).message };
+          }
+        },
         unlock: async (pin) => {
           try {
             setSession(await loadGlobalConfig(pin));

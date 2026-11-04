@@ -43,6 +43,14 @@ sin perder el hilo si se cierra la consola.
    Idempotente: lo ya creado o subido no se repite.
 7. **Cerrar historia:** confirma y elimina los adjuntos locales (solo los verificados en Jira, más los de análisis).
 
+### Parte 2.5 — Explorar Jira desde la app (agregada 2026-11-04)
+
+Pedido del dev al probar: `n` solo pedía escribir la clave. Ahora:
+
+- `n` → épicas del proyecto (incluye "Historias sin épica") → historias de la épica → Enter = refinar. Filtro escribiendo; `k` para escribir la clave; Esc vuelve.
+- `p` → cambiar de proyecto: actualiza `projectKey` del `.jira.json` del proyecto (confirma antes de pisar uno distinto).
+- Al crear `.jm/` se escribe `.jm/.gitignore` con `historias/*/adjuntos/`.
+
 ## Fuera de alcance
 
 - Fase 2: `list` / `get` / `move` / `edit` / `use` como pantallas de la app.
@@ -101,3 +109,5 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Commit parte 1 (base app) | Marcello Cano | 2026-11-04 | aprobado, probado en terminal real |
 | Commit parte 2 (estado SDD + refinar) | Marcello Cano | 2026-11-04 | aprobado; flujo real con Jira y Claude pendiente de prueba |
 | Commit renombre JM-SHELL | Marcello Cano | 2026-11-04 | aprobado; instalador nuevo pendiente de prueba |
+| Accept parte 2.5 (explorar Jira) | Marcello Cano | 2026-11-04 | aprobado ("claro") |
+| Commit parte 2.5 | Marcello Cano | 2026-11-04 | aprobado ("okey genial", probado: abre Claude desde la app) |

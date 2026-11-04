@@ -57,7 +57,10 @@ const SECTIONS: Section[] = [
       {
         cmd: 'app',
         description: 'Abre la app de terminal de JM-SHELL (también con `jm` sin argumentos).',
-        detail: ['Pide el PIN una vez y muestra dónde te quedaste en tus historias.', 'Sal con q o Ctrl+C.'],
+        detail: [
+          'Pide el PIN una vez y muestra dónde te quedaste en tus historias.',
+          'Teclas: n busca épicas e historias en Jira (/ o k para escribir una clave), p cambia de proyecto, Esc vuelve, q sale.',
+        ],
         examples: ['jm', 'jm app'],
       },
     ],
