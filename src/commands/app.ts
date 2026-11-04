@@ -16,6 +16,7 @@ import { error } from '../utils/format';
 import { listStories, projectRoot, toSummary } from '../refinement/state';
 import { BROWSE_LIMIT, buildEpicsJql, buildStoriesJql, filterByProject, isValidProjectKey, toBrowseItem } from '../refinement/browse';
 import { BrowseItem, ProjectItem } from '../refinement/types';
+import { createChatBridge } from './chat-bridge';
 import { runRefine } from './refine';
 
 // import() real: el CJS no puede hacer require() de la isla ESM (ink)
@@ -74,7 +75,7 @@ function waitForEnter(): Promise<void> {
 }
 
 // Ink ya está desmontado aquí: claude hereda la terminal completa
-async function refineAndReturn(key: string): Promise<void> {
+async function handoffAndReturn(key: string): Promise<void> {
   try {
     await runRefine(key);
   } catch (err: unknown) {
@@ -83,7 +84,11 @@ async function refineAndReturn(key: string): Promise<void> {
   await waitForEnter();
 }
 
-export async function appCommand(): Promise<void> {
+export interface AppOptions {
+  chatKey?: string;
+}
+
+export async function appCommand(options: AppOptions = {}): Promise<void> {
   if (!(await globalConfigExists())) {
     error('No inicializado. Ejecuta `jm init` primero.');
     process.exit(1);
@@ -92,6 +97,8 @@ export async function appCommand(): Promise<void> {
   const { runApp } = await loadTui();
   let projectKey = await readProjectKey();
   let unlocked = false;
+  let initialChatKey = options.chatKey ?? null;
+  const chat = createChatBridge(projectRoot(), sessionJira);
 
   try {
     for (;;) {
@@ -100,6 +107,8 @@ export async function appCommand(): Promise<void> {
         stories: await loadSummaries(projectKey),
         loadStories: loadSummaries,
         unlocked,
+        chat,
+        initialChatKey,
         fetchEpics: async (): Promise<BrowseItem[]> =>
           (await sessionJira().searchIssues(buildEpicsJql(requireProjectKey(projectKey)))).slice(0, BROWSE_LIMIT).map(toBrowseItem),
         fetchStories: async (epicKey): Promise<BrowseItem[]> =>
@@ -128,8 +137,10 @@ export async function appCommand(): Promise<void> {
           }
         },
       });
+      initialChatKey = null;
       if (!action) break;
-      await refineAndReturn(action.key);
+      chat.closeNow();
+      await handoffAndReturn(action.key);
     }
   } finally {
     clearSession();

@@ -121,7 +121,8 @@ export function buildProgram(): Command {
     .action(exportCommand);
 
   program.command('refinar [issueKey]')
-    .description('Refinar una historia con Claude Code: debate, plan y estimación PERT')
+    .description('Refinar una historia: debate, plan y estimación PERT (en la app; --claude abre Claude Code completo)')
+    .option('--claude', 'Abrir la interfaz completa de Claude Code en lugar del chat de la app')
     .action(refineCommand);
 
   return program;

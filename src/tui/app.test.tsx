@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { App } from './app.js';
+import { createFakeChat } from './test-support.js';
 import { HOME_TEXTS, MANUAL_KEY_TEXTS } from './texts.js';
 
 const ENTER = '\r';
@@ -11,6 +12,7 @@ const TICK_MS = 50;
 
 const NO_ITEMS = async () => [];
 const noopProps = {
+  chat: createFakeChat().chat,
   unlock: async () => ({ ok: true }),
   fetchEpics: NO_ITEMS,
   fetchStories: NO_ITEMS,
@@ -42,10 +44,10 @@ const STORIES = [
 ];
 const DOWN = '[B';
 
-test('lista las historias y Enter devuelve la acción de refinar', async () => {
-  const actions: Array<{ type: string; key: string }> = [];
+test('lista las historias y Enter abre el chat de la historia elegida', async () => {
+  const fake = createFakeChat();
   const { stdin, lastFrame } = render(
-    <App projectKey="AQ" stories={STORIES} unlocked {...noopProps} onAction={(a) => actions.push(a)} />,
+    <App projectKey="AQ" stories={STORIES} unlocked {...noopProps} chat={fake.chat} />,
   );
   const frame = lastFrame() ?? '';
   assert.ok(frame.includes('AQ-45') && frame.includes('AQ-46') && frame.includes('riesgos'));
@@ -53,14 +55,12 @@ test('lista las historias y Enter devuelve la acción de refinar', async () => {
   await tick();
   stdin.write(ENTER);
   await tick();
-  assert.deepEqual(actions, [{ type: 'refine', key: 'AQ-46' }]);
+  assert.deepEqual(fake.calls.opened, ['AQ-46']);
 });
 
 test('n y luego / abre la entrada de clave y rechaza una inválida', async () => {
-  const actions: Array<{ type: string; key: string }> = [];
-  const { stdin, lastFrame } = render(
-    <App projectKey="AQ" stories={[]} unlocked {...noopProps} onAction={(a) => actions.push(a)} />,
-  );
+  const fake = createFakeChat();
+  const { stdin, lastFrame } = render(<App projectKey="AQ" stories={[]} unlocked {...noopProps} chat={fake.chat} />);
   assert.ok((lastFrame() ?? '').includes(HOME_TEXTS.empty));
   stdin.write('n');
   await tick();
@@ -71,14 +71,12 @@ test('n y luego / abre la entrada de clave y rechaza una inválida', async () =>
   stdin.write(ENTER);
   await tick();
   assert.ok((lastFrame() ?? '').includes(MANUAL_KEY_TEXTS.invalidKey));
-  assert.equal(actions.length, 0);
+  assert.equal(fake.calls.opened.length, 0);
 });
 
 test('n y luego k abre la entrada de clave y acepta una válida en minúsculas', async () => {
-  const actions: Array<{ type: string; key: string }> = [];
-  const { stdin } = render(
-    <App projectKey="AQ" stories={[]} unlocked {...noopProps} onAction={(a) => actions.push(a)} />,
-  );
+  const fake = createFakeChat();
+  const { stdin } = render(<App projectKey="AQ" stories={[]} unlocked {...noopProps} chat={fake.chat} />);
   stdin.write('n');
   await tick();
   stdin.write('k');
@@ -87,7 +85,7 @@ test('n y luego k abre la entrada de clave y acepta una válida en minúsculas',
   await tick();
   stdin.write(ENTER);
   await tick();
-  assert.deepEqual(actions, [{ type: 'refine', key: 'AQ-9' }]);
+  assert.deepEqual(fake.calls.opened, ['AQ-9']);
 });
 
 test('muestra el error y permite reintentar cuando el PIN es incorrecto', async () => {

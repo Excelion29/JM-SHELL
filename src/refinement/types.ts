@@ -43,6 +43,14 @@ export interface StoryAttachment {
   uploaded: Record<string, string>;
 }
 
+export interface StoryUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  costUsd: number;
+  turns: number;
+}
+
 export interface StoryState {
   key: string;
   summary: string;
@@ -52,6 +60,7 @@ export interface StoryState {
   parentKey: string | null;
   createdIssues: Record<string, string>;
   attachments: StoryAttachment[];
+  usage: StoryUsage;
   updatedAt: string;
 }
 

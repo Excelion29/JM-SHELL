@@ -51,6 +51,23 @@ Pedido del dev al probar: `n` solo pedía escribir la clave. Ahora:
 - `p` → cambiar de proyecto: actualiza `projectKey` del `.jira.json` del proyecto (confirma antes de pisar uno distinto).
 - Al crear `.jm/` se escribe `.jm/.gitignore` con `historias/*/adjuntos/`.
 
+### Parte 2.6 — Debate dentro de la app y reparto de modelos (agregada 2026-11-04)
+
+Pedido del dev: no saltar a la interfaz de Claude y no gastar tokens de más.
+
+- El debate se muestra en una pantalla de `jm`, usando `claude -p` con stream-json (suscripción, sin API key).
+  Esc vuelve al inicio con la sesión guardada; `c` abre Claude Code completo como alternativa.
+- Permisos de la sesión: solo lectura del código y escritura en `.jm/historias/<KEY>/`.
+- Modelos por actividad: conversación en **Sonnet**; subagente "explorador" en **Haiku** (solo lectura, devuelve
+  mapa `archivo:línea`); resumen de retoma en Haiku; **Opus** solo a pedido (`o`), retomando la misma sesión.
+- Consumo visible por historia (tokens y costo equivalente) guardado en `estado.json`; si la sesión crece de más,
+  se propone continuar en sesión nueva desde la bitácora.
+- La copia local de la conversación se guarda ignorada por git.
+- Bug: al abrir Claude completo, `jm` retenía el teclado en Windows; se suelta stdin antes de lanzar Claude.
+- Decisiones aceptadas por el dev (2026-11-04): atajos del chat con Ctrl (Ctrl+O Opus, Ctrl+N sesión nueva,
+  Ctrl+T Claude completo, Ctrl+J salto de línea); resumen de retoma con Sonnet; la skill viaja dentro de `jm`
+  (`--append-system-prompt-file`) y el chat no carga configuración de usuario ni del proyecto.
+
 ## Fuera de alcance
 
 - Fase 2: `list` / `get` / `move` / `edit` / `use` como pantallas de la app.
@@ -111,3 +128,5 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Commit renombre JM-SHELL | Marcello Cano | 2026-11-04 | aprobado; instalador nuevo pendiente de prueba |
 | Accept parte 2.5 (explorar Jira) | Marcello Cano | 2026-11-04 | aprobado ("claro") |
 | Commit parte 2.5 | Marcello Cano | 2026-11-04 | aprobado ("okey genial", probado: abre Claude desde la app) |
+| Accept parte 2.6 (debate en la app + modelos) | Marcello Cano | 2026-11-04 | aprobado ("me gusta") |
+| Commit parte 2.6 | Marcello Cano | 2026-11-04 | aprobado ("si apruebo"); prueba en terminal real pendiente |

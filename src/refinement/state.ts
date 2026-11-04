@@ -16,6 +16,7 @@ import {
   StoryAttachment,
   StoryState,
   StorySummary,
+  StoryUsage,
 } from './types';
 
 const PROJECT_CONFIG_NAME = '.jira.json';
@@ -27,7 +28,16 @@ const STORY_FILE = 'historia.md';
 const LOG_FILE = 'bitacora.md';
 const DASHBOARD_FILE = 'INICIO.md';
 const GITIGNORE_FILE = '.gitignore';
-const GITIGNORE_CONTENT = `${STORIES_DIR}/*/${ATTACHMENTS_DIR}/\n`;
+export const CHAT_FILE = '.chat.jsonl';
+export const AGENTS_FILE = 'agents.json';
+export const CLAUDE_SETTINGS_FILE = 'claude-settings.json';
+// Adjuntos temporales, copia local del chat y definición de subagentes: nada de esto va al repositorio
+const GITIGNORE_LINES = [
+  `${STORIES_DIR}/*/${ATTACHMENTS_DIR}/`,
+  `${STORIES_DIR}/*/${CHAT_FILE}`,
+  AGENTS_FILE,
+  CLAUDE_SETTINGS_FILE,
+];
 // Mismo formato que ISSUE_KEY_PATTERN en src/tui/texts.ts
 const ISSUE_KEY_STRICT = /^[A-Z][A-Z0-9_]+-\d+$/;
 const NO_BLOCK_LABEL = '—';
@@ -66,6 +76,9 @@ export const planPath = (root: string, key: string) => path.join(storyDir(root, 
 export const storyDocPath = (root: string, key: string) => path.join(storyDir(root, key), STORY_FILE);
 export const logPath = (root: string, key: string) => path.join(storyDir(root, key), LOG_FILE);
 export const attachmentsDir = (root: string, key: string) => path.join(storyDir(root, key), ATTACHMENTS_DIR);
+export const chatPath = (root: string, key: string) => path.join(storyDir(root, key), CHAT_FILE);
+export const agentsPath = (root: string) => path.join(root, JM_DIR, AGENTS_FILE);
+export const claudeSettingsPath = (root: string) => path.join(root, JM_DIR, CLAUDE_SETTINGS_FILE);
 export const dashboardPath = (root: string) => path.join(root, JM_DIR, DASHBOARD_FILE);
 
 export function assertKey(key: string): void {
@@ -125,6 +138,22 @@ function readBlock(raw: RawRecord, file: string): Block | null {
 const readSessionId = (value: unknown): string | null =>
   typeof value === 'string' && SESSION_ID_PATTERN.test(value) ? value : null;
 
+const readCount = (value: unknown): number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+
+export const emptyUsage = (): StoryUsage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, turns: 0 });
+
+function readUsage(value: unknown): StoryUsage {
+  if (!isRecord(value)) return emptyUsage();
+  return {
+    inputTokens: readCount(value.inputTokens),
+    outputTokens: readCount(value.outputTokens),
+    cacheReadTokens: readCount(value.cacheReadTokens),
+    costUsd: readCount(value.costUsd),
+    turns: readCount(value.turns),
+  };
+}
+
 // La clave sale siempre de la carpeta/argumento validado, nunca del contenido del archivo
 function normalize(raw: unknown, key: string, file: string, progressed: boolean): StoryState {
   if (!isRecord(raw)) throw new Error('el contenido no es un objeto JSON');
@@ -138,6 +167,7 @@ function normalize(raw: unknown, key: string, file: string, progressed: boolean)
     parentKey: typeof raw.parentKey === 'string' ? raw.parentKey : null,
     createdIssues: readStringMap(raw.createdIssues),
     attachments: readAttachments(raw.attachments),
+    usage: readUsage(raw.usage),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date(0).toISOString(),
   };
 }
@@ -180,12 +210,18 @@ export async function updateState(root: string, key: string, mutate: (state: Sto
   return current;
 }
 
-// Los adjuntos son temporales: nunca deben llegar al repositorio
+// Agrega las líneas que falten sin pisar lo que el dev ya puso
 export function ensureJmGitignore(root: string): void {
   const jmDir = path.join(root, JM_DIR);
   safeEnsureDir(root, jmDir);
   const file = path.join(jmDir, GITIGNORE_FILE);
-  if (!lexists(file)) safeWriteFile(root, file, GITIGNORE_CONTENT);
+  const current = lexists(file) ? fs.readFileSync(file, 'utf8') : '';
+  if (current) assertNoLinks(root, file);
+  const present = new Set(current.split(/\r?\n/).map((line) => line.trim()));
+  const missing = GITIGNORE_LINES.filter((line) => !present.has(line));
+  if (!missing.length) return;
+  const separator = current && !current.endsWith('\n') ? '\n' : '';
+  safeWriteFile(root, file, `${current}${separator}${missing.join('\n')}\n`);
 }
 
 export async function ensureStory(
@@ -245,6 +281,7 @@ function unreadableStory(key: string): StoryState {
     parentKey: null,
     createdIssues: {},
     attachments: [],
+    usage: emptyUsage(),
     updatedAt: UNREADABLE_STATE_EPOCH,
   };
 }

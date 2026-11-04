@@ -5,6 +5,7 @@ import { requireAuth } from '../utils/auth';
 import { resolveIssueKey } from '../utils/context';
 import { adfToMarkdown } from '../utils/adf';
 import { formatSeconds } from '../utils/time';
+import { releaseStdin } from '../utils/terminal';
 import { error, info, success, warn } from '../utils/format';
 import { attachmentFileName, MAX_ATTACHMENT_BYTES, resolveInside } from '../refinement/attachments';
 import { isClaudeAvailable, launchClaude, runClaude } from '../refinement/claude';
@@ -80,7 +81,7 @@ async function downloadAttachments(
   }
 }
 
-async function prepareStory(jira: JiraService, root: string, key: string): Promise<void> {
+export async function prepareStory(jira: JiraService, root: string, key: string): Promise<void> {
   const issue = await jira.getIssueWithDescription(key);
   const attachments = await jira.getAttachments(key);
   await ensureStory(root, key, issue.fields.summary, issue.fields.parent?.key ?? null);
@@ -89,7 +90,7 @@ async function prepareStory(jira: JiraService, root: string, key: string): Promi
   await advancePhase(root, key, 'debate');
 }
 
-async function ensureSkill(): Promise<void> {
+export async function ensureSkill(): Promise<void> {
   try {
     const result = await installSkill();
     if (result === 'missing-asset') warn('No encontré la skill /refinar dentro del paquete. Reinstala JM-SHELL.');
@@ -125,6 +126,7 @@ async function runClaudeSession(root: string, key: string): Promise<void> {
   const state = await readState(root, key);
   const sessionStartMs = Date.now();
   info('Abriendo Claude Code. Cuando termines, sal con /exit para volver aquí.');
+  releaseStdin();
   try {
     await launchClaude({
       key,
@@ -158,11 +160,21 @@ export async function runRefine(key: string): Promise<void> {
   await runClaudeSession(root, key);
 }
 
-export async function refineCommand(issueKeyArg?: string): Promise<void> {
+export interface RefineOptions {
+  claude?: boolean;
+}
+
+export async function refineCommand(issueKeyArg?: string, options: RefineOptions = {}): Promise<void> {
   try {
     const key = await resolveIssueKey(issueKeyArg);
     if (!isValidIssueKey(key)) throw new Error(`Clave inválida: "${key}". Usa el formato AQ-45.`);
-    await runRefine(key);
+    if (options.claude) {
+      await runRefine(key);
+      return;
+    }
+    // Import dinámico: app.ts importa este módulo
+    const { appCommand } = await import('./app.js');
+    await appCommand({ chatKey: key });
   } catch (err: unknown) {
     error((err as Error).message);
     process.exit(1);

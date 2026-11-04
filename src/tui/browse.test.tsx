@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { App, AppAction } from './app.js';
+import { createFakeChat } from './test-support.js';
 import { BROWSE_LIMIT, BROWSE_TEXTS, HOME_TEXTS, PROJECT_TEXTS } from './texts.js';
 
 const ENTER = '\r';
@@ -41,6 +42,7 @@ const LOCAL_BY_PROJECT: Record<string, typeof LOCAL> = {
 
 function setup(overrides: Partial<React.ComponentProps<typeof App>> = {}) {
   const actions: AppAction[] = [];
+  const fake = createFakeChat();
   const calls = { stories: [] as Array<string | null>, projects: [] as string[] };
   const utils = render(
     <App
@@ -53,6 +55,7 @@ function setup(overrides: Partial<React.ComponentProps<typeof App>> = {}) {
       fetchProjects={async () => PROJECTS}
       loadStories={async (key) => LOCAL_BY_PROJECT[key ?? ''] ?? []}
       setProject={async (key) => (calls.projects.push(key), { ok: true })}
+      chat={fake.chat}
       onAction={(a) => actions.push(a)}
       {...overrides}
     />,
@@ -61,7 +64,7 @@ function setup(overrides: Partial<React.ComponentProps<typeof App>> = {}) {
     utils.stdin.write(data);
     await tick();
   };
-  return { ...utils, press, actions, calls, frame: () => utils.lastFrame() ?? '' };
+  return { ...utils, press, actions, calls, fake, frame: () => utils.lastFrame() ?? '' };
 }
 
 test('n lista las épicas y Enter en una épica muestra sus historias con el marcador local', async () => {
@@ -76,13 +79,14 @@ test('n lista las épicas y Enter en una épica muestra sus historias con el mar
   assert.ok(app.frame().includes(BROWSE_TEXTS.localMarker('debate')));
 });
 
-test('elegir una historia devuelve la acción de refinar', async () => {
+test('elegir una historia abre el chat dentro de la app', async () => {
   const app = setup();
   await app.press('n');
   await app.press(DOWN);
   await app.press(ENTER);
   await app.press(ENTER);
-  assert.deepEqual(app.actions, [{ type: 'refine', key: 'AQ-10' }]);
+  assert.deepEqual(app.fake.calls.opened, ['AQ-10']);
+  assert.deepEqual(app.actions, []);
 });
 
 test('la fila "sin épica" pide historias con epicKey null', async () => {

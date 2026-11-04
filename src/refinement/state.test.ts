@@ -6,6 +6,7 @@ import * as path from 'path';
 import {
   advancePhase,
   dashboardPath,
+  emptyUsage,
   ensureJmGitignore,
   ensureStory,
   listStories,
@@ -182,13 +183,42 @@ test('el resumen leído de estado.json pierde los caracteres de control', async 
   assert.equal((await readState(root, 'AQ-45'))?.summary, 'Hola[2Jmundo');
 });
 
-test('ensureStory crea .jm/.gitignore una vez y no lo sobrescribe', async () => {
+test('ensureStory crea .jm/.gitignore con todas las líneas y no las duplica', async () => {
   const root = await tempRoot();
   const gitignore = path.join(root, '.jm', '.gitignore');
   await ensureStory(root, 'AQ-45', 'Login', null);
-  assert.equal(await fs.readFile(gitignore, 'utf8'), 'historias/*/adjuntos/\n');
-  await fs.writeFile(gitignore, 'personalizado\n');
+  const expected = 'historias/*/adjuntos/\nhistorias/*/.chat.jsonl\nagents.json\nclaude-settings.json\n';
+  assert.equal(await fs.readFile(gitignore, 'utf8'), expected);
   await ensureStory(root, 'AQ-46', 'Otra', null);
+  assert.equal(await fs.readFile(gitignore, 'utf8'), expected);
+});
+
+test('ensureJmGitignore agrega las líneas que faltan sin pisar las del dev', async () => {
+  const root = await tempRoot();
+  const gitignore = path.join(root, '.jm', '.gitignore');
+  await fs.ensureDir(path.join(root, '.jm'));
+  await fs.writeFile(gitignore, 'personalizado\nhistorias/*/adjuntos/');
   ensureJmGitignore(root);
-  assert.equal(await fs.readFile(gitignore, 'utf8'), 'personalizado\n');
+  assert.equal(
+    await fs.readFile(gitignore, 'utf8'),
+    'personalizado\nhistorias/*/adjuntos/\nhistorias/*/.chat.jsonl\nagents.json\nclaude-settings.json\n',
+  );
+});
+
+test('el uso acumulado se lee con validación: valores inválidos valen 0', async () => {
+  const root = await tempRoot();
+  await ensureStory(root, 'AQ-45', 'Login', null);
+  assert.deepEqual((await readState(root, 'AQ-45'))?.usage, emptyUsage());
+  const file = statePath(root, 'AQ-45');
+  await fs.writeJson(file, {
+    ...(await fs.readJson(file)),
+    usage: { inputTokens: 10, outputTokens: -5, cacheReadTokens: 'x', costUsd: 0.5, turns: 2 },
+  });
+  assert.deepEqual((await readState(root, 'AQ-45'))?.usage, {
+    inputTokens: 10,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    costUsd: 0.5,
+    turns: 2,
+  });
 });

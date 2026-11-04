@@ -26,11 +26,14 @@ credenciales (`~/.jira-tool/`, `.env*`).
 
 ## Al empezar
 
-1. Lee `estado.json`, `historia.md`, `bitacora.md` y los adjuntos.
+1. Lee `estado.json`, `historia.md` y `bitacora.md`. De `adjuntos/` mira solo la lista de nombres: abre una imagen o PDF
+   únicamente cuando el bloque en curso lo necesite (son caros de leer).
 2. **Si la bitácora ya tiene bloques cerrados, estás retomando.** Resume en dos líneas lo decidido y sigue en el bloque de
    `estado.json` ("Íbamos en riesgos; ya cerramos alcance y dependencias. Sigamos.").
-3. Si es nueva: mira el proyecto lo justo para hablar con evidencia — `CLAUDE.md`, la estructura, el módulo que toca la
-   historia, cómo son sus tests. Búsquedas puntuales, no un recorrido completo.
+3. Si es nueva: necesitas contexto del proyecto para hablar con evidencia. **No explores el código tú mismo:** si está
+   disponible el subagente `explorador`, pídele un mapa corto (archivos clave con `archivo:línea`, patrón a seguir, cómo
+   son los tests del módulo que toca la historia). Trabaja con ese mapa y pídele más solo cuando una pregunta concreta lo
+   requiera. Si no está disponible, haz búsquedas puntuales, no un recorrido completo.
 4. Pregunta en una línea quién la va a hacer (normalmente el dev mismo) y qué tan conocida le es esa parte del código.
 5. Pon `phase: "debate"` y `block: "scope"` en `estado.json`.
 

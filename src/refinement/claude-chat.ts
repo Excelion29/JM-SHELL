@@ -1,0 +1,459 @@
+import { randomUUID } from 'crypto';
+import * as path from 'path';
+import type { ChatModel } from './chat-types';
+import {
+  assertSafeArgs,
+  CHAT_DISALLOWED_TOOLS,
+  CHAT_KEY_SOURCE,
+  CHAT_MODEL_NAMES,
+  chatAllowedTools,
+  SESSION_ID_PATTERN,
+  spawnClaude,
+} from './claude';
+import { stripControlChars } from './text';
+import { emptyTurnUsage, TurnUsage } from './usage';
+
+export const MODELS = { conversation: 'sonnet', explorer: 'haiku', deep: 'opus' } as const satisfies Record<
+  string,
+  ChatModel
+>;
+
+// Un --resume con sesión inexistente termina casi al instante con código != 0
+const RESUME_FAIL_WINDOW_MS = 5000;
+// Si el hijo no cierra solo tras cerrar su stdin, se corta para no dejar procesos huérfanos
+const CLOSE_GRACE_MS = 60_000;
+const TARGET_MAX_CHARS = 80;
+const STDERR_TAIL_CHARS = 300;
+const KEY_PATTERN = new RegExp(`^${CHAT_KEY_SOURCE}$`);
+// Una línea sin salto de línea más larga que esto es basura o un fallo: se descarta
+const NDJSON_BUFFER_MAX_CHARS = 8 * 1024 * 1024;
+const SUBAGENT_TOOLS = new Set(['Agent', 'Task']);
+
+export const CHAT_MESSAGES = {
+  first: (key: string) => `Sigue la skill refinar para la historia ${key}.`,
+  resumed: (key: string) =>
+    `Retomamos la historia ${key}. Resume en 2 líneas lo decidido y dónde íbamos, y sigue desde ahí.`,
+  fromLog: (key: string) =>
+    `Esta es una sesión nueva de la historia ${key}. Retoma desde bitacora.md y estado.json: resume en 2 líneas lo decidido y sigue en el bloque actual.`,
+} as const;
+
+export const EXPLORER_AGENTS = {
+  explorador: {
+    description: 'Explora el código del proyecto en solo lectura y devuelve un mapa archivo:línea de lo relevante.',
+    prompt:
+      'Eres un explorador de código de solo lectura. Busca con Grep, Glob y Read lo que te pidan y responde corto: ' +
+      'una lista de archivo:línea con una frase por cada hallazgo. No propongas cambios ni escribas archivos.',
+    tools: ['Read', 'Grep', 'Glob'],
+    model: MODELS.explorer,
+  },
+} as const;
+
+export type ChatEvent =
+  | { type: 'textDelta'; text: string }
+  | { type: 'assistantText'; text: string }
+  | { type: 'toolActivity'; tool: string; target: string }
+  | { type: 'turnEnd'; usage: TurnUsage; costUsd: number; isError: boolean }
+  | { type: 'error'; message: string }
+  | { type: 'exit'; code: number | null };
+
+type Raw = Record<string, unknown>;
+const isRaw = (value: unknown): value is Raw => typeof value === 'object' && value !== null && !Array.isArray(value);
+const num = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0);
+const clean = (text: string) => stripControlChars(text).slice(0, TARGET_MAX_CHARS);
+
+function toolTarget(tool: string, input: unknown): string {
+  if (!isRaw(input)) return '';
+  const candidates = SUBAGENT_TOOLS.has(tool)
+    ? [input.subagent_type, input.description]
+    : [input.file_path, input.path, input.pattern, input.description];
+  const found = candidates.find((value): value is string => typeof value === 'string' && value !== '');
+  return found ? stripControlChars(found) : '';
+}
+
+function fromAssistant(raw: Raw): ChatEvent[] {
+  const message = raw.message;
+  if (!isRaw(message) || !Array.isArray(message.content)) return [];
+  const fromSubagent = typeof raw.parent_tool_use_id === 'string';
+  const events: ChatEvent[] = [];
+  for (const block of message.content) {
+    if (!isRaw(block)) continue;
+    if (block.type === 'text' && typeof block.text === 'string' && block.text !== '' && !fromSubagent) {
+      events.push({ type: 'assistantText', text: block.text });
+    } else if (block.type === 'tool_use' && typeof block.name === 'string') {
+      events.push({ type: 'toolActivity', tool: clean(block.name), target: toolTarget(block.name, block.input) });
+    }
+  }
+  return events;
+}
+
+function fromStream(raw: Raw): ChatEvent[] {
+  const event = raw.event;
+  if (typeof raw.parent_tool_use_id === 'string' || !isRaw(event) || event.type !== 'content_block_delta') return [];
+  const delta = event.delta;
+  if (!isRaw(delta) || delta.type !== 'text_delta' || typeof delta.text !== 'string') return [];
+  return [{ type: 'textDelta', text: delta.text }];
+}
+
+function fromResult(raw: Raw): ChatEvent[] {
+  const usage = isRaw(raw.usage) ? raw.usage : {};
+  return [
+    {
+      type: 'turnEnd',
+      usage: {
+        ...emptyTurnUsage(),
+        inputTokens: num(usage.input_tokens),
+        outputTokens: num(usage.output_tokens),
+        cacheReadTokens: num(usage.cache_read_input_tokens),
+        cacheCreationTokens: num(usage.cache_creation_input_tokens),
+      },
+      costUsd: num(raw.total_cost_usd),
+      isError: raw.is_error === true || raw.subtype !== 'success',
+    },
+  ];
+}
+
+export function toChatEvents(raw: unknown): ChatEvent[] {
+  if (!isRaw(raw)) return [];
+  if (raw.type === 'stream_event') return fromStream(raw);
+  if (raw.type === 'assistant') return fromAssistant(raw);
+  if (raw.type === 'result') return fromResult(raw);
+  return [];
+}
+
+export interface NdjsonParser {
+  push: (chunk: string) => void;
+  flush: () => void;
+  readonly ignoredLines: number;
+}
+
+// Las líneas que no son JSON se descartan y se cuentan; nunca se imprimen (la terminal es de la app)
+export function createNdjsonParser(onEvent: (event: ChatEvent) => void): NdjsonParser {
+  let buffer = '';
+  let ignored = 0;
+  const handleLine = (line: string) => {
+    if (!line.trim()) return;
+    try {
+      toChatEvents(JSON.parse(line)).forEach(onEvent);
+    } catch {
+      ignored += 1;
+    }
+  };
+  return {
+    push(chunk) {
+      buffer += chunk;
+      let start = 0;
+      let index = buffer.indexOf('\n', start);
+      while (index >= 0) {
+        handleLine(buffer.slice(start, index));
+        start = index + 1;
+        index = buffer.indexOf('\n', start);
+      }
+      buffer = buffer.slice(start);
+      if (buffer.length > NDJSON_BUFFER_MAX_CHARS) {
+        buffer = '';
+        onEvent({ type: 'error', message: 'Claude envió una línea demasiado larga y la descarté.' });
+      }
+    },
+    flush() {
+      handleLine(buffer);
+      buffer = '';
+    },
+    get ignoredLines() {
+      return ignored;
+    },
+  };
+}
+
+// Ajustes que jm le pasa a claude: sin hooks y con los mismos permisos que el allowlist de argv
+export function buildChatSettings(key: string): Record<string, unknown> {
+  if (!KEY_PATTERN.test(key)) throw new Error(`Clave de historia inválida para el chat: "${key}".`);
+  return {
+    disableAllHooks: true,
+    permissions: { allow: chatAllowedTools(key).split(','), deny: CHAT_DISALLOWED_TOOLS.split(',') },
+  };
+}
+
+export interface ChatArgsInput {
+  key: string;
+  model: ChatModel;
+  sessionId: string;
+  resume: boolean;
+  skillFile: string;
+  agentsFile: string;
+  settingsFile: string;
+}
+
+// El texto del dev nunca va aquí: viaja por stdin. Todo lo de abajo lo genera jm.
+export function buildChatArgs({ key, model, sessionId, resume, skillFile, agentsFile, settingsFile }: ChatArgsInput): string[] {
+  if (!KEY_PATTERN.test(key)) throw new Error(`Clave de historia inválida para el chat: "${key}".`);
+  if (!CHAT_MODEL_NAMES.includes(model)) throw new Error(`Modelo no permitido para el chat: "${model}".`);
+  if (!SESSION_ID_PATTERN.test(sessionId)) throw new Error('Id de sesión inválido para el chat.');
+  return [
+    '-p',
+    '--input-format',
+    'stream-json',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+    '--setting-sources',
+    '',
+    '--strict-mcp-config',
+    '--settings',
+    settingsFile,
+    '--permission-mode',
+    'dontAsk',
+    '--model',
+    model,
+    '--allowedTools',
+    chatAllowedTools(key),
+    '--disallowedTools',
+    CHAT_DISALLOWED_TOOLS,
+    '--agents',
+    agentsFile,
+    '--append-system-prompt-file',
+    skillFile,
+    resume ? '--resume' : '--session-id',
+    sessionId,
+  ];
+}
+
+export interface ChatProcess {
+  write: (line: string) => void;
+  end: () => void;
+  kill: () => void;
+  onData: (listener: (chunk: string) => void) => void;
+  onStderr: (listener: (chunk: string) => void) => void;
+  onExit: (listener: (code: number | null) => void) => void;
+  onError: (listener: (error: Error) => void) => void;
+}
+
+export type ChatSpawner = (args: string[], cwd: string) => ChatProcess;
+
+export const spawnChatProcess: ChatSpawner = (args, cwd) => {
+  const child = spawnClaude(args, cwd, ['pipe', 'pipe', 'pipe']);
+  child.stdout?.setEncoding('utf8');
+  child.stderr?.setEncoding('utf8');
+  const errorListeners: Array<(error: Error) => void> = [];
+  const fail = (error: Error) => errorListeners.forEach((listener) => listener(error));
+  // EPIPE al escribir en un hijo que ya murió llega como evento: sin este handler tumbaría jm
+  child.stdin?.on('error', fail);
+  child.on('error', fail);
+  return {
+    write: (line) => {
+      if (!child.stdin?.writable) throw new Error('El proceso de Claude ya no acepta mensajes.');
+      child.stdin.write(line);
+    },
+    end: () => void child.stdin?.end(),
+    kill: () => void child.kill(),
+    onData: (listener) => void child.stdout?.on('data', listener),
+    onStderr: (listener) => void child.stderr?.on('data', listener),
+    onExit: (listener) => void child.on('close', listener),
+    onError: (listener) => void errorListeners.push(listener),
+  };
+};
+
+export interface ChatSessionOptions {
+  root: string;
+  skillFile: string;
+  agentsFile: string;
+  settingsFile: string;
+  saveSessionId: (sessionId: string) => Promise<void> | void;
+  spawner?: ChatSpawner;
+  newSessionId?: () => string;
+  now?: () => number;
+}
+
+export interface ChatStartOptions {
+  key: string;
+  sessionId: string | null;
+  model: ChatModel;
+}
+
+type Listener = (event: ChatEvent) => void;
+
+export class ChatSession {
+  private readonly spawner: ChatSpawner;
+  private readonly newSessionId: () => string;
+  private readonly now: () => number;
+  private listener: Listener = () => undefined;
+  private process: ChatProcess | null = null;
+  private key = '';
+  private sessionId = '';
+  private model: ChatModel = MODELS.conversation;
+  private busy = false;
+
+  constructor(private readonly options: ChatSessionOptions) {
+    this.spawner = options.spawner ?? spawnChatProcess;
+    this.newSessionId = options.newSessionId ?? randomUUID;
+    this.now = options.now ?? Date.now;
+  }
+
+  onEvent(listener: Listener): void {
+    this.listener = listener;
+  }
+
+  get currentModel(): ChatModel {
+    return this.model;
+  }
+
+  get currentSessionId(): string {
+    return this.sessionId;
+  }
+
+  get isBusy(): boolean {
+    return this.busy;
+  }
+
+  async start({ key, sessionId, model }: ChatStartOptions): Promise<void> {
+    this.key = key;
+    this.model = model;
+    if (sessionId) {
+      this.sessionId = sessionId;
+      this.launch(true, CHAT_MESSAGES.resumed(key));
+      return;
+    }
+    await this.startFresh(CHAT_MESSAGES.first(key));
+  }
+
+  // Sesión nueva (otro uuid) que retoma desde la bitácora en lugar de arrastrar el contexto
+  async startFromLog(): Promise<void> {
+    this.detach(true);
+    await this.startFresh(CHAT_MESSAGES.fromLog(this.key));
+  }
+
+  send(text: string): void {
+    if (!this.process) throw new Error('La conversación no está abierta.');
+    this.busy = true;
+    try {
+      this.process.write(this.userLine(text));
+    } catch (err: unknown) {
+      this.busy = false;
+      throw new Error(`No pude enviar el mensaje: ${(err as Error).message}`);
+    }
+  }
+
+  // Misma sesión, otro modelo: Claude solo cambia de modelo al arrancar, así que se retoma con --resume
+  switchModel(model: ChatModel): void {
+    if (model === this.model) return;
+    if (this.busy) {
+      this.listener({ type: 'error', message: 'Espera a que termine la respuesta para cambiar de modelo.' });
+      return;
+    }
+    this.detach(true);
+    this.model = model;
+    this.launch(true, null);
+  }
+
+  // force=false deja terminar la vuelta en curso y el hijo sale solo al cerrarse su stdin
+  close(force = false): void {
+    this.detach(force);
+  }
+
+  private async startFresh(firstMessage: string): Promise<void> {
+    this.sessionId = this.newSessionId();
+    await this.options.saveSessionId(this.sessionId);
+    this.launch(false, firstMessage);
+  }
+
+  private userLine = (text: string) =>
+    `${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`;
+
+  private detach(force: boolean): void {
+    const current = this.process;
+    this.process = null;
+    this.busy = false;
+    if (!current) return;
+    current.end();
+    if (force) {
+      current.kill();
+      return;
+    }
+    setTimeout(() => current.kill(), CLOSE_GRACE_MS).unref();
+  }
+
+  private launch(resume: boolean, firstMessage: string | null): void {
+    const args = buildChatArgs({
+      key: this.key,
+      model: this.model,
+      sessionId: this.sessionId,
+      resume,
+      skillFile: this.options.skillFile,
+      agentsFile: this.options.agentsFile,
+      settingsFile: this.options.settingsFile,
+    });
+    assertSafeArgs(args);
+    let sawTurn = false;
+    // total_cost_usd es acumulado por proceso (verificado con 2 vueltas reales): se registra la diferencia
+    let lastTotalCost = 0;
+    const parser = createNdjsonParser((event) => {
+      if (event.type !== 'turnEnd') return this.handle(proc, event);
+      sawTurn = true;
+      const delta = Math.max(0, event.costUsd - lastTotalCost);
+      lastTotalCost = event.costUsd;
+      this.handle(proc, { ...event, costUsd: delta });
+    });
+    const proc = this.spawner(args, this.options.root);
+    this.process = proc;
+    const started = this.now();
+    let stderrTail = '';
+    proc.onData((chunk) => parser.push(chunk));
+    proc.onStderr((chunk) => {
+      stderrTail = `${stderrTail}${chunk}`.slice(-STDERR_TAIL_CHARS);
+    });
+    proc.onError((err) => this.handleFailure(proc, `No pude ejecutar claude: ${err.message}`));
+    proc.onExit((code) => {
+      parser.flush();
+      if (this.process !== proc) return;
+      this.process = null;
+      this.busy = false;
+      const failedFast = code !== 0 && !sawTurn && this.now() - started < RESUME_FAIL_WINDOW_MS;
+      if (resume && failedFast && firstMessage !== null) {
+        void this.startFresh(CHAT_MESSAGES.fromLog(this.key)).catch((err: unknown) =>
+          this.listener({ type: 'error', message: `No pude abrir una sesión nueva: ${(err as Error).message}` }),
+        );
+        return;
+      }
+      if (code !== 0 && stderrTail) {
+        this.listener({ type: 'error', message: `Claude terminó con error: ${stripControlChars(stderrTail.trim())}` });
+      }
+      this.listener({ type: 'exit', code });
+    });
+    if (firstMessage !== null) {
+      this.busy = true;
+      this.write(proc, firstMessage);
+    }
+  }
+
+  private write(proc: ChatProcess, text: string): void {
+    try {
+      proc.write(this.userLine(text));
+    } catch (err: unknown) {
+      this.handleFailure(proc, `No pude enviar el mensaje: ${(err as Error).message}`);
+    }
+  }
+
+  private handle(source: ChatProcess, event: ChatEvent): void {
+    if (this.process !== source) return;
+    if (event.type === 'turnEnd') this.busy = false;
+    if (event.type === 'toolActivity') {
+      this.listener({ ...event, target: this.relativeTarget(event.target) });
+      return;
+    }
+    this.listener(event);
+  }
+
+  private handleFailure(source: ChatProcess, message: string): void {
+    if (this.process !== source) return;
+    this.process = null;
+    this.busy = false;
+    source.kill();
+    this.listener({ type: 'error', message });
+  }
+
+  private relativeTarget(target: string): string {
+    const rooted = path.isAbsolute(target) ? path.relative(this.options.root, target) : target;
+    // Se conserva el final de la ruta: es lo que identifica el archivo
+    return (rooted.startsWith('..') ? target : rooted).slice(-TARGET_MAX_CHARS);
+  }
+}

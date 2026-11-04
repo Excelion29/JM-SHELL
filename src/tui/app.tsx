@@ -3,9 +3,11 @@ import { render, useApp } from 'ink';
 import { Frame } from './components/frame.js';
 import { HomeScreen } from './components/home-screen.js';
 // Solo tipos: se borra al compilar
+import type { ChatBridge } from '../refinement/chat-types.js';
 import type { BrowseItem, ProjectItem, StorySummary } from '../refinement/types.js';
 import { PinPrompt } from './components/pin-prompt.js';
 import { BrowseScreen } from './screens/browse-screen.js';
+import { ChatScreen } from './screens/chat-screen.js';
 import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
 import { FOOTER_HINTS, PIN_TEXTS } from './texts.js';
 
@@ -16,8 +18,9 @@ export interface UnlockResult {
   message?: string;
 }
 
+// Pedido de abrir Claude Code completo: se atiende con la app ya desmontada
 export interface AppAction {
-  type: 'refine';
+  type: 'handoff';
   key: string;
 }
 
@@ -31,16 +34,19 @@ export interface AppProps {
   fetchProjects: () => Promise<ProjectItem[]>;
   setProject: (key: string) => Promise<SetProjectResult>;
   loadStories: (projectKey: string | null) => Promise<StorySummary[]>;
+  chat: ChatBridge;
+  initialChatKey?: string | null;
   onAction?: (action: AppAction) => void;
 }
 
-type Stage = 'pin' | 'home' | 'browse' | 'projects';
+type Stage = 'pin' | 'home' | 'browse' | 'projects' | 'chat';
 
 const STAGE_HINTS: Record<Stage, string> = {
   pin: FOOTER_HINTS.pin,
   home: FOOTER_HINTS.home,
   browse: '',
   projects: '',
+  chat: FOOTER_HINTS.chat,
 };
 
 export function App({
@@ -53,10 +59,13 @@ export function App({
   fetchProjects,
   setProject,
   loadStories,
+  chat,
+  initialChatKey = null,
   onAction,
 }: AppProps) {
   const { exit } = useApp();
-  const [stage, setStage] = useState<Stage>(unlocked ? 'home' : 'pin');
+  const [chatKey, setChatKey] = useState<string | null>(initialChatKey);
+  const [stage, setStage] = useState<Stage>(unlocked ? (initialChatKey ? 'chat' : 'home') : 'pin');
   const [projectsReturnTo, setProjectsReturnTo] = useState<Stage>('home');
   const [projectKey, setProjectKey] = useState(initialProjectKey);
   const [stories, setStories] = useState(initialStories);
@@ -68,7 +77,7 @@ export function App({
     setPinError(null);
     try {
       const result = await unlock(pin);
-      if (result.ok) setStage('home');
+      if (result.ok) setStage(chatKey ? 'chat' : 'home');
       else setPinError(result.message ?? PIN_TEXTS.wrongPinFallback);
     } catch {
       setPinError(PIN_TEXTS.wrongPinFallback);
@@ -78,7 +87,18 @@ export function App({
   };
 
   const handleRefine = (key: string) => {
-    onAction?.({ type: 'refine', key });
+    setChatKey(key);
+    setStage('chat');
+  };
+
+  const leaveChat = async () => {
+    setChatKey(null);
+    setStories(await loadStories(projectKey));
+    setStage('home');
+  };
+
+  const handleHandoff = (key: string) => {
+    onAction?.({ type: 'handoff', key });
     exit();
   };
 
@@ -107,6 +127,14 @@ export function App({
           onRefine={handleRefine}
           onChangeProject={() => openProjects('browse')}
           onBack={() => setStage('home')}
+        />
+      )}
+      {stage === 'chat' && chatKey && (
+        <ChatScreen
+          chatKey={chatKey}
+          chat={chat}
+          onBack={() => void leaveChat()}
+          onHandoff={() => handleHandoff(chatKey)}
         />
       )}
       {stage === 'projects' && (

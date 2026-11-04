@@ -87,6 +87,50 @@ export const PROJECT_TEXTS = {
   saveErrorNextStep: 'Elige otro proyecto o pulsa Esc para volver.',
 } as const;
 
+// Letras con Ctrl: las letras sueltas son texto del mensaje ("como...", "no...")
+export const CHAT_KEYS = {
+  deepModel: 'o',
+  newSession: 'n',
+  fullClaude: 't',
+  newline: 'j',
+} as const;
+
+export const CHAT_VISIBLE_MIN_ROWS = 6;
+// Alto que ocupan marco, encabezado, actividad, entrada y pie alrededor de la conversación
+export const CHAT_CHROME_ROWS = 14;
+export const CHAT_DEFAULT_TERMINAL_ROWS = 30;
+export const CHAT_DEFAULT_TERMINAL_COLUMNS = 80;
+export const CHAT_HORIZONTAL_MARGIN = 8;
+export const CURSOR = '▌';
+// Los deltas de texto se juntan y se pintan a este ritmo: pintar cada uno satura la terminal
+export const STREAM_FLUSH_MS = 75;
+export const MAX_CHAT_LINES = 400;
+
+export const CHAT_MODEL_LABELS = { sonnet: 'Sonnet', haiku: 'Haiku', opus: 'Opus' } as const;
+
+export const CHAT_TEXTS = {
+  preparing: 'Preparando la historia y abriendo la conversación...',
+  openError: (message: string) => `No pude abrir la conversación: ${message}`,
+  openErrorNextStep: 'Pulsa Esc para volver al inicio y vuelve a intentar.',
+  userLabel: 'Tú',
+  assistantLabel: 'Claude',
+  inputPrompt: '> ',
+  thinking: 'Claude está pensando...',
+  scrolledHint: 'Estás viendo mensajes anteriores. PgDn para volver al final.',
+  headerBlock: 'bloque',
+  tokens: (count: number) => `${count.toLocaleString('es')} tokens`,
+  cost: (usd: number) => `$${usd.toFixed(2)}`,
+  tooLongHint: `La conversación ya es larga. Pulsa Ctrl+${CHAT_KEYS.newSession.toUpperCase()} para seguir en una sesión nueva desde la bitácora (gasta menos).`,
+  planReady: 'Plan listo. Pulsa Esc y luego r para revisarlo (llega en la parte 3).',
+  activity: {
+    read: (target: string) => `leyendo ${target}`,
+    search: (target: string) => `buscando ${target}`,
+    write: (target: string) => `escribiendo ${target}`,
+    explore: 'explorando con Haiku...',
+    other: (tool: string) => `trabajando con ${tool}...`,
+  },
+} as const;
+
 export const FOOTER_HINTS = {
   pin: 'Enter confirmar · Ctrl+C salir',
   home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.quit} salir`,
@@ -94,4 +138,5 @@ export const FOOTER_HINTS = {
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
   status: 'Esc volver',
+  chat: `Enter enviar · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea nueva · PgUp/PgDn desplazar · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo · Esc inicio`,
 } as const;
