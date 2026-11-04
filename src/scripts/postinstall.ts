@@ -1,6 +1,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
+import { installSkill } from '../refinement/skill';
 
 // Solo ejecutar en instalaciones globales
 if (process.env.npm_config_global !== 'true') process.exit(0);
@@ -20,7 +21,7 @@ const TERMINAL_PROFILE = {
 
 async function configureVSCode(): Promise<boolean> {
   for (const settingsPath of VSCODE_SETTINGS_CANDIDATES) {
-    if (!await fs.pathExists(settingsPath)) continue;
+    if (!(await fs.pathExists(settingsPath))) continue;
 
     try {
       const raw = await fs.readFile(settingsPath, 'utf8');
@@ -45,8 +46,19 @@ async function configureVSCode(): Promise<boolean> {
   return false;
 }
 
+async function configureSkill(): Promise<void> {
+  try {
+    const result = await installSkill();
+    if (result === 'missing-asset') console.log('  ℹ No encontré la skill /refinar en el paquete.');
+    else console.log('  ✓ Skill /refinar lista en ~/.claude/skills.');
+  } catch (err: unknown) {
+    console.log(`  ℹ No pude instalar la skill /refinar: ${(err as Error).message}`);
+  }
+}
+
 async function main(): Promise<void> {
   console.log('\n  DevFlow — Configuración automática\n');
+  await configureSkill();
 
   const vsConfigured = await configureVSCode();
   if (!vsConfigured) {

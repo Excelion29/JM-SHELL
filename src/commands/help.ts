@@ -223,6 +223,22 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: '🧭  REFINAR HISTORIAS',
+    commands: [
+      {
+        cmd: 'refinar',
+        args: '[CLAVE]',
+        description: 'Debate una historia con Claude Code y deja un plan con estimación PERT.',
+        detail: [
+          'Descarga la historia y sus adjuntos a .jdf/historias/<CLAVE>/ en la raíz del proyecto.',
+          'Abre Claude con /refinar; si ya había una sesión, la retoma.',
+          'Requiere tener `claude` instalado. Sin CLAVE usa el contexto activo o el branch.',
+        ],
+        examples: ['jdf refinar AQ-45', 'jdf refinar'],
+      },
+    ],
+  },
+  {
     title: '🔍  VER ISSUES',
     commands: [
       {

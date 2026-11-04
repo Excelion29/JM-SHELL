@@ -17,6 +17,7 @@ import { bulkCommand } from '../commands/bulk';
 import { typesCommand } from '../commands/types';
 import { movesCommand } from '../commands/moves';
 import { exportCommand } from '../commands/export';
+import { refineCommand } from '../commands/refine';
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -118,6 +119,10 @@ export function buildProgram(): Command {
     .option('--type <tipo>', 'Filtrar por tipo de issue: Historia, Bug, Tarea, etc.')
     .option('--jql <query>', 'JQL directo para búsqueda personalizada')
     .action(exportCommand);
+
+  program.command('refinar [issueKey]')
+    .description('Refinar una historia con Claude Code: debate, plan y estimación PERT')
+    .action(refineCommand);
 
   return program;
 }

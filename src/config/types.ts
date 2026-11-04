@@ -33,6 +33,14 @@ export interface JiraIssue {
   };
 }
 
+export interface JiraAttachment {
+  id: string;
+  filename: string;
+  size: number;
+  content: string; // URL de descarga
+  mimeType?: string;
+}
+
 export interface JiraTransition {
   id: string;
   name: string;

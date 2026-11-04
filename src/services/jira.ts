@@ -1,5 +1,8 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { GlobalConfig, JiraIssue, JiraTransition, JiraUser } from '../config/types';
+import { assertSameOrigin, MAX_ATTACHMENT_BYTES, streamToFileWithCap } from '../refinement/attachments';
+import { GlobalConfig, JiraAttachment, JiraIssue, JiraTransition, JiraUser } from '../config/types';
+
+const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 export class TransitionNotFoundError extends Error {
   constructor(public attempted: string, public available: string[]) {
@@ -70,6 +73,35 @@ export class JiraService {
       },
     });
     return res.data;
+  }
+
+  async getAttachments(issueKey: string): Promise<JiraAttachment[]> {
+    const res = await this.client.get<{ fields: { attachment?: JiraAttachment[] } }>(`/issue/${issueKey}`, {
+      params: { fields: 'attachment' },
+    });
+    return res.data.fields.attachment ?? [];
+  }
+
+  // Jira responde con un redirect firmado (otro origen): se sigue a mano y sin credenciales
+  async downloadAttachment(url: string, destPath: string, maxBytes: number = MAX_ATTACHMENT_BYTES): Promise<void> {
+    assertSameOrigin(url, this.baseUrl);
+    const first = await this.client.get(url, {
+      responseType: 'stream',
+      headers: { Accept: '*/*' },
+      maxRedirects: 0,
+      timeout: DOWNLOAD_TIMEOUT_MS,
+      validateStatus: (status) => status < 400,
+    });
+    const location = first.headers['location'] as string | undefined;
+    if (!location) return streamToFileWithCap(first.data, destPath, maxBytes);
+    first.data.destroy();
+    if (new URL(location, url).protocol !== 'https:') throw new Error('El redirect del adjunto no usa https.');
+    const signed = await axios.get(new URL(location, url).toString(), {
+      responseType: 'stream',
+      maxRedirects: 0,
+      timeout: DOWNLOAD_TIMEOUT_MS,
+    });
+    await streamToFileWithCap(signed.data, destPath, maxBytes);
   }
 
   async createIssue(params: {

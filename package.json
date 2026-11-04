@@ -18,6 +18,7 @@
   },
   "files": [
     "dist/",
+    "assets/",
     "install.ps1",
     "uninstall.ps1"
   ],

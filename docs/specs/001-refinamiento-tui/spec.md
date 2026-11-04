@@ -23,6 +23,7 @@ sin perder el hilo si se cierra la consola.
 | Persistencia | `.jdf/` en el repo del proyecto, versionado. `.jdf/**/adjuntos/` en `.gitignore`. |
 | Adjuntos | Temporales y con propósito: `analisis` (solo para el debate) o `evidencia` / `equipo` (se suben a la subtarea). Al cerrar la historia se eliminan del repo, previa confirmación; lo subido queda en Jira. |
 | Tono | Cercano y humano, en español, sin emojis. Ni seco ni adornado: frases cortas, reconoce el avance, varía las frases, siempre cierra con el siguiente paso. |
+| Nombre (2026-11-04) | El producto pasa a llamarse **JM-SHELL** y el comando `jm` (sin alias `jdf`). Carpeta de estado `.jm/`. `~/.jira-tool/` no cambia para no perder credenciales ya guardadas. |
 
 ## Alcance Fase 1
 
@@ -98,3 +99,4 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 |---|---|---|---|
 | Accept (plan) | Marcello Cano | 2026-11-04 | aprobado ("dale") |
 | Commit parte 1 (base app) | Marcello Cano | 2026-11-04 | aprobado, probado en terminal real |
+| Commit parte 2 (estado SDD + refinar) | Marcello Cano | 2026-11-04 | aprobado; flujo real con Jira y Claude pendiente de prueba |
