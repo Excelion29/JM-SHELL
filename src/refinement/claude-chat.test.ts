@@ -14,16 +14,26 @@ import {
   EXPLORER_AGENTS,
   MODELS,
 } from './claude-chat';
-import { appendTranscript, readTranscript, recordTurnUsage, TRANSCRIPT_MAX_BYTES, TRANSCRIPT_MAX_ENTRIES } from './chat-store';
-import { assertSafeArgs } from './claude';
+import {
+  appendTranscript,
+  readTranscript,
+  recordTurnUsage,
+  TRANSCRIPT_MAX_BYTES,
+  TRANSCRIPT_MAX_ENTRIES,
+  writeAgentsFile,
+  writeClaudeSettings,
+  writeSkillCopy,
+} from './chat-store';
+import { assertSafeArgs, CHAT_FILES } from './claude';
+import { stripTerminalControls } from './text';
 import { ensureStory, readState } from './state';
 import { addTurnUsage, contextTokensOf, exceedsSoftLimit, SESSION_TOKEN_SOFT_LIMIT } from './usage';
 
 const SESSION = '123e4567-e89b-12d3-a456-426614174000';
 const OTHER_SESSION = '223e4567-e89b-12d3-a456-426614174000';
-const SKILL = 'C:\\pkg\\assets\\skills\\refinar\\SKILL.md';
-const AGENTS = 'C:\\proj\\.jm\\agents.json';
-const SETTINGS = 'C:\\proj\\.jm\\claude-settings.json';
+const SKILL = CHAT_FILES.skill;
+const AGENTS = CHAT_FILES.agents;
+const SETTINGS = CHAT_FILES.settings;
 
 const line = (value: unknown) => `${JSON.stringify(value)}\n`;
 const RESULT = {
@@ -213,6 +223,12 @@ test('sesión nueva: guarda el id y escribe el primer mensaje como línea JSON p
   assert.ok(h.procs[0].written[0].endsWith('\n'));
 });
 
+test('sin código: el primer mensaje avisa que no hay repositorio', async () => {
+  const h = harness();
+  await h.session.start({ key: 'AQ-45', sessionId: null, model: 'sonnet', noCode: true });
+  assert.match(userText(h.procs[0].written[0]), /no tiene repositorio de código/);
+});
+
 test('send escribe el texto solo por stdin: nunca aparece en los argumentos', async () => {
   const h = harness();
   await h.session.start({ key: 'AQ-45', sessionId: null, model: 'sonnet' });
@@ -370,7 +386,15 @@ test('la copia local se acota a las últimas entradas', async () => {
 });
 
 test('buildChatArgs excluye ajustes de usuario/proyecto, pasa los ajustes de jm y niega herramientas', () => {
-  const args = buildChatArgs({ key: 'AQ-45', model: 'sonnet', sessionId: SESSION, resume: false, skillFile: SKILL, agentsFile: AGENTS, settingsFile: SETTINGS });
+  const args = buildChatArgs({
+    key: 'AQ-45',
+    model: 'sonnet',
+    sessionId: SESSION,
+    resume: false,
+    skillFile: SKILL,
+    agentsFile: AGENTS,
+    settingsFile: SETTINGS,
+  });
   assert.equal(args[args.indexOf('--setting-sources') + 1], '');
   assert.equal(args[args.indexOf('--settings') + 1], SETTINGS);
   assert.equal(args[args.indexOf('--disallowedTools') + 1], 'Bash,WebFetch,WebSearch,NotebookEdit');
@@ -379,7 +403,10 @@ test('buildChatArgs excluye ajustes de usuario/proyecto, pasa los ajustes de jm 
 });
 
 test('los ajustes de jm desactivan hooks y espejan el allowlist y las negaciones', () => {
-  const settings = buildChatSettings('AQ-45') as { disableAllHooks: boolean; permissions: { allow: string[]; deny: string[] } };
+  const settings = buildChatSettings('AQ-45') as {
+    disableAllHooks: boolean;
+    permissions: { allow: string[]; deny: string[] };
+  };
   assert.equal(settings.disableAllHooks, true);
   assert.ok(settings.permissions.allow.includes('Write(.jm/historias/AQ-45/**)'));
   assert.ok(!settings.permissions.allow.some((rule) => rule.startsWith('Bash')));
@@ -417,7 +444,9 @@ test('el costo acumulado por proceso se registra como diferencia entre vueltas',
   await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
   h.procs[0].emit(line({ ...RESULT, total_cost_usd: 0.1 }));
   h.procs[0].emit(line({ ...RESULT, total_cost_usd: 0.25 }));
-  const costs = h.events.filter((e) => e.type === 'turnEnd').map((e) => (e as Extract<ChatEvent, { type: 'turnEnd' }>).costUsd);
+  const costs = h.events
+    .filter((e) => e.type === 'turnEnd')
+    .map((e) => (e as Extract<ChatEvent, { type: 'turnEnd' }>).costUsd);
   assert.equal(costs.length, 2);
   assert.ok(Math.abs(costs[0] - 0.1) < 1e-9);
   assert.ok(Math.abs(costs[1] - 0.15) < 1e-9);
@@ -448,4 +477,60 @@ test('readTranscript lee solo la cola de un archivo enorme', async () => {
   const result = await readTranscript(root, 'AQ-45', 3);
   assert.equal(result.at(-1)?.text, 'final');
   assert.equal(result.length, 3);
+});
+
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+
+test('stripTerminalControls quita CSI, OSC 8, OSC 52 y BEL pero conserva saltos de línea y tabulaciones', () => {
+  const dirty = `a${ESC}[2Jb${ESC}]8;;http://x.y${BEL}link${ESC}]8;;${BEL}\n${ESC}]52;c;AAAA${BEL}c\td${BEL}${ESC}Pdcs${ESC}\e`;
+  assert.equal(stripTerminalControls(dirty), 'ablink\nc\tde');
+});
+
+test('el texto del asistente (completo y en deltas) llega a la app sin secuencias de escape', () => {
+  const events = parseAll([
+    line({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', delta: { type: 'text_delta', text: `hola ${ESC}[2J${ESC}]52;c;QQ${BEL}mundo` } },
+    }),
+    line({ type: 'assistant', message: { content: [{ type: 'text', text: `${ESC}[31mrojo${ESC}[0m${BEL}\nfin` }] } }),
+  ]);
+  assert.deepEqual(events, [
+    { type: 'textDelta', text: 'hola mundo' },
+    { type: 'assistantText', text: 'rojo\nfin' },
+  ]);
+});
+
+test('el historial leído de disco conserva los saltos de línea y no trae escapes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jm-hist-'));
+  await ensureStory(root, 'AQ-45', 'Login', null);
+  await appendTranscript(root, 'AQ-45', { role: 'assistant', text: `uno\ndos${ESC}[2J`, at: 't' });
+  assert.equal((await readTranscript(root, 'AQ-45', 5))[0].text, 'uno\ndos');
+});
+
+test('una raíz con tildes y paréntesis funciona: los archivos de jm viajan relativos al cwd', async () => {
+  const root = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'jm-root-')), 'José (v2)');
+  await fs.ensureDir(root);
+  const skill = path.join(root, 'origen.md');
+  await fs.writeFile(skill, '# skill');
+  writeAgentsFile(root);
+  writeClaudeSettings(root, 'AQ-45');
+  writeSkillCopy(root, skill);
+  for (const file of Object.values(CHAT_FILES)) assert.ok(await fs.pathExists(path.join(root, file)), file);
+  const args = buildChatArgs({
+    key: 'AQ-45',
+    model: 'sonnet',
+    sessionId: SESSION,
+    resume: false,
+    skillFile: CHAT_FILES.skill,
+    agentsFile: CHAT_FILES.agents,
+    settingsFile: CHAT_FILES.settings,
+  });
+  assert.doesNotThrow(() => assertSafeArgs(args));
+  assert.ok(args.every((arg) => !arg.includes('José') && !arg.includes('(v2)')));
+});
+
+test('una ruta absoluta de archivo ya no pasa el filtro de argumentos', () => {
+  assert.throws(() => assertSafeArgs(['--settings', path.join('C:', 'José (v2)', '.jm', 'claude-settings.json')]), /no permitido/);
+  assert.throws(() => assertSafeArgs(['--settings', '.jm/../x.json']), /no permitido/);
 });

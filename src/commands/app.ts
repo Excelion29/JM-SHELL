@@ -12,10 +12,11 @@ import { ProjectConfig } from '../config/types';
 import { JiraService } from '../services/jira';
 import { setSession, getSession, clearSession } from '../utils/session';
 import { writeFileAtomicNoLinks } from '../utils/safe-write';
-import { error } from '../utils/format';
+import { error, warn } from '../utils/format';
 import { listStories, projectRoot, toSummary } from '../refinement/state';
 import { BROWSE_LIMIT, buildEpicsJql, buildStoriesJql, filterByProject, isValidProjectKey, toBrowseItem } from '../refinement/browse';
 import { BrowseItem, ProjectItem } from '../refinement/types';
+import { mappedRoot, noCodeRootPath } from '../refinement/repos';
 import { createChatBridge } from './chat-bridge';
 import { runRefine } from './refine';
 
@@ -32,9 +33,24 @@ async function readProjectKey(): Promise<string | null> {
   }
 }
 
+// Un repos.json dañado no debe tumbar el inicio: se avisa y se usa la carpeta actual
+function codeRootFor(projectKey: string): string {
+  try {
+    return mappedRoot(projectKey) ?? projectRoot();
+  } catch (err: unknown) {
+    warn(`No pude leer ~/.jira-tool/repos.json (${(err as Error).message}). Uso la carpeta actual.`);
+    return projectRoot();
+  }
+}
+
+// Las historias viven en la carpeta de código del proyecto o, sin código, en la carpeta propia de jm
 async function loadSummaries(projectKey: string | null) {
   try {
-    return filterByProject((await listStories(projectRoot())).map(toSummary), projectKey);
+    const roots = projectKey
+      ? [...new Set([codeRootFor(projectKey), noCodeRootPath(projectKey)])]
+      : [projectRoot()];
+    const stories = (await Promise.all(roots.map((root) => listStories(root)))).flat();
+    return filterByProject(stories.map(toSummary), projectKey).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   } catch (err: unknown) {
     error(`No pude leer tus historias de .jm: ${(err as Error).message}`);
     return [];
@@ -98,7 +114,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
   let projectKey = await readProjectKey();
   let unlocked = false;
   let initialChatKey = options.chatKey ?? null;
-  const chat = createChatBridge(projectRoot(), sessionJira);
+  const chat = createChatBridge(sessionJira);
 
   try {
     for (;;) {

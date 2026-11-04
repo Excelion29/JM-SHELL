@@ -3,9 +3,10 @@ import { promises as nodeFs } from 'fs';
 import * as path from 'path';
 import type { ChatLine } from './chat-types';
 import { buildChatSettings, EXPLORER_AGENTS } from './claude-chat';
+import { CHAT_FILES } from './claude';
 import { assertNoLinks, JM_DIR, lexists, safeEnsureDir, safeWriteFile } from './safe-fs';
 import { agentsPath, chatPath, claudeSettingsPath, updateState } from './state';
-import { stripControlChars } from './text';
+import { stripTerminalControls } from './text';
 import { addTurnUsage, TurnUsage } from './usage';
 
 // Mensajes que se muestran al reabrir una historia
@@ -26,7 +27,7 @@ function parseLines(content: string): ChatLine[] {
     if (!line.trim()) return [];
     try {
       const parsed: unknown = JSON.parse(line);
-      return isChatLine(parsed) ? [{ role: parsed.role, text: stripControlChars(parsed.text), at: parsed.at }] : [];
+      return isChatLine(parsed) ? [{ role: parsed.role, text: stripTerminalControls(parsed.text), at: parsed.at }] : [];
     } catch {
       return []; // una línea cortada por un cierre brusco no debe tumbar el historial
     }
@@ -73,6 +74,13 @@ export function writeAgentsFile(root: string): string {
   safeEnsureDir(root, path.join(root, JM_DIR));
   safeWriteFile(root, file, `${JSON.stringify(EXPLORER_AGENTS, null, 2)}\n`);
   return file;
+}
+
+// La skill viaja relativa a la raíz: su ruta de instalación puede tener tildes o paréntesis que argv no admite
+export function writeSkillCopy(root: string, skillSource: string): void {
+  const file = path.join(root, CHAT_FILES.skill);
+  safeEnsureDir(root, path.join(root, JM_DIR));
+  safeWriteFile(root, file, fs.readFileSync(skillSource, 'utf8'));
 }
 
 // Se regenera en cada arranque: refleja la clave de la historia y no depende de lo que haya en disco

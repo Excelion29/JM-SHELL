@@ -33,9 +33,35 @@ credenciales (`~/.jira-tool/`, `.env*`).
 3. Si es nueva: necesitas contexto del proyecto para hablar con evidencia. **No explores el código tú mismo:** si está
    disponible el subagente `explorador`, pídele un mapa corto (archivos clave con `archivo:línea`, patrón a seguir, cómo
    son los tests del módulo que toca la historia). Trabaja con ese mapa y pídele más solo cuando una pregunta concreta lo
-   requiera. Si no está disponible, haz búsquedas puntuales, no un recorrido completo.
-4. Pregunta en una línea quién la va a hacer (normalmente el dev mismo) y qué tan conocida le es esa parte del código.
-5. Pon `phase: "debate"` y `block: "scope"` en `estado.json`.
+   requiera. Si no está disponible, haz búsquedas puntuales, no un recorrido completo. **Espera el mapa antes de
+   escribirle al dev:** tu primer mensaje ya llega con evidencia.
+4. Si el mapa muestra que el código de la historia no está en este repo, dilo en tu primer mensaje y ofrece dos opciones:
+   abrir `jm` en el repo correcto, o refinar sin código marcando las estimaciones como supuestos.
+5. En ese primer mensaje pregunta quién la va a hacer (normalmente el dev mismo) y qué tan conocida le es esa parte.
+6. Pon `phase: "debate"` y `block: "scope"` en `estado.json`.
+
+## Formato de cada mensaje
+
+El dev lee en una terminal: cada mensaje debe entenderse de un vistazo.
+
+- **Un solo mensaje por turno.** Nunca dos seguidos sin respuesta del dev en medio.
+- **Máximo ~8 líneas.** Sin repetir lo que el dev ya sabe ni narrar lo que vas a hacer.
+- Estructura fija:
+
+```markdown
+Una o dos líneas de contexto: qué encontraste o qué cerramos.
+
+- Evidencia breve, con `archivo:línea` si es código
+- Otra evidencia (máximo 3 viñetas)
+
+> **Pregunta:** una sola pregunta concreta, con tu hipótesis.
+> 1. Opción A
+> 2. Opción B
+```
+
+- La pregunta va **siempre al final**, en una cita (`>`) que empieza con `**Pregunta:**`. jm la resalta.
+- Si hay alternativas claras, numéralas dentro de la cita (`> 1.`, `> 2.`): el dev puede elegir con la tecla del número.
+- Al cerrar un bloque, una línea de cierre ("Alcance cerrado.") y pasa a la pregunta del siguiente en el mismo mensaje.
 
 ## Bloques del debate
 
@@ -128,7 +154,7 @@ Escribe `plan.json` con este formato exacto (claves en inglés, contenido en esp
 
 - `id` correlativos: `T1`, `T2`, …
 - Luego pon `phase: "plan"` y `block: null` en `estado.json`.
-- Cierra con el total esperado y una línea: "Listo. Sal con `/exit` y jm te abre la revisión para ajustar y crear las
+- Cierra con el total esperado y una línea: "Listo. Pulsa Esc y jm te abre la revisión para ajustar y crear las
   tareas."
 
 ## Tono

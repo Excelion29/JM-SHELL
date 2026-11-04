@@ -21,6 +21,11 @@ export const CHAT_ALLOWED_TOOLS_BASE = 'Read,Grep,Glob,Task,Agent';
 export const CHAT_DISALLOWED_TOOLS = 'Bash,WebFetch,WebSearch,NotebookEdit';
 export const chatAllowedTools = (key: string) =>
   `${CHAT_ALLOWED_TOOLS_BASE},Write(.jm/historias/${key}/**),Edit(.jm/historias/${key}/**)`;
+export const CHAT_FILES = {
+  settings: '.jm/claude-settings.json',
+  agents: '.jm/agents.json',
+  skill: '.jm/refinar-skill.md',
+} as const;
 const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const ALLOWED_ARGS: RegExp[] = [
   /^(--session-id|--resume|-n)$/,
@@ -36,8 +41,8 @@ const ALLOWED_ARGS: RegExp[] = [
   new RegExp(`^(stream-json|dontAsk|${CHAT_MODEL_NAMES.join('|')})$`),
   new RegExp(`^${escapeRegex(CHAT_DISALLOWED_TOOLS)}$`),
   new RegExp(`^${escapeRegex(chatAllowedTools('KEY')).split('KEY').join(CHAT_KEY_SOURCE)}$`),
-  // Rutas que genera jm (skill, subagentes y ajustes): sin metacaracteres de shell ni '..'
-  /^(?!.*\.\.)[A-Za-z0-9_ .:\\/-]+\.(md|json)$/,
+  // Archivos de jm relativos a la raíz (el cwd de claude): una ruta absoluta con tildes o paréntesis no pasaría
+  new RegExp(`^(${Object.values(CHAT_FILES).map(escapeRegex).join('|')})$`),
 ];
 
 export interface ClaudeRunResult {

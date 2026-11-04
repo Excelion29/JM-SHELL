@@ -41,13 +41,12 @@ export interface AppProps {
 
 type Stage = 'pin' | 'home' | 'browse' | 'projects' | 'chat';
 
-const STAGE_HINTS: Record<Stage, string> = {
-  pin: FOOTER_HINTS.pin,
-  home: FOOTER_HINTS.home,
-  browse: '',
-  projects: '',
-  chat: FOOTER_HINTS.chat,
-};
+function hintFor(stage: Stage, choiceCount: number): string {
+  if (stage === 'pin') return FOOTER_HINTS.pin;
+  if (stage === 'home') return FOOTER_HINTS.home;
+  if (stage !== 'chat') return '';
+  return choiceCount > 0 ? `${FOOTER_HINTS.choose(choiceCount)} · ${FOOTER_HINTS.chat}` : FOOTER_HINTS.chat;
+}
 
 export function App({
   projectKey: initialProjectKey,
@@ -70,6 +69,7 @@ export function App({
   const [projectKey, setProjectKey] = useState(initialProjectKey);
   const [stories, setStories] = useState(initialStories);
   const [checking, setChecking] = useState(false);
+  const [choiceCount, setChoiceCount] = useState(0);
   const [pinError, setPinError] = useState<string | null>(null);
 
   const handlePin = async (pin: string) => {
@@ -108,7 +108,7 @@ export function App({
   };
 
   return (
-    <Frame projectKey={projectKey} hint={STAGE_HINTS[stage]}>
+    <Frame projectKey={projectKey} hint={hintFor(stage, choiceCount)}>
       {stage === 'pin' && <PinPrompt onSubmit={handlePin} error={pinError} checking={checking} />}
       {stage === 'home' && (
         <HomeScreen
@@ -135,6 +135,7 @@ export function App({
           chat={chat}
           onBack={() => void leaveChat()}
           onHandoff={() => handleHandoff(chatKey)}
+          onChoicesChange={setChoiceCount}
         />
       )}
       {stage === 'projects' && (

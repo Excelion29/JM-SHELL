@@ -10,7 +10,7 @@ import {
   SESSION_ID_PATTERN,
   spawnClaude,
 } from './claude';
-import { stripControlChars } from './text';
+import { stripControlChars, stripTerminalControls } from './text';
 import { emptyTurnUsage, TurnUsage } from './usage';
 
 export const MODELS = { conversation: 'sonnet', explorer: 'haiku', deep: 'opus' } as const satisfies Record<
@@ -35,6 +35,8 @@ export const CHAT_MESSAGES = {
     `Retomamos la historia ${key}. Resume en 2 líneas lo decidido y dónde íbamos, y sigue desde ahí.`,
   fromLog: (key: string) =>
     `Esta es una sesión nueva de la historia ${key}. Retoma desde bitacora.md y estado.json: resume en 2 líneas lo decidido y sigue en el bloque actual.`,
+  noCode:
+    'Este proyecto no tiene repositorio de código disponible: refina solo con la historia y lo que te cuente el dev, sin explorar código.',
 } as const;
 
 export const EXPLORER_AGENTS = {
@@ -77,8 +79,9 @@ function fromAssistant(raw: Raw): ChatEvent[] {
   const events: ChatEvent[] = [];
   for (const block of message.content) {
     if (!isRaw(block)) continue;
-    if (block.type === 'text' && typeof block.text === 'string' && block.text !== '' && !fromSubagent) {
-      events.push({ type: 'assistantText', text: block.text });
+    const text = block.type === 'text' && typeof block.text === 'string' ? stripTerminalControls(block.text) : '';
+    if (text !== '' && !fromSubagent) {
+      events.push({ type: 'assistantText', text });
     } else if (block.type === 'tool_use' && typeof block.name === 'string') {
       events.push({ type: 'toolActivity', tool: clean(block.name), target: toolTarget(block.name, block.input) });
     }
@@ -91,7 +94,8 @@ function fromStream(raw: Raw): ChatEvent[] {
   if (typeof raw.parent_tool_use_id === 'string' || !isRaw(event) || event.type !== 'content_block_delta') return [];
   const delta = event.delta;
   if (!isRaw(delta) || delta.type !== 'text_delta' || typeof delta.text !== 'string') return [];
-  return [{ type: 'textDelta', text: delta.text }];
+  const text = stripTerminalControls(delta.text);
+  return text === '' ? [] : [{ type: 'textDelta', text }];
 }
 
 function fromResult(raw: Raw): ChatEvent[] {
@@ -184,7 +188,15 @@ export interface ChatArgsInput {
 }
 
 // El texto del dev nunca va aquí: viaja por stdin. Todo lo de abajo lo genera jm.
-export function buildChatArgs({ key, model, sessionId, resume, skillFile, agentsFile, settingsFile }: ChatArgsInput): string[] {
+export function buildChatArgs({
+  key,
+  model,
+  sessionId,
+  resume,
+  skillFile,
+  agentsFile,
+  settingsFile,
+}: ChatArgsInput): string[] {
   if (!KEY_PATTERN.test(key)) throw new Error(`Clave de historia inválida para el chat: "${key}".`);
   if (!CHAT_MODEL_NAMES.includes(model)) throw new Error(`Modelo no permitido para el chat: "${model}".`);
   if (!SESSION_ID_PATTERN.test(sessionId)) throw new Error('Id de sesión inválido para el chat.');
@@ -268,6 +280,7 @@ export interface ChatStartOptions {
   key: string;
   sessionId: string | null;
   model: ChatModel;
+  noCode?: boolean;
 }
 
 type Listener = (event: ChatEvent) => void;
@@ -282,6 +295,7 @@ export class ChatSession {
   private sessionId = '';
   private model: ChatModel = MODELS.conversation;
   private busy = false;
+  private noCode = false;
 
   constructor(private readonly options: ChatSessionOptions) {
     this.spawner = options.spawner ?? spawnChatProcess;
@@ -305,21 +319,22 @@ export class ChatSession {
     return this.busy;
   }
 
-  async start({ key, sessionId, model }: ChatStartOptions): Promise<void> {
+  async start({ key, sessionId, model, noCode = false }: ChatStartOptions): Promise<void> {
     this.key = key;
     this.model = model;
+    this.noCode = noCode;
     if (sessionId) {
       this.sessionId = sessionId;
       this.launch(true, CHAT_MESSAGES.resumed(key));
       return;
     }
-    await this.startFresh(CHAT_MESSAGES.first(key));
+    await this.startFresh(this.withNoCode(CHAT_MESSAGES.first(key)));
   }
 
   // Sesión nueva (otro uuid) que retoma desde la bitácora en lugar de arrastrar el contexto
   async startFromLog(): Promise<void> {
     this.detach(true);
-    await this.startFresh(CHAT_MESSAGES.fromLog(this.key));
+    await this.startFresh(this.withNoCode(CHAT_MESSAGES.fromLog(this.key)));
   }
 
   send(text: string): void {
@@ -349,6 +364,8 @@ export class ChatSession {
   close(force = false): void {
     this.detach(force);
   }
+
+  private withNoCode = (message: string) => (this.noCode ? `${message} ${CHAT_MESSAGES.noCode}` : message);
 
   private async startFresh(firstMessage: string): Promise<void> {
     this.sessionId = this.newSessionId();

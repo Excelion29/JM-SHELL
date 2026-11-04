@@ -68,6 +68,16 @@ Pedido del dev: no saltar a la interfaz de Claude y no gastar tokens de más.
   Ctrl+T Claude completo, Ctrl+J salto de línea); resumen de retoma con Sonnet; la skill viaja dentro de `jm`
   (`--append-system-prompt-file`) y el chat no carga configuración de usuario ni del proyecto.
 
+### Parte 2.7 — Presentación del chat y carpeta de código por proyecto (agregada 2026-11-04)
+
+Pedido del dev tras probar: el texto salía "de golpe", sin estructura.
+
+- Render de markdown en el chat (negrita, código, listas, bloques), mensajes separados con etiqueta y aire.
+- La pregunta pendiente se resalta en un recuadro; si trae opciones numeradas se eligen con 1-9.
+- La cabecera muestra el tamaño de contexto actual y el costo (no la suma con lecturas de caché).
+- La skill responde un mensaje por turno, con formato fijo (contexto, evidencia, una pregunta) y espera al explorador.
+- `jm` recuerda la carpeta de código de cada proyecto de Jira (`~/.jira-tool/repos.json`); la primera vez la pregunta.
+
 ## Fuera de alcance
 
 - Fase 2: `list` / `get` / `move` / `edit` / `use` como pantallas de la app.
@@ -130,3 +140,5 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Commit parte 2.5 | Marcello Cano | 2026-11-04 | aprobado ("okey genial", probado: abre Claude desde la app) |
 | Accept parte 2.6 (debate en la app + modelos) | Marcello Cano | 2026-11-04 | aprobado ("me gusta") |
 | Commit parte 2.6 | Marcello Cano | 2026-11-04 | aprobado ("si apruebo"); prueba en terminal real pendiente |
+| Accept parte 2.7 (presentación + carpeta por proyecto) | Marcello Cano | 2026-11-04 | aprobado ("si") |
+| Commit parte 2.7 | Marcello Cano | 2026-11-04 | aprobado ("si apruebo"); prueba en terminal real pendiente |

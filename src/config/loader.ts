@@ -13,6 +13,10 @@ interface StoredConfig {
   encrypted: string;
 }
 
+export function getGlobalConfigDir(): string {
+  return GLOBAL_CONFIG_DIR;
+}
+
 export function getGlobalConfigPath(): string {
   return GLOBAL_CONFIG_FILE;
 }

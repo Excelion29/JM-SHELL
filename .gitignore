@@ -28,3 +28,6 @@ talos/
 
 # Adjuntos temporales de refinamiento
 .jm/**/adjuntos/
+
+# Estado de refinamiento de pruebas locales (este repo es la herramienta, no un proyecto)
+.jm/

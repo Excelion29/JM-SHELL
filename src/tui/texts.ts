@@ -22,6 +22,7 @@ export const COLORS = {
   accent: 'green',
   error: 'red',
   muted: 'gray',
+  code: 'yellow',
 } as const;
 
 export const MIN_PIN_LENGTH = 4;
@@ -93,6 +94,7 @@ export const CHAT_KEYS = {
   newSession: 'n',
   fullClaude: 't',
   newline: 'j',
+  codeFolder: 'f',
 } as const;
 
 export const CHAT_VISIBLE_MIN_ROWS = 6;
@@ -101,6 +103,8 @@ export const CHAT_CHROME_ROWS = 14;
 export const CHAT_DEFAULT_TERMINAL_ROWS = 30;
 export const CHAT_DEFAULT_TERMINAL_COLUMNS = 80;
 export const CHAT_HORIZONTAL_MARGIN = 8;
+export const MESSAGE_INDENT = 2;
+export const CONTEXT_K = 1000;
 export const CURSOR = '▌';
 // Los deltas de texto se juntan y se pintan a este ritmo: pintar cada uno satura la terminal
 export const STREAM_FLUSH_MS = 75;
@@ -113,12 +117,15 @@ export const CHAT_TEXTS = {
   openError: (message: string) => `No pude abrir la conversación: ${message}`,
   openErrorNextStep: 'Pulsa Esc para volver al inicio y vuelve a intentar.',
   userLabel: 'Tú',
+  noCodeNote: 'historia sin código',
+  codeFolderLine: (folder: string) => `código: ${folder}`,
+  noPathError: 'Escribe una ruta o elige Refinar sin código.',
   assistantLabel: 'Claude',
   inputPrompt: '> ',
   thinking: 'Claude está pensando...',
   scrolledHint: 'Estás viendo mensajes anteriores. PgDn para volver al final.',
   headerBlock: 'bloque',
-  tokens: (count: number) => `${count.toLocaleString('es')} tokens`,
+  context: (tokens: number) => `contexto ${tokens >= CONTEXT_K ? `${Math.round(tokens / CONTEXT_K)}k` : tokens}`,
   cost: (usd: number) => `$${usd.toFixed(2)}`,
   tooLongHint: `La conversación ya es larga. Pulsa Ctrl+${CHAT_KEYS.newSession.toUpperCase()} para seguir en una sesión nueva desde la bitácora (gasta menos).`,
   planReady: 'Plan listo. Pulsa Esc y luego r para revisarlo (llega en la parte 3).',
@@ -131,6 +138,17 @@ export const CHAT_TEXTS = {
   },
 } as const;
 
+export const CODE_FOLDER_TEXTS = {
+  title: (projectKey: string) => `¿Dónde está el código de ${projectKey}?`,
+  confirmCwd: (projectKey: string) => `¿El código de ${projectKey} está en esta carpeta? Enter para confirmar o escribe otra ruta.`,
+  explanation: 'Claude lo explora en solo lectura para fundamentar el debate. Se recuerda para este proyecto.',
+  pathLabel: 'Ruta: ',
+  noCodeOption: 'Refinar sin código',
+  optionMarker: '>',
+  saving: 'Guardando...',
+  nextStep: '↑↓ moverte · Enter confirmar · Esc volver',
+} as const;
+
 export const FOOTER_HINTS = {
   pin: 'Enter confirmar · Ctrl+C salir',
   home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.quit} salir`,
@@ -138,5 +156,6 @@ export const FOOTER_HINTS = {
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
   status: 'Esc volver',
-  chat: `Enter enviar · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea nueva · PgUp/PgDn desplazar · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo · Esc inicio`,
+  choose: (count: number) => `1-${count} elegir`,
+  chat: `Enter enviar · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea nueva · PgUp/PgDn desplazar · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.codeFolder.toUpperCase()} carpeta de código · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo · Esc inicio`,
 } as const;
