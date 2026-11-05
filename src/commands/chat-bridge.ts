@@ -5,7 +5,7 @@ import {
   appendTranscript,
   readTranscript,
   recordTurnUsage,
-  TRANSCRIPT_HISTORY_LIMIT,
+  TRANSCRIPT_MAX_ENTRIES,
   writeAgentsFile,
   writeSkillCopy,
   writeClaudeSettings,
@@ -17,20 +17,11 @@ import {
   assertKey,
   BLOCK_LABELS,
   PHASE_LABELS,
+  projectRoot,
   readState,
   renderDashboard,
-  statePath,
   updateState,
 } from '../refinement/state';
-import {
-  ensureNoCodeRoot,
-  noCodeRootPath,
-  projectKeyOfStory,
-  readCwdProject,
-  resolveCodeRoot,
-  saveRepo,
-  suggestCodeRoot,
-} from '../refinement/repos';
 import { contextTokensOf, exceedsSoftLimit } from '../refinement/usage';
 import { ensureSkill, prepareStory } from './refine';
 
@@ -43,9 +34,6 @@ export interface ChatBridgeHandle extends ChatBridge {
 
 export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
   let root = '';
-  let noCode = false;
-  // "Refinar sin código" elegido en esta sesión de la app, por proyecto
-  const skippedProjects = new Set<string>();
   let session: ChatSession | null = null;
   let listener: ((event: ChatUiEvent) => void) | null = null;
   let key = '';
@@ -61,18 +49,6 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
         emit({ type: 'error', message: `No pude guardar la conversación: ${(err as Error).message}` }),
       );
   };
-
-  // null = falta que el dev diga dónde está el código del proyecto
-  function resolveRoot(storyKey: string): { root: string; noCode: boolean } | null {
-    const projectKey = projectKeyOfStory(storyKey);
-    const noCodeRoot = noCodeRootPath(projectKey);
-    // Gana la elección explícita de esta sesión y, después, el estado que la historia ya tiene en esa carpeta
-    if (skippedProjects.has(projectKey) || fs.pathExistsSync(statePath(noCodeRoot, storyKey))) {
-      return { root: ensureNoCodeRoot(projectKey), noCode: true };
-    }
-    const code = resolveCodeRoot(projectKey);
-    return code ? { root: code, noCode: false } : null;
-  }
 
   async function buildHeader(model: ChatModel): Promise<ChatHeader> {
     const state = await readState(root, key);
@@ -124,37 +100,10 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
   }
 
   return {
-    async checkCodeFolder(storyKey, force = false) {
-      assertKey(storyKey);
-      const projectKey = projectKeyOfStory(storyKey);
-      const resolved = resolveRoot(storyKey);
-      if (resolved && !force) return { status: 'ready', codeFolder: resolved.noCode ? null : resolved.root };
-      const current = resolved && !resolved.noCode ? resolved.root : null;
-      return {
-        status: 'needs-folder',
-        projectKey,
-        suggestedFolder: current ?? suggestCodeRoot(projectKey, readCwdProject()),
-        confirmCwd: current === null,
-      };
-    },
-    async saveCodeFolder(projectKey, folder) {
-      try {
-        saveRepo(projectKey, folder);
-        skippedProjects.delete(projectKey);
-        return { ok: true };
-      } catch (err: unknown) {
-        return { ok: false, message: (err as Error).message };
-      }
-    },
-    skipCodeFolder(projectKey) {
-      skippedProjects.add(projectKey);
-    },
     async open(storyKey, onEvent) {
       assertKey(storyKey);
       await writes;
-      const resolved = resolveRoot(storyKey);
-      if (!resolved) throw new Error('Falta indicar dónde está el código del proyecto. Vuelve a abrir la historia.');
-      ({ root, noCode } = resolved);
+      root = projectRoot();
       if (!isClaudeAvailable())
         throw new Error(
           'No encontré `claude` en tu terminal. Instálalo con `npm install -g @anthropic-ai/claude-code`.',
@@ -185,9 +134,9 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
       });
       session = current;
       current.onEvent((event) => handle(event, current));
-      const history = await readTranscript(root, key, TRANSCRIPT_HISTORY_LIMIT);
-      await current.start({ key, sessionId: state?.claudeSessionId ?? null, model: MODELS.conversation, noCode });
-      return { header: await buildHeader(current.currentModel), history };
+      const history = await readTranscript(root, key, TRANSCRIPT_MAX_ENTRIES);
+      await current.start({ key, sessionId: state?.claudeSessionId ?? null, model: MODELS.conversation });
+      return { header: await buildHeader(current.currentModel), codeFolder: root, history };
     },
     send(text) {
       if (!session) throw new Error('La conversación no está abierta.');

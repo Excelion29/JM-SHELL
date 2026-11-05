@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { App, AppAction } from './app.js';
-import { createFakeChat, waitFor } from './test-support.js';
+import { createFakeChat, createFakePlan, waitFor } from './test-support.js';
 import { BROWSE_LIMIT, BROWSE_TEXTS, HOME_TEXTS, PROJECT_TEXTS } from './texts.js';
 
 const ENTER = '\r';
@@ -11,6 +11,11 @@ const ESC = '\u001b';
 const DOWN = '\u001b[B';
 const TICK_MS = 30;
 const tick = () => new Promise((resolve) => setTimeout(resolve, TICK_MS));
+const SETTLE_PASSES = 3;
+// Ink suscribe useInput en un efecto posterior al render: sin ceder el turno, la tecla se pierde si llega antes
+const settle = async () => {
+  for (let i = 0; i < SETTLE_PASSES; i += 1) await new Promise((resolve) => setImmediate(resolve));
+};
 
 const EPICS = [
   { key: 'AQ-1', summary: 'Pagos', status: 'En curso' },
@@ -56,11 +61,13 @@ function setup(overrides: Partial<React.ComponentProps<typeof App>> = {}) {
       loadStories={async (key) => LOCAL_BY_PROJECT[key ?? ''] ?? []}
       setProject={async (key) => (calls.projects.push(key), { ok: true })}
       chat={fake.chat}
+      plan={createFakePlan().plan}
       onAction={(a) => actions.push(a)}
       {...overrides}
     />,
   );
   const press = async (data: string) => {
+    await settle();
     utils.stdin.write(data);
     await tick();
   };

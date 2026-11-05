@@ -68,6 +68,8 @@ export interface StorySummary {
   key: string;
   summary: string;
   phase: string;
+  // Fase sin traducir: la app decide con ella qué atajos admite la historia
+  phaseId?: Phase;
   block: string;
   nextStep: string;
   updatedAt: string;

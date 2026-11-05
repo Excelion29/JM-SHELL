@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { App } from './app.js';
-import { createFakeChat, waitFor } from './test-support.js';
+import { createFakeChat, createFakePlan, waitFor } from './test-support.js';
 import { HOME_TEXTS, MANUAL_KEY_TEXTS } from './texts.js';
 
 const ENTER = '\r';
@@ -13,6 +13,7 @@ const TICK_MS = 30;
 const NO_ITEMS = async () => [];
 const noopProps = {
   chat: createFakeChat().chat,
+  plan: createFakePlan().plan,
   unlock: async () => ({ ok: true }),
   fetchEpics: NO_ITEMS,
   fetchStories: NO_ITEMS,

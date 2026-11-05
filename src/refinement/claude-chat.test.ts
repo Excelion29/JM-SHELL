@@ -223,12 +223,6 @@ test('sesión nueva: guarda el id y escribe el primer mensaje como línea JSON p
   assert.ok(h.procs[0].written[0].endsWith('\n'));
 });
 
-test('sin código: el primer mensaje avisa que no hay repositorio', async () => {
-  const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: null, model: 'sonnet', noCode: true });
-  assert.match(userText(h.procs[0].written[0]), /no tiene repositorio de código/);
-});
-
 test('send escribe el texto solo por stdin: nunca aparece en los argumentos', async () => {
   const h = harness();
   await h.session.start({ key: 'AQ-45', sessionId: null, model: 'sonnet' });

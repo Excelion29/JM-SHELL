@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { App } from './app.js';
-import { BASE_HEADER, createFakeChat, FakeChatOptions, waitFor } from './test-support.js';
+import { BASE_HEADER, createFakeChat, createFakePlan, FAKE_CODE_FOLDER, waitFor } from './test-support.js';
 import { CHAT_TEXTS, HOME_TEXTS, STREAM_FLUSH_MS } from './texts.js';
 
 const ENTER = '\r';
@@ -40,6 +40,7 @@ function setup(fake = createFakeChat()) {
       setProject={async () => ({ ok: true })}
       loadStories={async () => [STORY]}
       chat={fake.chat}
+      plan={createFakePlan().plan}
       onAction={(a) => actions.push(a)}
     />,
   );
@@ -180,13 +181,7 @@ test('un error al abrir se muestra con el siguiente paso', async () => {
 
 const QUESTION_MESSAGE = 'Contexto del alcance.\n\n> **Pregunta:** ¿Qué hacemos?\n> 1. Opción A\n> 2. Opción B';
 const ARROW_DOWN = '\u001b[B';
-const CTRL_F = '';
-const PROMPT_TITLE = '¿Dónde está el código de AQ?';
-const folderSetup = (options: FakeChatOptions = { needsFolder: true }) => setup(createFakeChat({}, [], options));
-const prompt = async (app: ReturnType<typeof setup>) => {
-  await app.press(ENTER);
-  await waitFor(() => app.frame().includes(PROMPT_TITLE), 'el prompt de carpeta');
-};
+const ARROW_UP = '\u001b[A';
 
 test('un mensaje de Claude muestra etiqueta propia, markdown sin marcas y mensajes separados', async () => {
   const history = [
@@ -226,95 +221,27 @@ test('sin opciones no hay pista de elegir y el dígito es texto', async () => {
   assert.ok(app.frame().includes('> 1'));
 });
 
-test('sin carpeta de código: pregunta dónde está y no abre la conversación hasta resolverlo', async () => {
-  const app = folderSetup();
-  await prompt(app);
-  assert.deepEqual(app.fake.calls.opened, []);
-});
-
-test('guardar una ruta válida abre la conversación', async () => {
-  const app = folderSetup();
-  await prompt(app);
-  await app.press('C:\\codigo\\aq');
-  await app.press(ENTER);
-  await waitFor(() => app.fake.calls.opened.length > 0, 'que abra el chat');
-  assert.deepEqual(app.fake.calls.saved, [{ projectKey: 'AQ', folder: 'C:\\codigo\\aq' }]);
-  assert.deepEqual(app.fake.calls.opened, ['AQ-45']);
-});
-
-test('una ruta inválida muestra el error y sigue pidiendo la carpeta', async () => {
-  const app = folderSetup({ needsFolder: true, saveError: 'No encontré la carpeta' });
-  await prompt(app);
-  await app.press('x');
-  await app.press(ENTER);
-  await waitFor(() => app.frame().includes('No encontré la carpeta'));
-  assert.deepEqual(app.fake.calls.opened, []);
-});
-
-test('Refinar sin código abre la conversación y avisa al puente', async () => {
-  const app = folderSetup();
-  await prompt(app);
-  await app.press(ARROW_DOWN);
-  await app.press(ENTER);
-  await waitFor(() => app.fake.calls.opened.length > 0, 'que abra el chat');
-  assert.deepEqual(app.fake.calls.skipped, ['AQ']);
-  assert.deepEqual(app.fake.calls.opened, ['AQ-45']);
-});
-
-test('Esc en la pregunta de carpeta vuelve al inicio sin abrir nada', async () => {
-  const app = folderSetup();
-  await prompt(app);
-  await app.press(ESC);
-  await waitFor(() => app.frame().includes(HOME_TEXTS.title));
-  assert.deepEqual(app.fake.calls.opened, []);
-});
-
-test('con el directorio actual del mismo proyecto el prompt viene prellenado y Enter lo confirma', async () => {
-  const app = folderSetup({ needsFolder: true, suggestedFolder: 'C:\repo\jm' });
-  await prompt(app);
-  assert.ok(app.frame().includes('¿El código de AQ está en esta carpeta? Enter para confirmar o escribe otra ruta.'));
-  assert.ok(app.frame().includes('Ruta: C:\repo\jm'));
-  await app.press(ENTER);
-  await waitFor(() => app.fake.calls.opened.length > 0, 'que abra el chat');
-  assert.deepEqual(app.fake.calls.saved, [{ projectKey: 'AQ', folder: 'C:\repo\jm' }]);
-});
-
-test('escribir sobre la ruta sugerida la reemplaza', async () => {
-  const app = folderSetup({ needsFolder: true, suggestedFolder: 'C:\repo\jm' });
-  await prompt(app);
-  await app.press('D:\otro');
-  await app.press(ENTER);
-  await waitFor(() => app.fake.calls.saved.length > 0, 'que guarde');
-  assert.deepEqual(app.fake.calls.saved, [{ projectKey: 'AQ', folder: 'D:\otro' }]);
-});
-
-test('sin sugerencia el prompt empieza vacío y no avisa nunca de un mapeo silencioso', async () => {
-  const app = folderSetup();
-  await prompt(app);
-  assert.ok(app.frame().includes('Ruta: ▌'));
-  assert.ok(!app.frame().includes('en esta carpeta'));
-});
-
-test('con mapeo muestra "código: <ruta>" tenue y Ctrl+F con la entrada vacía reabre el prompt para cambiarlo', async () => {
-  const fake = createFakeChat({}, [], { codeFolder: 'C:\repo\viejo' });
-  const app = await openIdleChat(fake);
-  assert.ok(app.frame().includes('código: C:\repo\viejo'));
-  await app.press('x');
-  await app.press(CTRL_F);
-  assert.deepEqual(fake.calls.checks, [false]);
-  await app.press('');
-  await app.press(CTRL_F);
-  await waitFor(() => app.frame().includes(PROMPT_TITLE), 'el prompt de carpeta');
-  assert.deepEqual(fake.calls.checks, [false, true]);
-  assert.ok(app.frame().includes('Ruta: C:\repo\viejo'));
-  await app.press('D:/repo/nuevo');
-  await app.press(ENTER);
-  await waitFor(() => fake.calls.opened.length === 2, 'que reabra el chat');
-  assert.deepEqual(fake.calls.saved, [{ projectKey: 'AQ', folder: 'D:/repo/nuevo' }]);
-  await waitFor(() => app.frame().includes('código: D:/repo/nuevo'));
-});
-
-test('una historia sin código lo indica tenue bajo el encabezado', async () => {
+test('muestra la carpeta donde corre Claude bajo el encabezado', async () => {
   const app = await openIdleChat();
-  assert.ok(app.frame().includes('historia sin código'));
+  assert.ok(app.frame().includes(`código: ${FAKE_CODE_FOLDER}`));
+});
+
+const longHistory = (count: number) =>
+  Array.from({ length: count }, (_, i) => ({ role: 'assistant' as const, text: `mensaje-${i}`, at: 't' }));
+
+test('con la entrada vacía ↑ y ↓ desplazan una fila y con texto no hacen nada', async () => {
+  const app = await openIdleChat(createFakeChat({}, longHistory(40)));
+  await app.press(ARROW_UP);
+  assert.ok(app.frame().includes(CHAT_TEXTS.scrolledHint));
+  await app.press(ARROW_DOWN);
+  assert.ok(!app.frame().includes(CHAT_TEXTS.scrolledHint));
+  await app.press('x');
+  await app.press(ARROW_UP);
+  assert.ok(!app.frame().includes(CHAT_TEXTS.scrolledHint));
+});
+
+test('el historial completo es alcanzable, no solo los últimos 12 mensajes', async () => {
+  const app = await openIdleChat(createFakeChat({}, longHistory(60)));
+  for (let i = 0; i < 40; i += 1) await app.press(PAGE_UP);
+  assert.ok(app.frame().includes('mensaje-0'));
 });

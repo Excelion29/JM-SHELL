@@ -78,6 +78,45 @@ Pedido del dev tras probar: el texto salía "de golpe", sin estructura.
 - La skill responde un mensaje por turno, con formato fijo (contexto, evidencia, una pregunta) y espera al explorador.
 - `jm` recuerda la carpeta de código de cada proyecto de Jira (`~/.jira-tool/repos.json`); la primera vez la pregunta.
 
+### Parte 3 — Revisión del plan, creación en Jira y cierre (inicio 2026-11-04)
+
+Decisiones de implementación:
+- La revisión se abre con `r` sobre una historia en fase `plan`/`revisado` (y desde el aviso del chat).
+- Estimación en Jira = esperado PERT redondeado a 5 min; O/M/P y riesgo van en la descripción junto al criterio de terminado.
+- Responsable por defecto: el del `.jira.json` (o tú); se puede cambiar para todo el plan antes de crear.
+- Antes de crear cada tarea se comparan los títulos con las subtareas que ya tiene el padre, además de `estado.json`,
+  para no duplicar si la creación se cortó a medias.
+- Cerrar historia (`x`): confirma y borra solo adjuntos verificados en Jira (nombre y tamaño) y los de análisis.
+
+### Parte 3.1 — Cada carpeta es independiente y el chat se puede releer (agregada 2026-11-05)
+
+Observación del dev tras probar: al abrir `jm` en otro proyecto con la misma historia, Claude siguió buscando en
+JDF-SHELL porque `~/.jira-tool/repos.json` guardaba esa carpeta para PM; además no podía subir a leer el chat.
+- `jm` trabaja solo en la carpeta donde se abre (la del `.jira.json` más cercano, o la actual): ahí vive `.jm/` y ahí
+  corre Claude. No se comparte nada entre carpetas.
+- Se elimina el mapeo global `repos.json`, la carpeta global `sin-codigo/`, la pregunta de carpeta de código y Ctrl+F.
+- El chat carga toda la conversación guardada; PgUp/PgDn siempre visibles en la ayuda; ↑↓ desplazan con el campo vacío.
+
+### Parte 3.2 — Base de conocimiento por carpeta (agregada 2026-11-05, después del commit de 3 + 3.1)
+
+Idea del dev: que la continuidad entre carpetas venga de una fuente que él elige, como un RAG extendido.
+- La primera vez que se abre una historia en una carpeta, `jm` pregunta si conectar una base de conocimiento:
+  **MCP** (host, p. ej. Obsidian Local REST API `https://127.0.0.1:27124/mcp`), **carpeta local** de la PC, o ninguna;
+  y la carpeta dentro de la base (p. ej. `PROYECTOS/PACASMAYO_MEZCLAS`). Se guarda en el `.jira.json` de esa carpeta.
+- La API key nunca va al `.jira.json`: se guarda en `~/.jira-tool/` como el token de Jira.
+- Claude se lanza con esa fuente disponible (MCP o la carpeta local) y la skill lee primero el contexto y las
+  convenciones de la carpeta elegida, y consulta el resto cuando lo necesita.
+- La carpeta elegida es el foco y punto de partida, no un límite: Claude puede indagar en toda la base (otras
+  carpetas, notas relacionadas) cuando el debate lo pida. Por su cuenta Claude solo escribe en la carpeta JM-ADR; fuera de ella
+  escribe únicamente cuando el dev se lo indica explícitamente (qué y dónde).
+- Decisiones y avances se escriben en la sección `JM-ADR` de esa carpeta: si ya existe una carpeta cuyo nombre
+  termina en `JM-ADR` (p. ej. `06-JM-ADR`) se usa; si no, se crea `NN-JM-ADR` con el número siguiente al mayor
+  existente, o `00-JM-ADR` si no hay numeración. Una nota por historia (`<KEY>.md`). (Cambio del dev 2026-11-05:
+  antes era `Conocimiento`.)
+- Se escribe al cerrar cada bloque y al tener el plan, avisando en el chat qué se guardó y dónde.
+- Al abrir la historia en otra carpeta conectada a la misma base, se retoma desde esa nota; si no hay nota ni debate
+  local, se empieza de cero.
+
 ## Fuera de alcance
 
 - Fase 2: `list` / `get` / `move` / `edit` / `use` como pantallas de la app.
@@ -142,3 +181,7 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Commit parte 2.6 | Marcello Cano | 2026-11-04 | aprobado ("si apruebo"); prueba en terminal real pendiente |
 | Accept parte 2.7 (presentación + carpeta por proyecto) | Marcello Cano | 2026-11-04 | aprobado ("si") |
 | Commit parte 2.7 | Marcello Cano | 2026-11-04 | aprobado ("si apruebo"); prueba en terminal real pendiente |
+| Accept parte 3 (revisión, creación, cierre) | Marcello Cano | 2026-11-05 | aprobado ("si"); con observaciones de carpeta de código y scroll del chat |
+| Accept parte 3.1 (carpeta independiente + scroll) | Marcello Cano | 2026-11-05 | aprobado ("todo lo demás okey"); sin mapeo global |
+| Commit parte 3 + 3.1 | Marcello Cano | 2026-11-05 | aprobado ("apruebo continuemos"); review 3 dimensiones aplicada; prueba en terminal real pendiente |
+| Accept parte 3.2 (base de conocimiento) | Marcello Cano | 2026-11-05 | aprobado ("lo demás genial, está conforme"); MCP o carpeta local; numeración de Conocimiento |

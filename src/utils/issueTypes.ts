@@ -32,7 +32,7 @@ export function getLevel(ctx: JiraContext | null): HierarchyLevel {
  * - subtask → nada (error en el caller)
  */
 export async function getAvailableTypes(
-  jira: JiraService,
+  jira: Pick<JiraService, 'getIssueTypes'>,
   projectKey: string,
   level: HierarchyLevel
 ): Promise<IssueTypeInfo[]> {

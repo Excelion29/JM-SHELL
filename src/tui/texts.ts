@@ -12,6 +12,15 @@ export const KEYS = {
   confirmYes: 's',
   confirmYesAlt: 'y',
   confirmNo: 'n',
+  review: 'r',
+  closeStory: 'x',
+  edit: 'e',
+  detail: 'd',
+  attachments: 'a',
+  create: 'c',
+  changeAssignee: 'a',
+  toggle: ' ',
+  open: 'o',
 } as const;
 
 // Mismo formato que ISSUE_KEY_STRICT en src/refinement/state.ts (la isla ESM no importa CJS)
@@ -94,7 +103,6 @@ export const CHAT_KEYS = {
   newSession: 'n',
   fullClaude: 't',
   newline: 'j',
-  codeFolder: 'f',
 } as const;
 
 export const CHAT_VISIBLE_MIN_ROWS = 6;
@@ -108,7 +116,8 @@ export const CONTEXT_K = 1000;
 export const CURSOR = '▌';
 // Los deltas de texto se juntan y se pintan a este ritmo: pintar cada uno satura la terminal
 export const STREAM_FLUSH_MS = 75;
-export const MAX_CHAT_LINES = 400;
+// Mensajes (no filas) que el chat conserva en pantalla: cubre la copia local completa (500)
+export const MAX_CHAT_LINES = 2000;
 
 export const CHAT_MODEL_LABELS = { sonnet: 'Sonnet', haiku: 'Haiku', opus: 'Opus' } as const;
 
@@ -117,9 +126,7 @@ export const CHAT_TEXTS = {
   openError: (message: string) => `No pude abrir la conversación: ${message}`,
   openErrorNextStep: 'Pulsa Esc para volver al inicio y vuelve a intentar.',
   userLabel: 'Tú',
-  noCodeNote: 'historia sin código',
   codeFolderLine: (folder: string) => `código: ${folder}`,
-  noPathError: 'Escribe una ruta o elige Refinar sin código.',
   assistantLabel: 'Claude',
   inputPrompt: '> ',
   thinking: 'Claude está pensando...',
@@ -128,7 +135,7 @@ export const CHAT_TEXTS = {
   context: (tokens: number) => `contexto ${tokens >= CONTEXT_K ? `${Math.round(tokens / CONTEXT_K)}k` : tokens}`,
   cost: (usd: number) => `$${usd.toFixed(2)}`,
   tooLongHint: `La conversación ya es larga. Pulsa Ctrl+${CHAT_KEYS.newSession.toUpperCase()} para seguir en una sesión nueva desde la bitácora (gasta menos).`,
-  planReady: 'Plan listo. Pulsa Esc y luego r para revisarlo (llega en la parte 3).',
+  planReady: `Plan listo. Pulsa Esc y luego ${KEYS.review} para revisarlo.`,
   activity: {
     read: (target: string) => `leyendo ${target}`,
     search: (target: string) => `buscando ${target}`,
@@ -138,24 +145,160 @@ export const CHAT_TEXTS = {
   },
 } as const;
 
-export const CODE_FOLDER_TEXTS = {
-  title: (projectKey: string) => `¿Dónde está el código de ${projectKey}?`,
-  confirmCwd: (projectKey: string) => `¿El código de ${projectKey} está en esta carpeta? Enter para confirmar o escribe otra ruta.`,
-  explanation: 'Claude lo explora en solo lectura para fundamentar el debate. Se recuerda para este proyecto.',
-  pathLabel: 'Ruta: ',
-  noCodeOption: 'Refinar sin código',
-  optionMarker: '>',
-  saving: 'Guardando...',
-  nextStep: '↑↓ moverte · Enter confirmar · Esc volver',
-} as const;
-
 export const FOOTER_HINTS = {
   pin: 'Enter confirmar · Ctrl+C salir',
-  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.quit} salir`,
+  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.quit} salir`,
   picker: `↑↓ elegir · Enter abrir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · ${KEYS.changeProject} proyecto · Esc volver`,
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
   status: 'Esc volver',
+  review: `↑↓ moverte · espacio marcar · ${KEYS.edit} editar · ${KEYS.detail} detalle · ${KEYS.attachments} adjuntos · ${KEYS.create} crear en Jira · Esc inicio`,
+  edit: '↑↓ o Tab cambiar de campo · Enter siguiente o guardar · Esc cancelar',
+  files: `↑↓ elegir · espacio cambiar propósito · Enter tareas · ${KEYS.open} abrir · Esc volver`,
+  fileTasks: '↑↓ elegir · espacio asignar o quitar · Esc volver',
+  detail: 'Esc volver',
+  createAsk: '↑↓ elegir · Enter confirmar · Esc volver',
+  createConfirm: `${KEYS.confirmYes} crear · ${KEYS.changeAssignee} cambiar responsable · Esc cancelar`,
+  createRunning: 'Creando en Jira... no cierres la consola.',
+  createDone: `${KEYS.open} abrir el padre en el navegador · Esc inicio`,
+  createFailed: `${KEYS.retry} reintentar · Esc volver`,
+  assignee: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
+  close: `${KEYS.confirmYes} confirmar · cualquier otra tecla cancela`,
+  closed: 'Esc inicio',
   choose: (count: number) => `1-${count} elegir`,
-  chat: `Enter enviar · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea nueva · PgUp/PgDn desplazar · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.codeFolder.toUpperCase()} carpeta de código · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo · Esc inicio`,
+  chat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo · Esc inicio`,
+} as const;
+export const SECONDS_PER_HOUR = 3600;
+export const SECONDS_PER_MINUTE = 60;
+export const SUMMARY_MAX_CHARS = 44;
+export const PROGRESS_VISIBLE_LINES = 12;
+export const ELLIPSIS = "…";
+
+export const RISK_LABELS = {
+  low: "bajo",
+  medium: "medio",
+  high: "alto",
+} as const;
+export const RISK_COLORS = {
+  low: "green",
+  medium: "yellow",
+  high: "red",
+} as const;
+// Mismo orden que ATTACHMENT_PURPOSES en src/refinement/types.ts
+export const PURPOSE_CYCLE = ["analysis", "evidence", "team"] as const;
+export const PURPOSE_LABELS = {
+  analysis: "análisis",
+  evidence: "evidencia",
+  team: "equipo",
+} as const;
+export const PURPOSE_HELP = {
+  analysis: "solo para el debate, no se sube",
+  evidence: "se sube a la tarea",
+  team: "se sube a la tarea para el equipo",
+} as const;
+
+export const PLAN_TEXTS = {
+  title: (key: string, summary: string) =>
+    `Revisión del plan · ${key} ${summary}`,
+  loading: "Leyendo el plan...",
+  empty: "El plan no tiene tareas.",
+  included: "[x]",
+  excluded: "[ ]",
+  total: (count: number, expected: string, deviation: string) =>
+    `Total (${count} marcada(s)): esperado ${expected} · σ ${deviation}`,
+  saveError: (message: string) => `No pude guardar el cambio: ${message}`,
+  noneIncluded: "Marca al menos una tarea para crearla en Jira.",
+  nextStep: `Siguiente paso: marca lo que quieres crear y pulsa ${"c"}.`,
+  editTitle: (id: string) => `Editar ${id}`,
+  emptySummary: 'El título no puede quedar vacío.',
+  fields: {
+    summary: "Título",
+    optimistic: "Optimista (O)",
+    likely: "Probable (M)",
+    pessimistic: "Pesimista (P)",
+  },
+  preview: (expected: string, deviation: string) =>
+    `esperado ${expected} · σ ${deviation}`,
+  detailTitle: (id: string, summary: string) => `${id} · ${summary}`,
+  detailDescription: "Descripción",
+  detailCriteria: "Criterio de terminado",
+  detailRationale: "Por qué esta estimación",
+  detailAttachments: "Adjuntos",
+  none: "Ninguno.",
+  filesTitle: "Adjuntos de la historia",
+  noFiles: "No hay archivos en la carpeta de adjuntos.",
+  fileTasksTitle: (file: string) => `¿A qué tareas va ${file}?`,
+  noTasksAssigned: "sin tarea",
+  filesNextStep:
+    "Evidencia y equipo se suben a las tareas que elijas; análisis se queda local.",
+  openError: (message: string) => `No pude abrir el archivo: ${message}`,
+} as const;
+
+export const CREATE_TEXTS = {
+  title: "Crear en Jira",
+  loading: "Revisando el padre y el responsable...",
+  askReasons: {
+    epic: (key: string) => `${key} es una épica: no admite subtareas.`,
+    subtask: (key: string) =>
+      `${key} es una subtarea: no admite tareas dentro.`,
+    done: (key: string) => `${key} ya está cerrada.`,
+    "not-found": (key: string) => `No encontré ${key} en Jira.`,
+  },
+  askQuestion: "¿Dónde creo las tareas?",
+  askEpic: (key: string, summary: string | null) =>
+    `Dentro de la épica ${key}${summary ? ` (${summary})` : ""} como issues estándar`,
+  askOther: "Dentro de otra clave",
+  askCancel: "Cancelar",
+  otherChecking: "Revisando esa clave...",
+  otherError: (message: string) => `Esa clave no sirve: ${message}`,
+  confirmTitle: "Confirma antes de crear",
+  tasks: (count: number, expected: string) =>
+    `${count} tarea(s) · esperado total ${expected}`,
+  parent: (key: string, summary: string) => `Padre: ${key} · ${summary}`,
+  type: (name: string) => `Tipo: ${name}`,
+  assignee: (name: string) => `Responsable: ${name}`,
+  uploads: (count: number) => `Adjuntos a subir: ${count}`,
+  uploadLine: (file: string, purpose: string, tasks: string) =>
+    `  ${file} (${purpose}) → ${tasks}`,
+  existingHeader: 'Ya existen en Jira con el mismo título (se vincularán, no se crearán):',
+  existingLine: (key: string, summary: string) => `  ${key} · ${summary}`,
+  confirmNextStep: `Siguiente paso: pulsa ${KEYS.confirmYes} para crear.`,
+  assigneeTitle: "Cambiar responsable (para todas las tareas)",
+  assigneeLoading: "Buscando usuarios...",
+  progress: {
+    creating: "creando...",
+    created: "creada",
+    existing: "ya existía, no la repito",
+    uploading: "subiendo",
+    uploaded: "subido",
+  },
+  line: (index: number, total: number, summary: string, state: string) =>
+    `[${index}/${total}] ${summary} · ${state}`,
+  doneTitle: "Listo, tareas creadas",
+  doneLine: (key: string, summary: string, existing: boolean) =>
+    `${key} · ${summary}${existing ? " (ya estaba)" : ""}`,
+  estimateSkipped:
+    "Jira no acepta estimación en este proyecto: se crearon sin ella.",
+  doneNextStep: (parentKey: string) =>
+    `Siguiente paso: pulsa o para abrir ${parentKey} en Jira.`,
+  openError: (message: string) => `No pude abrir el navegador: ${message}`,
+  failedTitle: "Se cortó la creación",
+  failedKept: (count: number) => `Se conservó lo hecho (${count} tarea(s)).`,
+  failedNextStep: `Siguiente paso: pulsa ${KEYS.retry} para continuar donde se cortó.`,
+} as const;
+
+export const CLOSE_TEXTS = {
+  title: (key: string) => `Cerrar ${key}`,
+  loading: "Verificando tus adjuntos en Jira...",
+  deleteHeader: "Se eliminarán de tu carpeta:",
+  keepHeader: "Se conservan:",
+  fileLine: (file: string, reason: string) => `  ${file} · ${reason}`,
+  nothing: "  nada",
+  question: `Pulsa ${KEYS.confirmYes} para eliminar y cerrar la historia. Cualquier otra tecla cancela y no borra nada.`,
+  working: "Eliminando y cerrando...",
+  closeError: (message: string) => `No pude cerrar la historia: ${message}`,
+  doneTitle: "Historia cerrada",
+  doneDeleted: (count: number) => `Se eliminaron ${count} archivo(s).`,
+  doneKept: (count: number) => `Quedaron ${count} archivo(s) en tu carpeta.`,
+  doneNextStep: "Siguiente paso: vuelve al inicio con Esc.",
 } as const;

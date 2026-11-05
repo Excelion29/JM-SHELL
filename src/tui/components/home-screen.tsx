@@ -9,16 +9,24 @@ interface HomeScreenProps {
   onRefine: (key: string) => void;
   onBrowse: () => void;
   onChangeProject: () => void;
+  onReview: (key: string) => void;
+  onCloseStory: (key: string) => void;
   onQuit: () => void;
 }
 
-export function HomeScreen({ stories, onRefine, onBrowse, onChangeProject, onQuit }: HomeScreenProps) {
+const REVIEW_PHASES: readonly string[] = ['plan', 'reviewed'];
+const CLOSE_PHASES: readonly string[] = ['created', 'in-progress'];
+
+export function HomeScreen({ stories, onRefine, onBrowse, onChangeProject, onReview, onCloseStory, onQuit }: HomeScreenProps) {
   const [selected, setSelected] = useState(0);
+  const current = stories[selected];
 
   useInput((input, key) => {
     if (input === KEYS.quit) onQuit();
     else if (input === KEYS.newStory) onBrowse();
     else if (input === KEYS.changeProject) onChangeProject();
+    else if (input === KEYS.review && current?.phaseId && REVIEW_PHASES.includes(current.phaseId)) onReview(current.key);
+    else if (input === KEYS.closeStory && current?.phaseId && CLOSE_PHASES.includes(current.phaseId)) onCloseStory(current.key);
     else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
     else if (key.downArrow) setSelected((i) => Math.min(stories.length - 1, i + 1));
     else if (key.return && stories[selected]) onRefine(stories[selected].key);

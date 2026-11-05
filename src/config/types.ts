@@ -22,7 +22,7 @@ export interface JiraIssue {
   key: string;
   fields: {
     summary: string;
-    status: { name: string };
+    status: { name: string; statusCategory?: { key: string } };
     assignee: { displayName: string; accountId: string } | null;
     duedate: string | null;
     timeoriginalestimate: number | null;

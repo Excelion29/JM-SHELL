@@ -1,8 +1,16 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import { pathKey, pathProject } from '../refinement/issue-key';
 import { assertSameOrigin, MAX_ATTACHMENT_BYTES, streamToFileWithCap } from '../refinement/attachments';
 import { GlobalConfig, JiraAttachment, JiraIssue, JiraTransition, JiraUser } from '../config/types';
 
 const DOWNLOAD_TIMEOUT_MS = 60_000;
+const UPLOAD_TIMEOUT_MS = 120_000;
+const SEARCH_PAGE_SIZE = 100;
+const MAX_SEARCH_PAGES = 20;
+const SECONDS_PER_HOUR = 3600;
+const SECONDS_PER_MINUTE = 60;
+
+export class IssueNotFoundError extends Error {}
 
 export class TransitionNotFoundError extends Error {
   constructor(public attempted: string, public available: string[]) {
@@ -42,14 +50,14 @@ export class JiraService {
 
         if (status === 401) throw new Error('Authentication failed. Check your email and API token.');
         if (status === 403) throw new Error(`Permission denied: ${detail}`);
-        if (status === 404) throw new Error(`Resource not found: ${detail}`);
+        if (status === 404) throw new IssueNotFoundError(`Resource not found: ${detail}`);
         throw new Error(`Jira API error (${status}): ${detail}`);
       }
     );
   }
 
   getBrowseUrl(issueKey: string): string {
-    return `${this.baseUrl}/browse/${issueKey}`;
+    return `${this.baseUrl}/browse/${pathKey(issueKey)}`;
   }
 
   async getMyself(): Promise<JiraUser> {
@@ -58,7 +66,7 @@ export class JiraService {
   }
 
   async getIssue(issueKey: string): Promise<JiraIssue> {
-    const res = await this.client.get<JiraIssue>(`/issue/${issueKey}`, {
+    const res = await this.client.get<JiraIssue>(`/issue/${pathKey(issueKey)}`, {
       params: {
         fields: 'summary,status,assignee,duedate,timeoriginalestimate,issuetype,parent,subtasks',
       },
@@ -67,7 +75,7 @@ export class JiraService {
   }
 
   async getIssueWithDescription(issueKey: string): Promise<JiraIssue> {
-    const res = await this.client.get<JiraIssue>(`/issue/${issueKey}`, {
+    const res = await this.client.get<JiraIssue>(`/issue/${pathKey(issueKey)}`, {
       params: {
         fields: 'summary,status,assignee,duedate,timeoriginalestimate,issuetype,parent,subtasks,description',
       },
@@ -76,7 +84,7 @@ export class JiraService {
   }
 
   async getAttachments(issueKey: string): Promise<JiraAttachment[]> {
-    const res = await this.client.get<{ fields: { attachment?: JiraAttachment[] } }>(`/issue/${issueKey}`, {
+    const res = await this.client.get<{ fields: { attachment?: JiraAttachment[] } }>(`/issue/${pathKey(issueKey)}`, {
       params: { fields: 'attachment' },
     });
     return res.data.fields.attachment ?? [];
@@ -113,6 +121,8 @@ export class JiraService {
     estimateSeconds?: number;
     dueDate?: string;
     parentKey?: string;
+    // Documento ADF
+    description?: unknown;
   }): Promise<{ key: string; estimateSkipped?: boolean }> {
     const fields: Record<string, unknown> = {
       project: { key: params.projectKey },
@@ -124,8 +134,8 @@ export class JiraService {
     if (params.dueDate) fields.duedate = params.dueDate;
     if (params.estimateSeconds) {
       // Jira Cloud prefiere timetracking con texto ("1h 30m") sobre timeoriginalestimate en segundos
-      const h = Math.floor(params.estimateSeconds / 3600);
-      const m = Math.floor((params.estimateSeconds % 3600) / 60);
+      const h = Math.floor(params.estimateSeconds / SECONDS_PER_HOUR);
+      const m = Math.floor((params.estimateSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
       const parts = [];
       if (h > 0) parts.push(`${h}h`);
       if (m > 0) parts.push(`${m}m`);
@@ -133,6 +143,7 @@ export class JiraService {
       fields.timetracking = { originalEstimate: estimate, remainingEstimate: estimate };
     }
     if (params.parentKey) fields.parent = { key: params.parentKey };
+    if (params.description) fields.description = params.description;
 
     try {
       const res = await this.client.post<{ id: string; key: string }>('/issue', { fields });
@@ -149,17 +160,33 @@ export class JiraService {
     }
   }
 
+  // El contenido ya viene leído y validado por quien llama (descriptor abierto sin seguir enlaces); aquí solo se vigila el tamaño
+  async uploadAttachment(issueKey: string, filename: string, data: Buffer, maxBytes: number = MAX_ATTACHMENT_BYTES): Promise<string> {
+    if (data.length > maxBytes) throw new Error(`${filename} pesa más de ${maxBytes} bytes; no lo subo.`);
+    const form = new FormData();
+    form.append('file', new Blob([data]), filename);
+    // El Content-Type por defecto es JSON: axios convertiría el formulario a JSON si no se reemplaza
+    const res = await this.client.post<Array<{ id: string }>>(`/issue/${pathKey(issueKey)}/attachments`, form, {
+      headers: { 'X-Atlassian-Token': 'no-check', 'Content-Type': 'multipart/form-data' },
+      timeout: UPLOAD_TIMEOUT_MS,
+      maxBodyLength: Infinity,
+    });
+    const id = res.data[0]?.id;
+    if (!id) throw new Error(`Jira no devolvió el id del adjunto subido a ${issueKey}.`);
+    return id;
+  }
+
   async updateIssue(issueKey: string, fields: Record<string, unknown>): Promise<void> {
-    await this.client.put(`/issue/${issueKey}`, { fields });
+    await this.client.put(`/issue/${pathKey(issueKey)}`, { fields });
   }
 
   async getTransitions(issueKey: string): Promise<JiraTransition[]> {
-    const res = await this.client.get<{ transitions: JiraTransition[] }>(`/issue/${issueKey}/transitions`);
+    const res = await this.client.get<{ transitions: JiraTransition[] }>(`/issue/${pathKey(issueKey)}/transitions`);
     return res.data.transitions;
   }
 
   async doTransition(issueKey: string, transitionId: string): Promise<void> {
-    await this.client.post(`/issue/${issueKey}/transitions`, {
+    await this.client.post(`/issue/${pathKey(issueKey)}/transitions`, {
       transition: { id: transitionId },
     });
   }
@@ -188,8 +215,26 @@ export class JiraService {
     return res.data.issues;
   }
 
+  // Sigue nextPageToken hasta agotar resultados o llegar al tope de páginas
+  async searchAllIssues(jql: string, fields: string[]): Promise<JiraIssue[]> {
+    const all: JiraIssue[] = [];
+    let nextPageToken: string | undefined;
+    for (let page = 0; page < MAX_SEARCH_PAGES; page++) {
+      const res = await this.client.post<{ issues: JiraIssue[]; nextPageToken?: string }>('/search/jql', {
+        jql,
+        fields,
+        maxResults: SEARCH_PAGE_SIZE,
+        ...(nextPageToken ? { nextPageToken } : {}),
+      });
+      all.push(...res.data.issues);
+      nextPageToken = res.data.nextPageToken;
+      if (!nextPageToken) return all;
+    }
+    throw new Error(`La búsqueda supera ${MAX_SEARCH_PAGES * SEARCH_PAGE_SIZE} resultados; no sigo.`);
+  }
+
   async reparent(issueKey: string, newParentKey: string): Promise<void> {
-    await this.client.put(`/issue/${issueKey}`, {
+    await this.client.put(`/issue/${pathKey(issueKey)}`, {
       fields: { parent: { key: newParentKey } },
     });
   }
@@ -203,7 +248,7 @@ export class JiraService {
 
   async getIssueTypes(projectKey: string): Promise<Array<{ id: string; name: string; subtask: boolean }>> {
     const res = await this.client.get<{ issueTypes: Array<{ id: string; name: string; subtask: boolean }> }>(
-      `/project/${projectKey}`
+      `/project/${pathProject(projectKey)}`
     );
     return (res.data as unknown as { issueTypes: Array<{ id: string; name: string; subtask: boolean }> }).issueTypes ?? [];
   }

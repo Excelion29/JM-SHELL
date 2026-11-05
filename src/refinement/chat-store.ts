@@ -9,8 +9,6 @@ import { agentsPath, chatPath, claudeSettingsPath, updateState } from './state';
 import { stripTerminalControls } from './text';
 import { addTurnUsage, TurnUsage } from './usage';
 
-// Mensajes que se muestran al reabrir una historia
-export const TRANSCRIPT_HISTORY_LIMIT = 12;
 // La copia local no crece sin tope: se queda con lo más reciente
 export const TRANSCRIPT_MAX_ENTRIES = 500;
 // Tope de lectura: un archivo más grande se lee solo por la cola

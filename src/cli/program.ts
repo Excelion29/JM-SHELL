@@ -18,6 +18,7 @@ import { typesCommand } from '../commands/types';
 import { movesCommand } from '../commands/moves';
 import { exportCommand } from '../commands/export';
 import { refineCommand } from '../commands/refine';
+import { importCommand } from '../commands/import';
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -124,6 +125,10 @@ export function buildProgram(): Command {
     .description('Refinar una historia: debate, plan y estimación PERT (en la app; --claude abre Claude Code completo)')
     .option('--claude', 'Abrir la interfaz completa de Claude Code en lugar del chat de la app')
     .action(refineCommand);
+
+  program.command('import [issueKey]')
+    .description('Crear en Jira las tareas marcadas del plan de una historia (idempotente)')
+    .action(importCommand);
 
   return program;
 }

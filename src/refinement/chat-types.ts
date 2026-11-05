@@ -31,20 +31,13 @@ export type ChatUiEvent =
 
 export interface ChatOpenResult {
   header: ChatHeader;
+  // Carpeta donde corre Claude: la de jm
+  codeFolder: string;
   history: ChatLine[];
 }
 
-export type CodeFolderCheck =
-  | { status: 'ready'; codeFolder: string | null }
-  | { status: 'needs-folder'; projectKey: string; suggestedFolder: string | null; confirmCwd: boolean };
-export type SaveCodeFolderResult = { ok: true } | { ok: false; message: string };
-
 // Objeto plano que la isla ESM recibe como prop
 export interface ChatBridge {
-  // Con `force` devuelve siempre needs-folder (cambiar un mapeo equivocado), sugiriendo el actual
-  checkCodeFolder: (storyKey: string, force?: boolean) => Promise<CodeFolderCheck>;
-  saveCodeFolder: (projectKey: string, folder: string) => Promise<SaveCodeFolderResult>;
-  skipCodeFolder: (projectKey: string) => void;
   open: (key: string, listener: (event: ChatUiEvent) => void) => Promise<ChatOpenResult>;
   send: (text: string) => void;
   toggleDeep: () => void;

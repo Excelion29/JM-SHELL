@@ -4,10 +4,13 @@ import { Frame } from './components/frame.js';
 import { HomeScreen } from './components/home-screen.js';
 // Solo tipos: se borra al compilar
 import type { ChatBridge } from '../refinement/chat-types.js';
+import type { PlanBridge } from '../refinement/review-types.js';
 import type { BrowseItem, ProjectItem, StorySummary } from '../refinement/types.js';
 import { PinPrompt } from './components/pin-prompt.js';
 import { BrowseScreen } from './screens/browse-screen.js';
 import { ChatScreen } from './screens/chat-screen.js';
+import { CloseScreen } from './screens/close-screen.js';
+import { PlanScreen } from './screens/plan-screen.js';
 import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
 import { FOOTER_HINTS, PIN_TEXTS } from './texts.js';
 
@@ -35,11 +38,12 @@ export interface AppProps {
   setProject: (key: string) => Promise<SetProjectResult>;
   loadStories: (projectKey: string | null) => Promise<StorySummary[]>;
   chat: ChatBridge;
+  plan: PlanBridge;
   initialChatKey?: string | null;
   onAction?: (action: AppAction) => void;
 }
 
-type Stage = 'pin' | 'home' | 'browse' | 'projects' | 'chat';
+type Stage = 'pin' | 'home' | 'browse' | 'projects' | 'chat' | 'review' | 'close';
 
 function hintFor(stage: Stage, choiceCount: number): string {
   if (stage === 'pin') return FOOTER_HINTS.pin;
@@ -59,11 +63,13 @@ export function App({
   setProject,
   loadStories,
   chat,
+  plan,
   initialChatKey = null,
   onAction,
 }: AppProps) {
   const { exit } = useApp();
   const [chatKey, setChatKey] = useState<string | null>(initialChatKey);
+  const [storyKey, setStoryKey] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(unlocked ? (initialChatKey ? 'chat' : 'home') : 'pin');
   const [projectsReturnTo, setProjectsReturnTo] = useState<Stage>('home');
   const [projectKey, setProjectKey] = useState(initialProjectKey);
@@ -97,6 +103,17 @@ export function App({
     setStage('home');
   };
 
+  const leaveStoryScreen = async () => {
+    setStoryKey(null);
+    setStories(await loadStories(projectKey));
+    setStage('home');
+  };
+
+  const openStoryScreen = (key: string, next: 'review' | 'close') => {
+    setStoryKey(key);
+    setStage(next);
+  };
+
   const handleHandoff = (key: string) => {
     onAction?.({ type: 'handoff', key });
     exit();
@@ -116,6 +133,8 @@ export function App({
           onRefine={handleRefine}
           onBrowse={() => setStage('browse')}
           onChangeProject={() => openProjects('home')}
+          onReview={(key) => openStoryScreen(key, 'review')}
+          onCloseStory={(key) => openStoryScreen(key, 'close')}
           onQuit={exit}
         />
       )}
@@ -137,6 +156,17 @@ export function App({
           onHandoff={() => handleHandoff(chatKey)}
           onChoicesChange={setChoiceCount}
         />
+      )}
+      {stage === 'review' && storyKey && (
+        <PlanScreen
+          storyKey={storyKey}
+          plan={plan}
+          onBack={() => void leaveStoryScreen()}
+          onFinished={() => void leaveStoryScreen()}
+        />
+      )}
+      {stage === 'close' && storyKey && (
+        <CloseScreen storyKey={storyKey} plan={plan} onBack={() => void leaveStoryScreen()} />
       )}
       {stage === 'projects' && (
         <ProjectScreen

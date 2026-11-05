@@ -239,6 +239,16 @@ const SECTIONS: Section[] = [
         ],
         examples: ['jm refinar AQ-45', 'jm refinar'],
       },
+      {
+        cmd: 'import',
+        args: '[CLAVE]',
+        description: 'Crea en Jira las tareas marcadas del plan de la historia, con estimación y adjuntos.',
+        detail: [
+          'Subtareas de la historia; si es épica, subtarea o está cerrada, pregunta dónde crear.',
+          'Idempotente: lo ya creado o subido no se repite; si se corta, vuelve a ejecutarlo.',
+        ],
+        examples: ['jm import AQ-45'],
+      },
     ],
   },
   {

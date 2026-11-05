@@ -98,6 +98,13 @@ function readStringMap(value: unknown): Record<string, string> {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
 }
 
+// Las claves que llegan de estado.json terminan en rutas REST: las inválidas se descartan
+function readKeyMap(value: unknown, keysAreIssues: boolean): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(readStringMap(value)).filter(([k, v]) => isValidIssueKey(keysAreIssues ? k : v)),
+  );
+}
+
 function readAttachments(value: unknown): StoryAttachment[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).flatMap((item) => {
@@ -115,7 +122,7 @@ function readAttachments(value: unknown): StoryAttachment[] {
         purpose: purpose as AttachmentPurpose,
         origin,
         taskIds: isStringList(taskIds) ? taskIds : [],
-        uploaded: readStringMap(item.uploaded),
+        uploaded: readKeyMap(item.uploaded, true),
       },
     ];
   });
@@ -165,7 +172,7 @@ function normalize(raw: unknown, key: string, file: string, progressed: boolean)
     block,
     claudeSessionId: readSessionId(raw.claudeSessionId),
     parentKey: typeof raw.parentKey === 'string' ? raw.parentKey : null,
-    createdIssues: readStringMap(raw.createdIssues),
+    createdIssues: readKeyMap(raw.createdIssues, false),
     attachments: readAttachments(raw.attachments),
     usage: readUsage(raw.usage),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date(0).toISOString(),
@@ -325,6 +332,7 @@ export function toSummary(state: StoryState): StorySummary {
     key: state.key,
     summary: state.summary,
     phase: PHASE_LABELS[state.phase],
+    phaseId: state.phase,
     block: state.block ? BLOCK_LABELS[state.block] : NO_BLOCK_LABEL,
     nextStep: nextStepFor(state),
     updatedAt: state.updatedAt,

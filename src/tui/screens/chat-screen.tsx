@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 // Solo tipos: se borra al compilar, la isla ESM no importa código CJS
 import type { ChatBridge, ChatHeader, ChatLine, ChatUiEvent } from '../../refinement/chat-types.js';
-import { CodeFolderPrompt } from '../components/code-folder-prompt.js';
 import { MdRow, renderMarkdown, Span } from '../components/markdown.js';
 import { wrapText } from '../components/wrap-text.js';
 import {
@@ -99,12 +98,9 @@ function RowText({ row }: { row: MdRow }) {
   );
 }
 
-type Gate = 'checking' | 'open' | { projectKey: string; suggestedFolder: string | null; confirmCwd: boolean };
-
 export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }: ChatScreenProps) {
   const { stdout } = useStdout();
-  const [codeFolder, setCodeFolder] = useState<string | null>(null);
-  const [gate, setGate] = useState<Gate>('checking');
+  const [codeFolder, setCodeFolder] = useState('');
   const [header, setHeader] = useState<ChatHeader | null>(null);
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [streaming, setStreaming] = useState('');
@@ -120,19 +116,6 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    chat
-      .checkCodeFolder(chatKey)
-      .then((check) => {
-        if (check.status === 'ready') {
-          setCodeFolder(check.codeFolder);
-          setGate('open');
-        } else setGate(check);
-      })
-      .catch((err: unknown) => setOpenError((err as Error).message));
-  }, [chatKey, chat]);
-
-  useEffect(() => {
-    if (gate !== 'open') return undefined;
     closing.current = false;
     setHeader(null);
     setLines([]);
@@ -177,6 +160,7 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
       .then((opened) => {
         if (closing.current) return;
         setHeader(opened.header);
+        setCodeFolder(opened.codeFolder);
         setLines(capLines(opened.history));
       })
       .catch((err: unknown) => setOpenError((err as Error).message));
@@ -185,16 +169,18 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
       if (flushTimer.current) clearTimeout(flushTimer.current);
       void chat.close();
     };
-  }, [chatKey, chat, gate]);
+  }, [chatKey, chat]);
 
   const columns = stdout?.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS;
   const terminalRows = stdout?.rows ?? CHAT_DEFAULT_TERMINAL_ROWS;
   const width = Math.max(20, columns - CHAT_HORIZONTAL_MARGIN);
   const visibleRows = Math.max(CHAT_VISIBLE_MIN_ROWS, terminalRows - CHAT_CHROME_ROWS);
   const committedRows = useMemo(() => toRows(lines, width), [lines, width]);
-  const rows = streaming
-    ? [...committedRows, ...toRows([{ role: 'assistant', text: streaming, at: '' }], width)]
-    : committedRows;
+  const streamingRows = useMemo(
+    () => (streaming ? toRows([{ role: 'assistant', text: streaming, at: '' }], width) : []),
+    [streaming, width],
+  );
+  const rows = useMemo(() => [...committedRows, ...streamingRows], [committedRows, streamingRows]);
   const choices = useMemo(() => choicesOf(lines, width), [lines, width]);
   const choiceCount = ready && !busy ? choices.length : 0;
   const maxScroll = Math.max(0, rows.length - visibleRows);
@@ -222,20 +208,12 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
     setMessage(null);
   };
 
-  const reopenCodeFolder = () => {
-    chat
-      .checkCodeFolder(chatKey, true)
-      .then((check) => {
-        if (check.status === 'needs-folder') setGate(check);
-      })
-      .catch((err: unknown) => setMessage((err as Error).message));
-  };
-
   useInput((typed, key) => {
-    if (gate !== 'open') return;
     if (key.escape) onBack();
     else if (key.pageUp) setScroll((s) => Math.min(maxScroll, s + visibleRows - 1));
     else if (key.pageDown) setScroll((s) => Math.max(0, s - (visibleRows - 1)));
+    else if (key.upArrow && input === '') setScroll((s) => Math.min(maxScroll, s + 1));
+    else if (key.downArrow && input === '') setScroll((s) => Math.max(0, s - 1));
     else if (!ready) return;
     else if (key.ctrl && typed === CHAT_KEYS.deepModel) {
       if (!busy) chat.toggleDeep();
@@ -246,9 +224,7 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
       }
     } else if (key.ctrl && typed === CHAT_KEYS.fullClaude) onHandoff();
     else if ((key.ctrl && typed === CHAT_KEYS.newline) || (key.return && key.shift)) setInput((text) => `${text}\n`);
-    else if (key.ctrl && typed === CHAT_KEYS.codeFolder) {
-      if (input === '' && !busy) reopenCodeFolder();
-    } else if (key.return) sendText(input);
+    else if (key.return) sendText(input);
     else if (key.backspace || key.delete) setInput((text) => text.slice(0, -1));
     else if (CHOICE_DIGIT.test(typed) && input === '' && !busy && choices[Number(typed) - 1] !== undefined) {
       sendText(`${typed}. ${choices[Number(typed) - 1]}`);
@@ -263,36 +239,13 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
       </Box>
     );
   }
-  if (typeof gate === 'object') {
-    return (
-      <CodeFolderPrompt
-        projectKey={gate.projectKey}
-        initialFolder={gate.suggestedFolder}
-        confirmCwd={gate.confirmCwd}
-        onSave={async (folder) => {
-          const result = await chat.saveCodeFolder(gate.projectKey, folder);
-          if (result.ok) {
-            setCodeFolder(folder.trim());
-            setGate('open');
-          }
-          return result;
-        }}
-        onSkip={() => {
-          chat.skipCodeFolder(gate.projectKey);
-          setCodeFolder(null);
-          setGate('open');
-        }}
-        onCancel={onBack}
-      />
-    );
-  }
   if (!header) return <Text>{CHAT_TEXTS.preparing}</Text>;
 
   const inputRows = wrapText(`${CHAT_TEXTS.inputPrompt}${input}${CURSOR}`, width);
   return (
     <Box flexDirection="column">
       <HeaderLine header={header} />
-      <Text color={COLORS.muted}>{codeFolder ? CHAT_TEXTS.codeFolderLine(codeFolder) : CHAT_TEXTS.noCodeNote}</Text>
+      <Text color={COLORS.muted}>{CHAT_TEXTS.codeFolderLine(codeFolder)}</Text>
       <Box flexDirection="column" marginTop={1}>
         {shown.map((row, index) => (
           <RowText key={index} row={row} />

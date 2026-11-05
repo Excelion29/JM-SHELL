@@ -12,12 +12,12 @@ import { ProjectConfig } from '../config/types';
 import { JiraService } from '../services/jira';
 import { setSession, getSession, clearSession } from '../utils/session';
 import { writeFileAtomicNoLinks } from '../utils/safe-write';
-import { error, warn } from '../utils/format';
+import { error } from '../utils/format';
 import { listStories, projectRoot, toSummary } from '../refinement/state';
 import { BROWSE_LIMIT, buildEpicsJql, buildStoriesJql, filterByProject, isValidProjectKey, toBrowseItem } from '../refinement/browse';
 import { BrowseItem, ProjectItem } from '../refinement/types';
-import { mappedRoot, noCodeRootPath } from '../refinement/repos';
 import { createChatBridge } from './chat-bridge';
+import { createPlanBridge } from './plan-bridge';
 import { runRefine } from './refine';
 
 // import() real: el CJS no puede hacer require() de la isla ESM (ink)
@@ -33,23 +33,10 @@ async function readProjectKey(): Promise<string | null> {
   }
 }
 
-// Un repos.json dañado no debe tumbar el inicio: se avisa y se usa la carpeta actual
-function codeRootFor(projectKey: string): string {
-  try {
-    return mappedRoot(projectKey) ?? projectRoot();
-  } catch (err: unknown) {
-    warn(`No pude leer ~/.jira-tool/repos.json (${(err as Error).message}). Uso la carpeta actual.`);
-    return projectRoot();
-  }
-}
-
-// Las historias viven en la carpeta de código del proyecto o, sin código, en la carpeta propia de jm
+// Las historias viven en la carpeta donde se abrió jm
 async function loadSummaries(projectKey: string | null) {
   try {
-    const roots = projectKey
-      ? [...new Set([codeRootFor(projectKey), noCodeRootPath(projectKey)])]
-      : [projectRoot()];
-    const stories = (await Promise.all(roots.map((root) => listStories(root)))).flat();
+    const stories = await listStories(projectRoot());
     return filterByProject(stories.map(toSummary), projectKey).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   } catch (err: unknown) {
     error(`No pude leer tus historias de .jm: ${(err as Error).message}`);
@@ -115,6 +102,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
   let unlocked = false;
   let initialChatKey = options.chatKey ?? null;
   const chat = createChatBridge(sessionJira);
+  const plan = createPlanBridge(sessionJira);
 
   try {
     for (;;) {
@@ -124,6 +112,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
         loadStories: loadSummaries,
         unlocked,
         chat,
+        plan,
         initialChatKey,
         fetchEpics: async (): Promise<BrowseItem[]> =>
           (await sessionJira().searchIssues(buildEpicsJql(requireProjectKey(projectKey)))).slice(0, BROWSE_LIMIT).map(toBrowseItem),

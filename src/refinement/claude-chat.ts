@@ -35,8 +35,6 @@ export const CHAT_MESSAGES = {
     `Retomamos la historia ${key}. Resume en 2 líneas lo decidido y dónde íbamos, y sigue desde ahí.`,
   fromLog: (key: string) =>
     `Esta es una sesión nueva de la historia ${key}. Retoma desde bitacora.md y estado.json: resume en 2 líneas lo decidido y sigue en el bloque actual.`,
-  noCode:
-    'Este proyecto no tiene repositorio de código disponible: refina solo con la historia y lo que te cuente el dev, sin explorar código.',
 } as const;
 
 export const EXPLORER_AGENTS = {
@@ -280,7 +278,6 @@ export interface ChatStartOptions {
   key: string;
   sessionId: string | null;
   model: ChatModel;
-  noCode?: boolean;
 }
 
 type Listener = (event: ChatEvent) => void;
@@ -295,7 +292,6 @@ export class ChatSession {
   private sessionId = '';
   private model: ChatModel = MODELS.conversation;
   private busy = false;
-  private noCode = false;
 
   constructor(private readonly options: ChatSessionOptions) {
     this.spawner = options.spawner ?? spawnChatProcess;
@@ -319,22 +315,21 @@ export class ChatSession {
     return this.busy;
   }
 
-  async start({ key, sessionId, model, noCode = false }: ChatStartOptions): Promise<void> {
+  async start({ key, sessionId, model }: ChatStartOptions): Promise<void> {
     this.key = key;
     this.model = model;
-    this.noCode = noCode;
     if (sessionId) {
       this.sessionId = sessionId;
       this.launch(true, CHAT_MESSAGES.resumed(key));
       return;
     }
-    await this.startFresh(this.withNoCode(CHAT_MESSAGES.first(key)));
+    await this.startFresh(CHAT_MESSAGES.first(key));
   }
 
   // Sesión nueva (otro uuid) que retoma desde la bitácora en lugar de arrastrar el contexto
   async startFromLog(): Promise<void> {
     this.detach(true);
-    await this.startFresh(this.withNoCode(CHAT_MESSAGES.fromLog(this.key)));
+    await this.startFresh(CHAT_MESSAGES.fromLog(this.key));
   }
 
   send(text: string): void {
@@ -364,8 +359,6 @@ export class ChatSession {
   close(force = false): void {
     this.detach(force);
   }
-
-  private withNoCode = (message: string) => (this.noCode ? `${message} ${CHAT_MESSAGES.noCode}` : message);
 
   private async startFresh(firstMessage: string): Promise<void> {
     this.sessionId = this.newSessionId();
