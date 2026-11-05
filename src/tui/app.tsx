@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { render, useApp } from 'ink';
 import { Frame } from './components/frame.js';
 import { HomeScreen } from './components/home-screen.js';
 // Solo tipos: se borra al compilar
-import type { ChatBridge } from '../refinement/chat-types.js';
+import type { ChatBridge, KnowledgeStatus } from '../refinement/chat-types.js';
 import type { PlanBridge } from '../refinement/review-types.js';
 import type { BrowseItem, ProjectItem, StorySummary } from '../refinement/types.js';
+import { KnowledgeConfirm, KnowledgePrompt } from './components/knowledge-prompt.js';
 import { PinPrompt } from './components/pin-prompt.js';
 import { BrowseScreen } from './screens/browse-screen.js';
 import { ChatScreen } from './screens/chat-screen.js';
@@ -43,11 +44,15 @@ export interface AppProps {
   onAction?: (action: AppAction) => void;
 }
 
-type Stage = 'pin' | 'home' | 'browse' | 'projects' | 'chat' | 'review' | 'close';
+// 'routing': decide entre pedir la base de conocimiento o abrir el chat
+const ROUTE_BY_STATUS = { unset: 'knowledge', untrusted: 'knowledgeConfirm', set: 'chat' } as const;
+
+type Stage = 'pin' | 'home' | 'browse' | 'projects' | 'routing' | 'knowledge' | 'knowledgeConfirm' | 'chat' | 'review' | 'close';
 
 function hintFor(stage: Stage, choiceCount: number): string {
   if (stage === 'pin') return FOOTER_HINTS.pin;
   if (stage === 'home') return FOOTER_HINTS.home;
+  if (stage === 'knowledge' || stage === 'knowledgeConfirm') return FOOTER_HINTS.knowledge;
   if (stage !== 'chat') return '';
   return choiceCount > 0 ? `${FOOTER_HINTS.choose(choiceCount)} · ${FOOTER_HINTS.chat}` : FOOTER_HINTS.chat;
 }
@@ -70,7 +75,7 @@ export function App({
   const { exit } = useApp();
   const [chatKey, setChatKey] = useState<string | null>(initialChatKey);
   const [storyKey, setStoryKey] = useState<string | null>(null);
-  const [stage, setStage] = useState<Stage>(unlocked ? (initialChatKey ? 'chat' : 'home') : 'pin');
+  const [stage, setStage] = useState<Stage>(unlocked ? (initialChatKey ? 'routing' : 'home') : 'pin');
   const [projectsReturnTo, setProjectsReturnTo] = useState<Stage>('home');
   const [projectKey, setProjectKey] = useState(initialProjectKey);
   const [stories, setStories] = useState(initialStories);
@@ -83,7 +88,7 @@ export function App({
     setPinError(null);
     try {
       const result = await unlock(pin);
-      if (result.ok) setStage(chatKey ? 'chat' : 'home');
+      if (result.ok) setStage(chatKey ? 'routing' : 'home');
       else setPinError(result.message ?? PIN_TEXTS.wrongPinFallback);
     } catch {
       setPinError(PIN_TEXTS.wrongPinFallback);
@@ -92,9 +97,18 @@ export function App({
     }
   };
 
+  useEffect(() => {
+    if (stage !== 'routing') return;
+    // Si no se puede leer el estado de la base, el chat lo reporta con un mensaje claro al abrir
+    chat
+      .knowledgeStatus()
+      .catch((): KnowledgeStatus => 'set')
+      .then((status) => setStage(ROUTE_BY_STATUS[status]));
+  }, [stage, chat]);
+
   const handleRefine = (key: string) => {
     setChatKey(key);
-    setStage('chat');
+    setStage('routing');
   };
 
   const leaveChat = async () => {
@@ -147,6 +161,12 @@ export function App({
           onChangeProject={() => openProjects('browse')}
           onBack={() => setStage('home')}
         />
+      )}
+      {stage === 'knowledge' && (
+        <KnowledgePrompt chat={chat} onDone={() => setStage('chat')} onCancel={() => void leaveChat()} />
+      )}
+      {stage === 'knowledgeConfirm' && (
+        <KnowledgeConfirm chat={chat} onDone={() => setStage('chat')} onCancel={() => void leaveChat()} />
       )}
       {stage === 'chat' && chatKey && (
         <ChatScreen

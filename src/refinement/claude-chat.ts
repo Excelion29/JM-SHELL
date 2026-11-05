@@ -1,12 +1,14 @@
 import { randomUUID } from 'crypto';
 import * as path from 'path';
-import type { ChatModel } from './chat-types';
+import type { ChatKnowledge, ChatModel } from './chat-types';
 import {
   assertSafeArgs,
   CHAT_DISALLOWED_TOOLS,
   CHAT_KEY_SOURCE,
+  CHAT_MCP_FILE,
   CHAT_MODEL_NAMES,
   chatAllowedTools,
+  scopedKnowledgeRules,
   SESSION_ID_PATTERN,
   spawnClaude,
 } from './claude';
@@ -29,12 +31,23 @@ const KEY_PATTERN = new RegExp(`^${CHAT_KEY_SOURCE}$`);
 const NDJSON_BUFFER_MAX_CHARS = 8 * 1024 * 1024;
 const SUBAGENT_TOOLS = new Set(['Agent', 'Task']);
 
+const withContext = (message: string, context: string | null) => (context ? `${message} ${context}` : message);
+
 export const CHAT_MESSAGES = {
-  first: (key: string) => `Sigue la skill refinar para la historia ${key}.`,
-  resumed: (key: string) =>
-    `Retomamos la historia ${key}. Resume en 2 líneas lo decidido y dónde íbamos, y sigue desde ahí.`,
-  fromLog: (key: string) =>
-    `Esta es una sesión nueva de la historia ${key}. Retoma desde bitacora.md y estado.json: resume en 2 líneas lo decidido y sigue en el bloque actual.`,
+  first: (key: string, context: string | null = null) =>
+    withContext(`Sigue la skill refinar para la historia ${key}.`, context),
+  resumed: (key: string, context: string | null = null) =>
+    withContext(
+      `Retomamos la historia ${key}. Resume en 2 líneas lo decidido y dónde íbamos, y sigue desde ahí.`,
+      context,
+    ),
+  fromLog: (key: string, context: string | null = null) =>
+    withContext(
+      `Esta es una sesión nueva de la historia ${key}. Retoma desde bitacora.md y estado.json: resume en 2 líneas lo decidido y sigue en el bloque actual.`,
+      context,
+    ),
+  fromNote: (key: string, context: string) =>
+    `Sigue la skill refinar para la historia ${key}. Es la primera vez en esta carpeta, pero la base de conocimiento ya tiene una nota de esta historia: léela primero, resume en 2 líneas lo decidido y sigue desde ahí. ${context}`,
 } as const;
 
 export const EXPLORER_AGENTS = {
@@ -167,11 +180,14 @@ export function createNdjsonParser(onEvent: (event: ChatEvent) => void): NdjsonP
 }
 
 // Ajustes que jm le pasa a claude: sin hooks y con los mismos permisos que el allowlist de argv
-export function buildChatSettings(key: string): Record<string, unknown> {
+export function buildChatSettings(key: string, kb: ChatKnowledge | null = null): Record<string, unknown> {
   if (!KEY_PATTERN.test(key)) throw new Error(`Clave de historia inválida para el chat: "${key}".`);
   return {
     disableAllHooks: true,
-    permissions: { allow: chatAllowedTools(key).split(','), deny: CHAT_DISALLOWED_TOOLS.split(',') },
+    permissions: {
+      allow: [...chatAllowedTools(key, kb).split(','), ...scopedKnowledgeRules(kb)],
+      deny: CHAT_DISALLOWED_TOOLS.split(','),
+    },
   };
 }
 
@@ -183,9 +199,15 @@ export interface ChatArgsInput {
   skillFile: string;
   agentsFile: string;
   settingsFile: string;
+  kb?: ChatKnowledge | null;
 }
 
-// El texto del dev nunca va aquí: viaja por stdin. Todo lo de abajo lo genera jm.
+function knowledgeArgs(kb: ChatKnowledge | null): string[] {
+  if (kb?.type === 'mcp') return ['--mcp-config', CHAT_MCP_FILE];
+  return kb?.type === 'local' ? ['--add-dir', kb.root] : [];
+}
+
+// El texto del dev nunca: viaja por stdin. Todo lo de abajo lo genera jm.
 export function buildChatArgs({
   key,
   model,
@@ -194,6 +216,7 @@ export function buildChatArgs({
   skillFile,
   agentsFile,
   settingsFile,
+  kb = null,
 }: ChatArgsInput): string[] {
   if (!KEY_PATTERN.test(key)) throw new Error(`Clave de historia inválida para el chat: "${key}".`);
   if (!CHAT_MODEL_NAMES.includes(model)) throw new Error(`Modelo no permitido para el chat: "${model}".`);
@@ -209,6 +232,7 @@ export function buildChatArgs({
     '--setting-sources',
     '',
     '--strict-mcp-config',
+    ...knowledgeArgs(kb),
     '--settings',
     settingsFile,
     '--permission-mode',
@@ -216,7 +240,7 @@ export function buildChatArgs({
     '--model',
     model,
     '--allowedTools',
-    chatAllowedTools(key),
+    chatAllowedTools(key, kb),
     '--disallowedTools',
     CHAT_DISALLOWED_TOOLS,
     '--agents',
@@ -269,6 +293,9 @@ export interface ChatSessionOptions {
   agentsFile: string;
   settingsFile: string;
   saveSessionId: (sessionId: string) => Promise<void> | void;
+  kb?: ChatKnowledge | null;
+  // Línea de contexto de la base de conocimiento que acompaña a los mensajes iniciales
+  kbContext?: string | null;
   spawner?: ChatSpawner;
   newSessionId?: () => string;
   now?: () => number;
@@ -278,6 +305,8 @@ export interface ChatStartOptions {
   key: string;
   sessionId: string | null;
   model: ChatModel;
+  // Cómo abrir una sesión sin id guardado: desde cero, desde la bitácora o desde la nota de la base
+  startMessage?: 'first' | 'fromLog' | 'fromNote';
 }
 
 type Listener = (event: ChatEvent) => void;
@@ -315,21 +344,21 @@ export class ChatSession {
     return this.busy;
   }
 
-  async start({ key, sessionId, model }: ChatStartOptions): Promise<void> {
+  async start({ key, sessionId, model, startMessage = 'first' }: ChatStartOptions): Promise<void> {
     this.key = key;
     this.model = model;
     if (sessionId) {
       this.sessionId = sessionId;
-      this.launch(true, CHAT_MESSAGES.resumed(key));
+      this.launch(true, CHAT_MESSAGES.resumed(key, this.context));
       return;
     }
-    await this.startFresh(CHAT_MESSAGES.first(key));
+    await this.startFresh(this.messageFor(startMessage));
   }
 
   // Sesión nueva (otro uuid) que retoma desde la bitácora en lugar de arrastrar el contexto
   async startFromLog(): Promise<void> {
     this.detach(true);
-    await this.startFresh(CHAT_MESSAGES.fromLog(this.key));
+    await this.startFresh(CHAT_MESSAGES.fromLog(this.key, this.context));
   }
 
   send(text: string): void {
@@ -358,6 +387,16 @@ export class ChatSession {
   // force=false deja terminar la vuelta en curso y el hijo sale solo al cerrarse su stdin
   close(force = false): void {
     this.detach(force);
+  }
+
+  private get context(): string | null {
+    return this.options.kbContext ?? null;
+  }
+
+  private messageFor(startMessage: 'first' | 'fromLog' | 'fromNote'): string {
+    if (startMessage === 'fromLog') return CHAT_MESSAGES.fromLog(this.key, this.context);
+    if (startMessage === 'fromNote' && this.context) return CHAT_MESSAGES.fromNote(this.key, this.context);
+    return CHAT_MESSAGES.first(this.key, this.context);
   }
 
   private async startFresh(firstMessage: string): Promise<void> {
@@ -391,6 +430,7 @@ export class ChatSession {
       skillFile: this.options.skillFile,
       agentsFile: this.options.agentsFile,
       settingsFile: this.options.settingsFile,
+      kb: this.options.kb,
     });
     assertSafeArgs(args);
     let sawTurn = false;
@@ -419,7 +459,7 @@ export class ChatSession {
       this.busy = false;
       const failedFast = code !== 0 && !sawTurn && this.now() - started < RESUME_FAIL_WINDOW_MS;
       if (resume && failedFast && firstMessage !== null) {
-        void this.startFresh(CHAT_MESSAGES.fromLog(this.key)).catch((err: unknown) =>
+        void this.startFresh(CHAT_MESSAGES.fromLog(this.key, this.context)).catch((err: unknown) =>
           this.listener({ type: 'error', message: `No pude abrir una sesión nueva: ${(err as Error).message}` }),
         );
         return;

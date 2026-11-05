@@ -1,3 +1,5 @@
+import type { KnowledgeConfig } from '../refinement/knowledge';
+
 export interface GlobalConfig {
   jiraUrl: string;
   email: string;
@@ -7,6 +9,7 @@ export interface GlobalConfig {
 export interface ProjectConfig {
   projectKey: string;
   defaultAssignee: string;
+  knowledge?: KnowledgeConfig;
 }
 
 export interface JiraContext {

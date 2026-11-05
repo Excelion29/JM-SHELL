@@ -1,4 +1,15 @@
-import type { ChatBridge, ChatHeader, ChatLine, ChatUiEvent } from '../refinement/chat-types.js';
+import type {
+  ChatBridge,
+  ChatHeader,
+  ChatLine,
+  ChatUiEvent,
+  KnowledgeChoice,
+  KnowledgeConnection,
+  KnowledgeListing,
+  KnowledgeStatus,
+  KnowledgeSummary,
+  ServerInspection,
+} from '../refinement/chat-types.js';
 import type {
   AssigneeView,
   CloseResult,
@@ -45,9 +56,24 @@ export const BASE_HEADER: ChatHeader = {
 };
 
 // Puente de chat falso para las pruebas de la app: no lanza claude
+const FAKE_KB_URL = 'https://127.0.0.1:27124/mcp';
+const FAKE_KB_BASE = 'PROYECTOS/X';
+
+export interface FakeKnowledge {
+  status?: KnowledgeStatus;
+  statusError?: boolean;
+  inspection?: ServerInspection;
+  // Carpetas de la base falsa: ruta -> listado
+  listings?: Record<string, KnowledgeListing>;
+  previews?: Record<string, string>;
+  openError?: string;
+  summary?: KnowledgeSummary;
+}
+
 export function createFakeChat(
   header: Partial<ChatHeader> = {},
   history: ChatLine[] = [],
+  knowledge: FakeKnowledge = {},
 ) {
   const sent: string[] = [];
   const calls = {
@@ -55,10 +81,15 @@ export function createFakeChat(
     toggle: 0,
     newSession: 0,
     close: 0,
+    saved: [] as KnowledgeChoice[],
+    trusted: 0,
+    inspected: [] as string[],
+    listed: [] as Array<{ connection: KnowledgeConnection; dir: string }>,
   };
   let listener: ((event: ChatUiEvent) => void) | null = null;
   const chat: ChatBridge = {
     open: async (key, onEvent) => {
+      if (knowledge.openError) throw new Error(knowledge.openError);
       listener = onEvent;
       calls.opened.push(key);
       return { header: { ...BASE_HEADER, ...header, key }, codeFolder: FAKE_CODE_FOLDER, history };
@@ -67,6 +98,24 @@ export function createFakeChat(
     toggleDeep: () => void (calls.toggle += 1),
     newSession: () => void (calls.newSession += 1),
     close: async () => void (calls.close += 1),
+    knowledgeStatus: async () => {
+      if (knowledge.statusError) throw new Error('estado ilegible');
+      return knowledge.status ?? 'set';
+    },
+    inspectServer: async (url) => {
+      calls.inspected.push(url);
+      return knowledge.inspection ?? { tls: 'system' };
+    },
+    listKnowledge: async (connection, dir) => {
+      calls.listed.push({ connection, dir });
+      const listing = knowledge.listings?.[dir];
+      if (!listing) throw new Error(`no existe ${dir}`);
+      return listing;
+    },
+    previewKnowledge: async (_connection, file) => knowledge.previews?.[file] ?? '',
+    saveKnowledge: async (choice) => void calls.saved.push(choice),
+    describeKnowledge: async () => knowledge.summary ?? { type: 'mcp', target: FAKE_KB_URL, baseFolder: FAKE_KB_BASE },
+    trustKnowledge: async () => void (calls.trusted += 1),
   };
   return { chat, sent, calls, header, emit: (event: ChatUiEvent) => listener?.(event) };
 }

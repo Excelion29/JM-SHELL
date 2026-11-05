@@ -187,7 +187,8 @@ test('ensureStory crea .jm/.gitignore con todas las líneas y no las duplica', a
   const root = await tempRoot();
   const gitignore = path.join(root, '.jm', '.gitignore');
   await ensureStory(root, 'AQ-45', 'Login', null);
-  const expected = 'historias/*/adjuntos/\nhistorias/*/.chat.jsonl\nagents.json\nclaude-settings.json\n';
+  const expected =
+    'historias/*/adjuntos/\nhistorias/*/.chat.jsonl\nagents.json\nclaude-settings.json\nmcp.json\nknowledge-context.md\n';
   assert.equal(await fs.readFile(gitignore, 'utf8'), expected);
   await ensureStory(root, 'AQ-46', 'Otra', null);
   assert.equal(await fs.readFile(gitignore, 'utf8'), expected);
@@ -201,7 +202,7 @@ test('ensureJmGitignore agrega las líneas que faltan sin pisar las del dev', as
   ensureJmGitignore(root);
   assert.equal(
     await fs.readFile(gitignore, 'utf8'),
-    'personalizado\nhistorias/*/adjuntos/\nhistorias/*/.chat.jsonl\nagents.json\nclaude-settings.json\n',
+    'personalizado\nhistorias/*/adjuntos/\nhistorias/*/.chat.jsonl\nagents.json\nclaude-settings.json\nmcp.json\nknowledge-context.md\n',
   );
 });
 

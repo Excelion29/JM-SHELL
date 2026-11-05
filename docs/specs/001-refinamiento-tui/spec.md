@@ -117,6 +117,21 @@ Idea del dev: que la continuidad entre carpetas venga de una fuente que él elig
 - Al abrir la historia en otra carpeta conectada a la misma base, se retoma desde esa nota; si no hay nota ni debate
   local, se empieza de cero.
 
+Decisiones del dev sobre el plan técnico (2026-11-05):
+- La carpeta base no se escribe a mano: `jm` lista las carpetas de la base y deja navegar (entrar, subir) y ver su
+  contenido (archivos y vista previa de notas) para fijar dónde continuar o crear el conocimiento.
+- El PIN se guarda en memoria mientras la app está abierta, para cifrar la API key en `~/.jira-tool/`.
+- Solo se pregunta por la base cuando la carpeta ya tiene `.jira.json` con proyecto.
+- Si la base no responde o la key falla al abrir, el chat avisa y **no** continúa (bloquea) hasta que se resuelva.
+- Reconfigurar la base desde la app queda para después de 3.2 (por ahora, editando `.jira.json`).
+- MCP siempre a través de un intermediario local de `jm` (decisión 2026-11-05, tras la prueba técnica: el cliente de
+  Claude no acepta el certificado propio de Obsidian y apagar TLS no es aceptable). Mientras el chat está abierto, `jm`
+  escucha solo en 127.0.0.1 (puerto libre), Claude se conecta ahí sin key, y `jm` reenvía al MCP real verificando TLS
+  y agregando la key. El intermediario solo deja pasar las herramientas permitidas: lectura/búsqueda + `vault_write` y
+  `vault_append`; bloquea borrar, mover, copiar y ejecutar comandos.
+- Certificado: al configurar, `jm` prueba con las autoridades del sistema; si no valida, muestra la huella y pregunta si
+  confiar; si sí, guarda el certificado en `~/.jira-tool/` y lo usa para verificar.
+
 ## Fuera de alcance
 
 - Fase 2: `list` / `get` / `move` / `edit` / `use` como pantallas de la app.
@@ -155,6 +170,15 @@ Idea del dev: que la continuidad entre carpetas venga de una fuente que él elig
   en Jira y los de `analisis`; si no confirmo, no se elimina nada.
 - **CA7** Dado una historia sin padre válido, cuando creo las tareas, entonces la app me pide dónde crearlas.
 - **CA8** Los comandos clásicos existentes (`do`, `bulk`, `list`, `move`, etc.) siguen funcionando igual.
+- **CA9** Dado una carpeta con `.jira.json` y proyecto sin base decidida, cuando abro una historia, entonces `jm` pregunta por la base
+  (MCP, carpeta local o ninguna), me deja navegar sus carpetas para elegir la base, y guarda la elección sin la API key.
+- **CA10** Dado un MCP con certificado propio, cuando lo configuro, entonces `jm` muestra la huella y solo con mi confirmación
+  guarda el certificado y lo usa para verificar TLS; nunca se desactiva la verificación.
+- **CA11** Dado el chat con MCP, cuando Claude pide `tools/list` o llama una herramienta, entonces el intermediario local solo expone
+  lectura/búsqueda y `vault_write`/`vault_append`, rechaza el resto sin reenviarlo, y Claude nunca recibe la key.
+- **CA12** Dado que la base no responde o la key falla al abrir, entonces el chat muestra el error y no se abre.
+- **CA13** Dado una base con carpeta `*JM-ADR` (o sin ella), cuando abro la historia, entonces Claude escribe solo en `<JM-ADR>/<KEY>.md`;
+  en otra carpeta conectada a la misma base, la historia se retoma desde esa nota.
 
 ## Tests
 
@@ -185,3 +209,6 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Accept parte 3.1 (carpeta independiente + scroll) | Marcello Cano | 2026-11-05 | aprobado ("todo lo demás okey"); sin mapeo global |
 | Commit parte 3 + 3.1 | Marcello Cano | 2026-11-05 | aprobado ("apruebo continuemos"); review 3 dimensiones aplicada; prueba en terminal real pendiente |
 | Accept parte 3.2 (base de conocimiento) | Marcello Cano | 2026-11-05 | aprobado ("lo demás genial, está conforme"); MCP o carpeta local; numeración de Conocimiento |
+| Accept plan técnico 3.2 | Marcello Cano | 2026-11-05 | aprobado (1 sí, 2 sí, 3 avisa y bloquea, 4 después); + navegador de carpetas de la base |
+| Accept intermediario MCP 3.2 | Marcello Cano | 2026-11-05 | aprobado ("okey genial, sí vamos con intermediario") |
+| Commit parte 3.2 | Marcello Cano | 2026-11-05 | aprobado ("okey genial apruebo"); review 3 dimensiones + re-review seguridad (0 bloqueantes); prueba real con Obsidian pendiente |

@@ -21,7 +21,7 @@ Todo vive en `.jm/historias/<KEY>/`, en la raíz del proyecto (donde está `.jir
 | `bitacora.md` | Tus notas por bloque. La escribes tú. |
 | `plan.json` | El resultado. Lo escribes tú al final. |
 
-Nunca escribas fuera de esa carpeta. No modifiques código del proyecto. No uses herramientas de Jira/Atlassian ni leas
+Nunca escribas fuera de esa carpeta, salvo lo que permite la sección «Base de conocimiento». No modifiques código del proyecto. No uses herramientas de Jira/Atlassian ni leas
 credenciales (`~/.jira-tool/`, `.env*`).
 
 ## Al empezar
@@ -39,6 +39,24 @@ credenciales (`~/.jira-tool/`, `.env*`).
    abrir `jm` en el repo correcto, o refinar sin código marcando las estimaciones como supuestos.
 5. En ese primer mensaje pregunta quién la va a hacer (normalmente el dev mismo) y qué tan conocida le es esa parte.
 6. Pon `phase: "debate"` y `block: "scope"` en `estado.json`.
+
+## Base de conocimiento
+
+Solo aplica si el mensaje inicial menciona una base de conocimiento, o si existe `.jm/knowledge-context.md` (léelo
+entonces: dice dónde está la base y cuál es tu nota). La base llega por el MCP `jm_kb` (herramientas `mcp__jm_kb__*`)
+o como una carpeta local; la carpeta indicada es el foco y el punto de partida, no un límite.
+
+- **Antes del primer mensaje al dev:** lee el contexto y las convenciones de la carpeta base (README, índice, notas de
+  convenciones). Puedes leer y buscar en toda la base (otras carpetas, notas relacionadas) cuando el debate lo pida.
+- **Dónde escribes por tu cuenta:** solo en tu nota de esta historia (la ruta exacta viene en el mensaje inicial,
+  `<carpeta JM-ADR>/<KEY>.md`). Nunca escribas en otra nota por iniciativa propia.
+- **Cuándo escribes:** al cerrar cada bloque (junto con `bitacora.md`) y cuando el plan esté listo. Usa el estado, las
+  decisiones y los porqués; no pegues la conversación. Después dile al dev en el chat qué guardaste y dónde.
+- **Fuera de tu nota:** escribe en otra parte de la base solo si el dev te lo pide de forma explícita, diciendo qué y
+  dónde. Confirma en el chat lo que hiciste. Nunca borres, muevas ni renombres notas.
+- **Si el mensaje inicial dice que retomas desde la nota:** léela primero, resume en dos líneas lo decidido y sigue desde
+  ahí; la bitácora local aún está vacía.
+- Si la base no responde, díselo al dev y sigue con `bitacora.md`: no es motivo para parar el debate.
 
 ## Formato de cada mensaje
 

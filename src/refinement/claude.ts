@@ -2,7 +2,8 @@ import { ChildProcess, spawn, StdioOptions } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import type { ChatModel } from './chat-types';
+import type { ChatKnowledge, ChatModel } from './chat-types';
+import { KB_ALLOWED_TOOLS, kbToolRule } from './kb-proxy';
 
 const CLAUDE_BIN = 'claude';
 const IS_WINDOWS = process.platform === 'win32';
@@ -19,8 +20,20 @@ export const CHAT_MODEL_NAMES: readonly ChatModel[] = ['sonnet', 'haiku', 'opus'
 export const CHAT_ALLOWED_TOOLS_BASE = 'Read,Grep,Glob,Task,Agent';
 // Herramientas que siempre se niegan: la negación gana sobre cualquier allow
 export const CHAT_DISALLOWED_TOOLS = 'Bash,WebFetch,WebSearch,NotebookEdit';
-export const chatAllowedTools = (key: string) =>
-  `${CHAT_ALLOWED_TOOLS_BASE},Write(.jm/historias/${key}/**),Edit(.jm/historias/${key}/**)`;
+export const KB_MCP_RULES = KB_ALLOWED_TOOLS.map(kbToolRule).join(',');
+export const chatAllowedTools = (key: string, kb?: ChatKnowledge | null) =>
+  `${CHAT_ALLOWED_TOOLS_BASE},Write(.jm/historias/${key}/**),Edit(.jm/historias/${key}/**)${kb?.type === 'mcp' ? `,${KB_MCP_RULES}` : ''}`;
+const RULE_DRIVE = /^([A-Za-z]):\//;
+// Forma que Claude Code acepta para una ruta absoluta en Windows: //c/Users/... (con "C:/..." o barras invertidas no casa)
+export const toRulePath = (absolutePath: string): string => {
+  const slashed = absolutePath.replace(/\\/g, '/');
+  const drive = RULE_DRIVE.exec(slashed);
+  return drive ? `//${drive[1].toLowerCase()}/${slashed.slice(drive[0].length)}` : `/${slashed}`;
+};
+// Las reglas con ruta absoluta solo funcionan desde --settings (no desde --allowedTools)
+export const scopedKnowledgeRules = (kb?: ChatKnowledge | null): string[] =>
+  kb?.type === 'local' ? [`Write(${toRulePath(kb.adrDir)}/**)`, `Edit(${toRulePath(kb.adrDir)}/**)`] : [];
+export const CHAT_MCP_FILE = '.jm/mcp.json';
 export const CHAT_FILES = {
   settings: '.jm/claude-settings.json',
   agents: '.jm/agents.json',
@@ -35,15 +48,36 @@ const ALLOWED_ARGS: RegExp[] = [
   // Flags fijas del chat headless (el texto del dev viaja por stdin, nunca por argv)
   /^(-p|--verbose|--include-partial-messages|--strict-mcp-config)$/,
   /^(--input-format|--output-format|--setting-sources|--permission-mode|--model)$/,
-  /^(--allowedTools|--disallowedTools|--agents|--settings|--append-system-prompt-file)$/,
+  /^(--allowedTools|--disallowedTools|--agents|--settings|--append-system-prompt-file|--mcp-config|--add-dir)$/,
   // Valor vacío de --setting-sources: no carga ajustes de usuario, proyecto ni locales
   /^$/,
   new RegExp(`^(stream-json|dontAsk|${CHAT_MODEL_NAMES.join('|')})$`),
   new RegExp(`^${escapeRegex(CHAT_DISALLOWED_TOOLS)}$`),
-  new RegExp(`^${escapeRegex(chatAllowedTools('KEY')).split('KEY').join(CHAT_KEY_SOURCE)}$`),
+  new RegExp(
+    `^${escapeRegex(chatAllowedTools('KEY')).split('KEY').join(CHAT_KEY_SOURCE)}(,${escapeRegex(KB_MCP_RULES)})?$`,
+  ),
+  // Solo las herramientas MCP de la base: así se pasan al abrir Claude completo
+  new RegExp(`^${escapeRegex(KB_MCP_RULES)}$`),
   // Archivos de jm relativos a la raíz (el cwd de claude): una ruta absoluta con tildes o paréntesis no pasaría
-  new RegExp(`^(${Object.values(CHAT_FILES).map(escapeRegex).join('|')})$`),
+  new RegExp(`^(${[...Object.values(CHAT_FILES), CHAT_MCP_FILE].map(escapeRegex).join('|')})$`),
 ];
+
+const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/;
+const DOT_DOT_SEGMENT = /(?:^|[\\/])\.\.(?:[\\/]|$)/;
+// Metacaracteres de cmd (el shim .cmd corre con shell) y barra final (rompería las comillas)
+const SHELL_UNSAFE_PATH = /[%"!^&|<>\r\n]|[\\/]$/;
+
+// Absoluta y normalizada: en Windows con unidad (sin UNC ni \\?\), sin "..", y path.resolve(p) === p
+export function isNormalizedAbsolutePath(candidate: string, windows: boolean = IS_WINDOWS): boolean {
+  if (DOT_DOT_SEGMENT.test(candidate)) return false;
+  if (windows ? !WINDOWS_DRIVE_PATH.test(candidate) : !candidate.startsWith('/')) return false;
+  return (windows ? path.win32 : path.posix).resolve(candidate) === candidate;
+}
+
+// Carpeta de la base local tras --add-dir
+export const isSafeAddDirPath = (candidate: string, windows: boolean = IS_WINDOWS): boolean =>
+  isNormalizedAbsolutePath(candidate, windows) && !SHELL_UNSAFE_PATH.test(candidate);
+const ADD_DIR_FLAG = '--add-dir';
 
 export interface ClaudeRunResult {
   code: number | null;
@@ -54,8 +88,10 @@ export type ClaudeRunner = (args: string[], cwd: string) => Promise<ClaudeRunRes
 
 // Última barrera antes de spawn: ningún texto fuera de esta lista llega a un proceso
 export function assertSafeArgs(args: string[]): void {
-  for (const arg of args) {
-    if (!ALLOWED_ARGS.some((pattern) => pattern.test(arg))) {
+  for (const [index, arg] of args.entries()) {
+    const allowed =
+      args[index - 1] === ADD_DIR_FLAG ? isSafeAddDirPath(arg) : ALLOWED_ARGS.some((pattern) => pattern.test(arg));
+    if (!allowed) {
       throw new Error(`Argumento no permitido para claude: "${arg}".`);
     }
   }
@@ -132,6 +168,12 @@ export const buildNewSessionArgs = (key: string, sessionId: string): string[] =>
 
 export const buildResumeArgs = (sessionId: string): string[] => ['--resume', sessionId];
 
+// Van antes del resto: --mcp-config y --allowedTools son variádicas y se tragarían el prompt final
+export const handoffKnowledgeArgs = (kb: ChatKnowledge | null): string[] => {
+  if (kb?.type === 'mcp') return ['--mcp-config', CHAT_MCP_FILE, '--allowedTools', KB_MCP_RULES];
+  return kb?.type === 'local' ? [ADD_DIR_FLAG, kb.root] : [];
+};
+
 export interface LaunchOptions {
   key: string;
   existingSessionId: string | null;
@@ -139,16 +181,17 @@ export interface LaunchOptions {
   run: ClaudeRunner;
   saveSessionId: (sessionId: string) => Promise<void>;
   newSessionId?: () => string;
+  extraArgs?: string[];
 }
 
 export async function launchClaude(options: LaunchOptions): Promise<void> {
-  const { key, existingSessionId, cwd, run, saveSessionId, newSessionId = randomUUID } = options;
+  const { key, existingSessionId, cwd, run, saveSessionId, newSessionId = randomUUID, extraArgs = [] } = options;
   if (existingSessionId) {
-    const result = await run(buildResumeArgs(existingSessionId), cwd);
+    const result = await run([...extraArgs, ...buildResumeArgs(existingSessionId)], cwd);
     const resumed = result.code === 0 || result.elapsedMs >= RESUME_FAIL_WINDOW_MS;
     if (resumed) return;
   }
   const sessionId = newSessionId();
   await saveSessionId(sessionId);
-  await run(buildNewSessionArgs(key, sessionId), cwd);
+  await run([...extraArgs, ...buildNewSessionArgs(key, sessionId)], cwd);
 }

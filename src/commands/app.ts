@@ -10,7 +10,7 @@ import {
 } from '../config/loader';
 import { ProjectConfig } from '../config/types';
 import { JiraService } from '../services/jira';
-import { setSession, getSession, clearSession } from '../utils/session';
+import { setSession, setSessionPin, getSession, clearSession } from '../utils/session';
 import { writeFileAtomicNoLinks } from '../utils/safe-write';
 import { error } from '../utils/format';
 import { listStories, projectRoot, toSummary } from '../refinement/state';
@@ -135,6 +135,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
         unlock: async (pin) => {
           try {
             setSession(await loadGlobalConfig(pin));
+            setSessionPin(pin);
             unlocked = true;
             return { ok: true };
           } catch (err: unknown) {

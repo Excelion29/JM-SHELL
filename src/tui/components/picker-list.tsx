@@ -27,7 +27,7 @@ function matches(item: PickerItem, filter: string): boolean {
   return `${item.label} ${item.detail ?? ''}`.toLowerCase().includes(needle);
 }
 
-function windowStart(selected: number, total: number): number {
+export function windowStart(selected: number, total: number): number {
   const centered = selected - Math.floor(VISIBLE_ROWS / 2);
   return Math.max(0, Math.min(centered, total - VISIBLE_ROWS));
 }

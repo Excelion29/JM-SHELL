@@ -31,12 +31,16 @@ const GITIGNORE_FILE = '.gitignore';
 export const CHAT_FILE = '.chat.jsonl';
 export const AGENTS_FILE = 'agents.json';
 export const CLAUDE_SETTINGS_FILE = 'claude-settings.json';
+export const MCP_FILE = 'mcp.json';
+export const KNOWLEDGE_CONTEXT_FILE = 'knowledge-context.md';
 // Adjuntos temporales, copia local del chat y definición de subagentes: nada de esto va al repositorio
 const GITIGNORE_LINES = [
   `${STORIES_DIR}/*/${ATTACHMENTS_DIR}/`,
   `${STORIES_DIR}/*/${CHAT_FILE}`,
   AGENTS_FILE,
   CLAUDE_SETTINGS_FILE,
+  MCP_FILE,
+  KNOWLEDGE_CONTEXT_FILE,
 ];
 // Mismo formato que ISSUE_KEY_PATTERN en src/tui/texts.ts
 const ISSUE_KEY_STRICT = /^[A-Z][A-Z0-9_]+-\d+$/;
@@ -79,6 +83,8 @@ export const attachmentsDir = (root: string, key: string) => path.join(storyDir(
 export const chatPath = (root: string, key: string) => path.join(storyDir(root, key), CHAT_FILE);
 export const agentsPath = (root: string) => path.join(root, JM_DIR, AGENTS_FILE);
 export const claudeSettingsPath = (root: string) => path.join(root, JM_DIR, CLAUDE_SETTINGS_FILE);
+export const mcpConfigPath = (root: string) => path.join(root, JM_DIR, MCP_FILE);
+export const knowledgeContextPath = (root: string) => path.join(root, JM_DIR, KNOWLEDGE_CONTEXT_FILE);
 export const dashboardPath = (root: string) => path.join(root, JM_DIR, DASHBOARD_FILE);
 
 export function assertKey(key: string): void {
@@ -179,7 +185,7 @@ function normalize(raw: unknown, key: string, file: string, progressed: boolean)
   };
 }
 
-async function hasLogProgress(root: string, key: string): Promise<boolean> {
+export async function hasLogProgress(root: string, key: string): Promise<boolean> {
   const file = logPath(root, key);
   if (!lexists(file)) return false;
   assertNoLinks(root, file);

@@ -1,7 +1,7 @@
 import inquirer from 'inquirer';
 import { loadGlobalConfig, globalConfigExists } from '../config/loader';
 import { GlobalConfig } from '../config/types';
-import { getSession, setSession } from './session';
+import { getSession, setSession, setSessionPin } from './session';
 import { error } from './format';
 
 export async function requireAuth(): Promise<GlobalConfig> {
@@ -28,6 +28,7 @@ export async function requireAuth(): Promise<GlobalConfig> {
   let config: GlobalConfig;
   try {
     config = await loadGlobalConfig(pin);
+    setSessionPin(pin);
   } catch (err: unknown) {
     error((err as Error).message);
     process.exit(1);

@@ -8,11 +8,12 @@ import { formatSeconds } from '../utils/time';
 import { releaseStdin } from '../utils/terminal';
 import { error, info, success, warn } from '../utils/format';
 import { attachmentFileName, MAX_ATTACHMENT_BYTES, resolveInside } from '../refinement/attachments';
-import { isClaudeAvailable, launchClaude, runClaude } from '../refinement/claude';
+import { handoffKnowledgeArgs, isClaudeAvailable, launchClaude, runClaude } from '../refinement/claude';
 import { loadPlan } from '../refinement/plan';
 import { planTotals } from '../refinement/pert';
 import { installSkill } from '../refinement/skill';
 import { assertNoLinks, lexists, safeWriteFile } from '../refinement/safe-fs';
+import { applyKnowledgeFiles, openKnowledge } from './knowledge-runtime';
 import {
   advancePhase,
   assertKey,
@@ -124,15 +125,18 @@ async function summarizeAfterClaude(root: string, key: string, sessionStartMs: n
 
 async function runClaudeSession(root: string, key: string): Promise<void> {
   const state = await readState(root, key);
+  const knowledge = await openKnowledge({ root, key, hasSession: Boolean(state?.claudeSessionId) });
   const sessionStartMs = Date.now();
   info('Abriendo Claude Code. Cuando termines, sal con /exit para volver aquí.');
   releaseStdin();
   try {
+    applyKnowledgeFiles(root, knowledge);
     await launchClaude({
       key,
       existingSessionId: state?.claudeSessionId ?? null,
       cwd: root,
       run: runClaude,
+      extraArgs: handoffKnowledgeArgs(knowledge.kb),
       saveSessionId: async (id) => {
         await updateState(root, key, (s) => {
           s.claudeSessionId = id;
@@ -141,6 +145,7 @@ async function runClaudeSession(root: string, key: string): Promise<void> {
     });
     await summarizeAfterClaude(root, key, sessionStartMs);
   } finally {
+    await knowledge.close();
     await renderDashboard(root);
   }
 }

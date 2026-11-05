@@ -20,7 +20,10 @@
     "dist/",
     "assets/",
     "install.ps1",
-    "uninstall.ps1"
+    "uninstall.ps1",
+    "!dist/**/*.test.*",
+    "!dist/refinement/test-certs.*",
+    "!dist/**/test-support.*"
   ],
   "dependencies": {
     "axios": "^1.21.0",

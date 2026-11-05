@@ -1,11 +1,12 @@
 import * as fs from 'fs-extra';
 import { promises as nodeFs } from 'fs';
 import * as path from 'path';
-import type { ChatLine } from './chat-types';
+import type { ChatKnowledge, ChatLine } from './chat-types';
 import { buildChatSettings, EXPLORER_AGENTS } from './claude-chat';
 import { CHAT_FILES } from './claude';
 import { assertNoLinks, JM_DIR, lexists, safeEnsureDir, safeWriteFile } from './safe-fs';
-import { agentsPath, chatPath, claudeSettingsPath, updateState } from './state';
+import { KB_SERVER_NAME } from './kb-proxy';
+import { agentsPath, chatPath, claudeSettingsPath, knowledgeContextPath, mcpConfigPath, updateState } from './state';
 import { stripTerminalControls } from './text';
 import { addTurnUsage, TurnUsage } from './usage';
 
@@ -82,9 +83,27 @@ export function writeSkillCopy(root: string, skillSource: string): void {
 }
 
 // Se regenera en cada arranque: refleja la clave de la historia y no depende de lo que haya en disco
-export function writeClaudeSettings(root: string, key: string): string {
+export function writeClaudeSettings(root: string, key: string, kb: ChatKnowledge | null = null): string {
   const file = claudeSettingsPath(root);
   safeEnsureDir(root, path.join(root, JM_DIR));
-  safeWriteFile(root, file, `${JSON.stringify(buildChatSettings(key), null, 2)}\n`);
+  safeWriteFile(root, file, `${JSON.stringify(buildChatSettings(key, kb), null, 2)}\n`);
   return file;
+}
+
+// Apunta al intermediario local: ni la API key ni el certificado viajan en este archivo (el puerto cambia en cada arranque)
+export function writeMcpConfig(root: string, proxyUrl: string): void {
+  const config = { mcpServers: { [KB_SERVER_NAME]: { type: 'http', url: proxyUrl } } };
+  safeEnsureDir(root, path.join(root, JM_DIR));
+  safeWriteFile(root, mcpConfigPath(root), `${JSON.stringify(config, null, 2)}\n`);
+}
+
+// Al abrir Claude completo el prompt es solo "/refinar KEY": la skill lee de aquí dónde está la base y su nota
+export function writeKnowledgeContext(root: string, context: string | null): void {
+  const file = knowledgeContextPath(root);
+  if (context === null) {
+    if (lexists(file)) fs.removeSync(file);
+    return;
+  }
+  safeEnsureDir(root, path.join(root, JM_DIR));
+  safeWriteFile(root, file, `${context}\n`);
 }
