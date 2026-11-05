@@ -14,8 +14,8 @@ import type {
   ServerInspection,
 } from '../refinement/chat-types';
 import { isNormalizedAbsolutePath } from '../refinement/claude';
-import { isHttpsUrl, isValidBaseFolder, KnowledgeConfig, resolveAdrFolder } from '../refinement/knowledge';
-import { inspectServerTls } from '../refinement/knowledge-rest';
+import { isHttpsUrl, isValidBaseFolder, KnowledgeConfig, normalizeMcpUrl, resolveAdrFolder } from '../refinement/knowledge';
+import { inspectServerTls, McpEndpoint, verifyMcpEndpoint } from '../refinement/knowledge-rest';
 import {
   createLocalSource,
   createRestSource,
@@ -123,9 +123,12 @@ export async function previewKnowledge(connection: KnowledgeConnection, file: st
   return stripTerminalControls(previewOf(content));
 }
 
+export type McpVerifier = (endpoint: McpEndpoint) => Promise<void>;
+
 async function toConfig(
   choice: Exclude<KnowledgeChoice, { type: 'none' }>,
-  secretsDir?: string,
+  secretsDir: string | undefined,
+  verifyMcp: McpVerifier,
 ): Promise<KnowledgeConfig> {
   const { connection, baseFolder } = choice;
   assertValidFolder(baseFolder);
@@ -137,17 +140,24 @@ async function toConfig(
   assertSafeUrl(connection.url);
   const pin = getSessionPin();
   if (!pin) throw new Error('No tengo tu PIN en esta sesión. Reinicia jm e ingrésalo de nuevo.');
-  await saveKnowledgeKey(connection.url, connection.apiKey, pin, secretsDir);
-  if (connection.certPem) await saveKnowledgeCert(connection.url, connection.certPem, secretsDir);
-  return { type: 'mcp', url: connection.url, baseFolder, tls: connection.certPem ? 'pinned' : 'system' };
+  const url = normalizeMcpUrl(connection.url);
+  await verifyMcp({ url, apiKey: connection.apiKey, ca: connection.certPem ?? undefined });
+  await saveKnowledgeKey(url, connection.apiKey, pin, secretsDir);
+  if (connection.certPem) await saveKnowledgeCert(url, connection.certPem, secretsDir);
+  return { type: 'mcp', url, baseFolder, tls: connection.certPem ? 'pinned' : 'system' };
 }
 
 // La key y el certificado van a ~/.jira-tool; en el .jira.json solo queda dónde está la base
 // Lo configurado aquí por el dev queda confirmado (confianza) para esta carpeta
-export async function saveKnowledge(root: string, choice: KnowledgeChoice, secretsDir?: string): Promise<void> {
+export async function saveKnowledge(
+  root: string,
+  choice: KnowledgeChoice,
+  secretsDir?: string,
+  verifyMcp: McpVerifier = verifyMcpEndpoint,
+): Promise<void> {
   const project = await readProjectFile(root);
   if (!project) throw new Error(`No hay ${PROJECT_CONFIG_NAME} en esta carpeta.`);
-  const knowledge = choice.type === 'none' ? { type: 'none' as const } : await toConfig(choice, secretsDir);
+  const knowledge = choice.type === 'none' ? { type: 'none' as const } : await toConfig(choice, secretsDir, verifyMcp);
   writeFileAtomicNoLinks(
     path.join(root, PROJECT_CONFIG_NAME),
     `${JSON.stringify({ ...project, knowledge }, null, 2)}\n`,

@@ -1,11 +1,13 @@
-import { test } from 'node:test';
+import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs-extra';
+import * as https from 'https';
+import type { AddressInfo } from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import { loadKnowledgeCert, loadKnowledgeKey } from '../config/knowledge-secrets';
 import { isKnowledgeTrusted } from '../config/knowledge-trust';
-import { TEST_CERT_A } from '../refinement/test-certs';
+import { TEST_CERT_A, TEST_KEY_A } from '../refinement/test-certs';
 import { clearSession, setSessionPin } from '../utils/session';
 import { readKnowledgeConfig } from './knowledge-runtime';
 import {
@@ -22,6 +24,8 @@ const FAKE_KEY = 'fake-key-for-tests';
 const PIN = '1234';
 const MCP_URL = 'https://127.0.0.1:27124/mcp';
 const PREVIEW_MAX_LINES = 15;
+
+const NO_VERIFY = async () => undefined;
 
 const tempDir = (prefix: string) => fs.mkdtemp(path.join(os.tmpdir(), prefix));
 
@@ -70,7 +74,7 @@ test('lo configurado desde el asistente queda confirmado automáticamente', asyn
   setSessionPin(PIN);
   try {
     const connection = { type: 'mcp', url: MCP_URL, apiKey: FAKE_KEY, certPem: null } as const;
-    await saveKnowledge(root, { type: 'connect', baseFolder: 'PROYECTOS/X', connection }, secrets);
+    await saveKnowledge(root, { type: 'connect', baseFolder: 'PROYECTOS/X', connection }, secrets, NO_VERIFY);
   } finally {
     clearSession();
   }
@@ -121,7 +125,7 @@ test('saveKnowledge MCP guarda la key cifrada y el certificado fuera del .jira.j
   setSessionPin(PIN);
   try {
     const connection = { type: 'mcp', url: MCP_URL, apiKey: FAKE_KEY, certPem: TEST_CERT_A } as const;
-    await saveKnowledge(root, { type: 'connect', baseFolder: 'PROYECTOS/X', connection }, secrets);
+    await saveKnowledge(root, { type: 'connect', baseFolder: 'PROYECTOS/X', connection }, secrets, NO_VERIFY);
   } finally {
     clearSession();
   }
@@ -201,4 +205,58 @@ test('saveKnowledge rechaza la raíz de la bóveda como carpeta base', async () 
   const root = await projectRoot({ projectKey: 'AQ' });
   const connection = { type: 'local', root: 'C:\notas' } as const;
   await assert.rejects(saveKnowledge(root, { type: 'connect', baseFolder: '', connection }), /no la raíz/);
+});
+
+let mcpServer: https.Server;
+let mcpOrigin: string;
+const mcpRequests: Array<{ method?: string; url?: string; auth?: string }> = [];
+
+before(async () => {
+  mcpServer = https.createServer({ key: TEST_KEY_A, cert: TEST_CERT_A }, (req, res) => {
+    mcpRequests.push({ method: req.method, url: req.url, auth: req.headers.authorization });
+    if (req.method === 'POST' && req.url === '/mcp') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end('event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}\n\n');
+    } else res.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => mcpServer.listen(0, '127.0.0.1', resolve));
+  mcpOrigin = `https://127.0.0.1:${(mcpServer.address() as AddressInfo).port}`;
+});
+
+after(() => {
+  mcpServer.close();
+  mcpServer.closeAllConnections();
+});
+
+test('saveKnowledge MCP: una URL sin ruta se guarda como /mcp tras verificar initialize con la key', async () => {
+  const root = await projectRoot();
+  const secrets = await tempDir('jm-kb-secrets-');
+  setSessionPin(PIN);
+  try {
+    const connection = { type: 'mcp', url: `${mcpOrigin}/`, apiKey: FAKE_KEY, certPem: TEST_CERT_A } as const;
+    mcpRequests.length = 0;
+    await saveKnowledge(root, { type: 'connect', baseFolder: 'PROYECTOS/X', connection }, secrets);
+  } finally {
+    clearSession();
+  }
+  assert.equal((await readConfig(root)).knowledge.url, `${mcpOrigin}/mcp`);
+  assert.deepEqual(mcpRequests, [{ method: 'POST', url: '/mcp', auth: `Bearer ${FAKE_KEY}` }]);
+  assert.equal(await knowledgeStatus(root, secrets), 'set');
+});
+
+test('saveKnowledge MCP: si la URL no responde como MCP se rechaza con el /mcp sugerido y no se guarda nada', async () => {
+  const root = await projectRoot();
+  const secrets = await tempDir('jm-kb-secrets-');
+  setSessionPin(PIN);
+  try {
+    const connection = { type: 'mcp', url: `${mcpOrigin}/otra-ruta`, apiKey: FAKE_KEY, certPem: TEST_CERT_A } as const;
+    await assert.rejects(
+      saveKnowledge(root, { type: 'connect', baseFolder: 'PROY', connection }, secrets),
+      /no responde como MCP; prueba con .*\/mcp/,
+    );
+  } finally {
+    clearSession();
+  }
+  assert.equal((await readConfig(root)).knowledge, undefined);
+  assert.equal(await loadKnowledgeKey(`${mcpOrigin}/mcp`, PIN, secrets), null);
 });

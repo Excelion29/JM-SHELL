@@ -111,6 +111,7 @@ test('abrir una base cuyo .jira.json cambió tras confirmarla vuelve a exigir co
 let server: https.Server;
 let serverUrl: string;
 const requests: string[] = [];
+let initializeOk = true;
 
 const NOTE = 'AQ-45.md';
 const LISTINGS: Record<string, string[]> = {
@@ -120,8 +121,13 @@ const LISTINGS: Record<string, string[]> = {
 
 before(async () => {
   server = https.createServer({ key: TEST_KEY_A, cert: TEST_CERT_A }, (req, res) => {
-    requests.push(req.url ?? '');
-    const files = LISTINGS[req.url ?? ''];
+    requests.push(`${req.method} ${req.url}`);
+    if (req.method === 'POST') {
+      if (initializeOk && req.url === '/mcp') res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} }));
+      else res.writeHead(404).end();
+      return;
+    }
+    const files = req.method === 'GET' ? LISTINGS[req.url ?? ''] : undefined;
     if (files) res.end(JSON.stringify({ files }));
     else res.writeHead(404).end();
   });
@@ -166,6 +172,37 @@ test('MCP: sin certificado fijado, un servidor autofirmado no se acepta y no que
       /No pude conectar con la base de conocimiento/,
     );
   } finally {
+    clearSession();
+  }
+});
+
+test('MCP: una URL guardada sin ruta (solo el origen) se cura a /mcp sin pedir confirmar de nuevo', async () => {
+  setSessionPin(PIN);
+  try {
+    const bare = serverUrl.replace(/\/mcp$/, '/');
+    await saveKnowledgeKey(bare, FAKE_KEY, PIN, secrets);
+    await saveKnowledgeCert(bare, TEST_CERT_A, secrets);
+    const root = await rootWith({ type: 'mcp', url: bare, baseFolder: 'PROY', tls: 'pinned' });
+    requests.length = 0;
+    const runtime = await open(root);
+    await runtime.close();
+    assert.ok(requests.includes('POST /mcp'), 'el initialize va a /mcp, no a /');
+    assert.ok(!requests.includes('POST /'));
+  } finally {
+    clearSession();
+  }
+});
+
+test('MCP: si el endpoint no responde initialize, abrir se bloquea con un mensaje claro', async () => {
+  setSessionPin(PIN);
+  initializeOk = false;
+  try {
+    await saveKnowledgeKey(serverUrl, FAKE_KEY, PIN, secrets);
+    await saveKnowledgeCert(serverUrl, TEST_CERT_A, secrets);
+    const root = await rootWith({ type: 'mcp', url: serverUrl, baseFolder: 'PROY', tls: 'pinned' });
+    await assert.rejects(open(root), /No pude conectar con la base de conocimiento.*no responde como MCP/);
+  } finally {
+    initializeOk = true;
     clearSession();
   }
 });

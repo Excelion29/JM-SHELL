@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { render, useApp } from 'ink';
+import { render, Text, useApp, useInput } from 'ink';
 import { Frame } from './components/frame.js';
 import { HomeScreen } from './components/home-screen.js';
 // Solo tipos: se borra al compilar
@@ -13,7 +13,7 @@ import { ChatScreen } from './screens/chat-screen.js';
 import { CloseScreen } from './screens/close-screen.js';
 import { PlanScreen } from './screens/plan-screen.js';
 import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
-import { FOOTER_HINTS, PIN_TEXTS } from './texts.js';
+import { FOOTER_HINTS, KNOWLEDGE_TEXTS, PIN_TEXTS } from './texts.js';
 
 export type { StorySummary, BrowseItem, ProjectItem, SetProjectResult };
 
@@ -57,6 +57,9 @@ function hintFor(stage: Stage, choiceCount: number): string {
   return choiceCount > 0 ? `${FOOTER_HINTS.choose(choiceCount)} · ${FOOTER_HINTS.chat}` : FOOTER_HINTS.chat;
 }
 
+// Ink apaga el modo raw al quedar sin ningún useInput montado, y en consolas Windows reactivarlo tras una pausa falla
+const keepRawModeAlive = () => undefined;
+
 export function App({
   projectKey: initialProjectKey,
   stories: initialStories,
@@ -73,6 +76,7 @@ export function App({
   onAction,
 }: AppProps) {
   const { exit } = useApp();
+  useInput(keepRawModeAlive);
   const [chatKey, setChatKey] = useState<string | null>(initialChatKey);
   const [storyKey, setStoryKey] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(unlocked ? (initialChatKey ? 'routing' : 'home') : 'pin');
@@ -140,6 +144,7 @@ export function App({
 
   return (
     <Frame projectKey={projectKey} hint={hintFor(stage, choiceCount)}>
+      {stage === 'routing' && <Text>{KNOWLEDGE_TEXTS.routing}</Text>}
       {stage === 'pin' && <PinPrompt onSubmit={handlePin} error={pinError} checking={checking} />}
       {stage === 'home' && (
         <HomeScreen

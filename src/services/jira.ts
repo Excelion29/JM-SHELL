@@ -3,12 +3,34 @@ import { pathKey, pathProject } from '../refinement/issue-key';
 import { assertSameOrigin, MAX_ATTACHMENT_BYTES, streamToFileWithCap } from '../refinement/attachments';
 import { GlobalConfig, JiraAttachment, JiraIssue, JiraTransition, JiraUser } from '../config/types';
 
-const DOWNLOAD_TIMEOUT_MS = 60_000;
+// Conexión y respuesta de cada paso de una descarga; el cuerpo se corta por tamaño (MAX_ATTACHMENT_BYTES), no por tiempo
+const DOWNLOAD_CONNECT_TIMEOUT_MS = 15_000;
+const DOWNLOAD_STEPS = {
+  content: 'la petición de contenido a Jira',
+  signed: 'el redirect firmado',
+  body: 'la descarga del cuerpo',
+};
+const TIMEOUT_ERROR_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT', 'ESOCKETTIMEDOUT']);
 const UPLOAD_TIMEOUT_MS = 120_000;
 const SEARCH_PAGE_SIZE = 100;
 const MAX_SEARCH_PAGES = 20;
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_MINUTE = 60;
+
+// Conserva el `code` original para clasificar el fallo sin depender del texto del mensaje
+export async function atStep<T>(step: string, task: () => Promise<T>): Promise<T> {
+  try {
+    return await task();
+  } catch (err: unknown) {
+    const cause = err as Error & { code?: string };
+    throw Object.assign(new Error(`falló ${step}: ${cause.message}`), { code: cause.code });
+  }
+}
+
+export function isTimeoutError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && TIMEOUT_ERROR_CODES.has(code);
+}
 
 export class IssueNotFoundError extends Error {}
 
@@ -93,23 +115,27 @@ export class JiraService {
   // Jira responde con un redirect firmado (otro origen): se sigue a mano y sin credenciales
   async downloadAttachment(url: string, destPath: string, maxBytes: number = MAX_ATTACHMENT_BYTES): Promise<void> {
     assertSameOrigin(url, this.baseUrl);
-    const first = await this.client.get(url, {
-      responseType: 'stream',
-      headers: { Accept: '*/*' },
-      maxRedirects: 0,
-      timeout: DOWNLOAD_TIMEOUT_MS,
-      validateStatus: (status) => status < 400,
-    });
+    const first = await atStep(DOWNLOAD_STEPS.content, () =>
+      this.client.get(url, {
+        responseType: 'stream',
+        headers: { Accept: '*/*' },
+        maxRedirects: 0,
+        timeout: DOWNLOAD_CONNECT_TIMEOUT_MS,
+        validateStatus: (status) => status < 400,
+      }),
+    );
     const location = first.headers['location'] as string | undefined;
-    if (!location) return streamToFileWithCap(first.data, destPath, maxBytes);
+    if (!location) return atStep(DOWNLOAD_STEPS.body, () => streamToFileWithCap(first.data, destPath, maxBytes));
     first.data.destroy();
     if (new URL(location, url).protocol !== 'https:') throw new Error('El redirect del adjunto no usa https.');
-    const signed = await axios.get(new URL(location, url).toString(), {
-      responseType: 'stream',
-      maxRedirects: 0,
-      timeout: DOWNLOAD_TIMEOUT_MS,
-    });
-    await streamToFileWithCap(signed.data, destPath, maxBytes);
+    const signed = await atStep(DOWNLOAD_STEPS.signed, () =>
+      axios.get(new URL(location, url).toString(), {
+        responseType: 'stream',
+        maxRedirects: 0,
+        timeout: DOWNLOAD_CONNECT_TIMEOUT_MS,
+      }),
+    );
+    await atStep(DOWNLOAD_STEPS.body, () => streamToFileWithCap(signed.data, destPath, maxBytes));
   }
 
   async createIssue(params: {

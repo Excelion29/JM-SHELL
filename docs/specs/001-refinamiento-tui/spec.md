@@ -132,6 +132,29 @@ Decisiones del dev sobre el plan técnico (2026-11-05):
 - Certificado: al configurar, `jm` prueba con las autoridades del sistema; si no valida, muestra la huella y pregunta si
   confiar; si sí, guarda el certificado en `~/.jira-tool/` y lo usa para verificar.
 
+### Parte 3.3 — Estimación propia, fecha por tarea y ajustes de la prueba real (agregada 2026-11-05)
+
+Pedido del dev tras usarlo con PM-136:
+- **Estimación del dev:** en la revisión, cada tarea muestra la recomendación (esperado PERT) y el dev puede fijar a
+  mano su estimación final (p. ej. `3h`). Esa es la que va a Jira como estimación original; si no la fija, va la
+  recomendación.
+- **Fecha por tarea:** `jm` recomienda fechas desde **hoy** (siempre hoy por defecto), llenando 8 h por día en el orden
+  del plan y pasando al día siguiente cuando no cabe; la recomendación salta sábado y domingo. No descuenta tareas que
+  el dev ya tenga en Jira. El dev puede editar cualquier fecha (incluido fin de semana) y exceder las 8 h. La tarea se
+  crea con esa fecha de vencimiento.
+- Las tareas nacen en el estado inicial ("Por hacer"); `jm` no las transiciona al crearlas.
+- **Chat:** el campo de escritura muestra como máximo unas líneas con aviso de cuántas más hay (al pegar bloques
+  grandes); las tabulaciones se muestran como espacios. Se envía el texto completo.
+- **Skill `/refinar`:** tareas por entregable (no por repo ni capa salvo que cambie quién o cuándo), juntar tareas de
+  menos de 1 h, sin tareas de "documentar" o "lo ya hecho" salvo pedido; la tabla de tareas trae la estimación
+  recomendada (O/M/P, esperado y porqué) y el dev confirma o ajusta en el mismo paso.
+
+### Parte 4 — Ejecución tarea por tarea (idea registrada 2026-11-05, por diseñar)
+
+Elegir una tarea, iniciarla (pasa a "En curso"/"In Progress"), trabajar con Claude con ese contexto y al terminarla
+pasarla a "Finalizada". Finalizar solo cambia el estado: **la estimación original no se toca**. El tiempo real se
+registra aparte para la calibración estimado vs. real.
+
 ## Fuera de alcance
 
 - Fase 2: `list` / `get` / `move` / `edit` / `use` como pantallas de la app.
@@ -212,3 +235,5 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Accept plan técnico 3.2 | Marcello Cano | 2026-11-05 | aprobado (1 sí, 2 sí, 3 avisa y bloquea, 4 después); + navegador de carpetas de la base |
 | Accept intermediario MCP 3.2 | Marcello Cano | 2026-11-05 | aprobado ("okey genial, sí vamos con intermediario") |
 | Commit parte 3.2 | Marcello Cano | 2026-11-05 | aprobado ("okey genial apruebo"); review 3 dimensiones + re-review seguridad (0 bloqueantes); prueba real con Obsidian pendiente |
+| Commit fix teclado + /mcp + adjuntos | Marcello Cano | 2026-11-05 | aprobado ("okey genial si"); probado escribiendo en el chat real |
+| Accept parte 3.3 (estimación propia, fechas, chat, skill) | Marcello Cano | 2026-11-05 | aprobado (desde hoy, 8 h/día recomendado, sin descontar Jira, fechas editables) |

@@ -38,6 +38,16 @@ export function isHttpsUrl(value: string): boolean {
   }
 }
 
+// Ruta por defecto del MCP de Obsidian Local REST API; una URL sin ruta apunta al origen, no al MCP
+export const DEFAULT_MCP_PATH = '/mcp';
+
+// Se aplica al usar la URL, no al leerla: el hash de confianza sigue siendo el de lo guardado
+export function normalizeMcpUrl(value: string): string {
+  const url = new URL(value);
+  if (url.pathname === '' || url.pathname === '/') url.pathname = DEFAULT_MCP_PATH;
+  return url.toString();
+}
+
 export function parseKnowledgeConfig(value: unknown): KnowledgeConfig | null {
   if (!isRecord(value)) return null;
   if (value.type === 'none') return { type: 'none' };

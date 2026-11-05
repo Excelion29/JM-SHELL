@@ -14,10 +14,12 @@ import {
   joinKnowledgePath,
   KnowledgeConfig,
   knowledgeContextLine,
+  normalizeMcpUrl,
   parseKnowledgeConfig,
   resolveAdrFolder,
   StartMessage,
 } from '../refinement/knowledge';
+import { verifyMcpEndpoint } from '../refinement/knowledge-rest';
 import { createLocalSource, createRestSource, KnowledgeSource } from '../refinement/knowledge-source';
 import { hasLogProgress } from '../refinement/state';
 
@@ -106,10 +108,15 @@ async function openMcp(
   } finally {
     source.close();
   }
+  // Una URL guardada sin ruta (solo el origen) se cura aquí: el MCP vive en /mcp
+  const mcpUrl = normalizeMcpUrl(config.url);
+  await verifyMcpEndpoint({ url: mcpUrl, apiKey, ca }).catch((err: unknown) => {
+    throw unreachable(host, err);
+  });
   // Antes de abrir el intermediario: si esto falla no queda un servidor local huérfano
   const startMessage = await startMessageFor(input, noteExists);
   const proxy = await startKbProxy({
-    upstreamUrl: config.url,
+    upstreamUrl: mcpUrl,
     apiKey,
     ca,
     baseFolder: config.baseFolder,

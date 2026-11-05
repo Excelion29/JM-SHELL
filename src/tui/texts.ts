@@ -308,6 +308,8 @@ export const KNOWLEDGE_TEXTS = {
     none: 'Ninguna (no vuelvo a preguntar en esta carpeta)',
   },
   kindNextStep: 'Siguiente paso: elige una opción y pulsa Enter.',
+  kindKeysHint: '1-3 o ↑↓ elegir',
+  routing: 'Preparando…',
   urlLabel: 'URL del MCP: ',
   urlNextStep: 'Escribe la URL (https) y pulsa Enter.',
   keyLabel: 'API key: ',

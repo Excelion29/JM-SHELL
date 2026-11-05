@@ -1,5 +1,5 @@
 import * as fs from 'fs-extra';
-import { JiraService } from '../services/jira';
+import { isTimeoutError, JiraService } from '../services/jira';
 import { JiraAttachment, JiraIssue } from '../config/types';
 import { requireAuth } from '../utils/auth';
 import { resolveIssueKey } from '../utils/context';
@@ -53,41 +53,90 @@ function renderStoryDoc(issue: JiraIssue, attachments: JiraAttachment[]): string
   ].join('\n');
 }
 
+export type DownloadReport = (message: string) => void;
+
+const DOWNLOAD_CONCURRENCY = 3;
+
+interface Downloaded {
+  file: string;
+  error?: Error;
+}
+
+function oversizeSummary(count: number): string {
+  const noun = count === 1 ? 'adjunto' : 'adjuntos';
+  return `Omití ${count} ${noun} por tamaño (más de ${MAX_ATTACHMENT_BYTES / BYTES_PER_MB} MB). Descárgalos a mano si los necesitas.`;
+}
+
+function failureSummary(failures: Error[]): string {
+  const timedOut = failures.every(isTimeoutError);
+  const noun = failures.length === 1 ? 'adjunto' : 'adjuntos';
+  const reason = timedOut ? 'tiempo de espera' : 'error';
+  return `No pude descargar ${failures.length} ${noun} (${reason}). Siguen en Jira. Detalle: ${failures[0].message}`;
+}
+
+// El resumen sale por `report`: con la app (Ink) en pantalla un console.warn rompería el dibujo
 async function downloadAttachments(
   jira: JiraService,
   root: string,
   key: string,
   attachments: JiraAttachment[],
+  report: DownloadReport,
 ): Promise<void> {
   const dir = attachmentsDir(root, key);
+  let oversize = 0;
+  const pending: Array<{ attachment: JiraAttachment; file: string; dest: string }> = [];
   for (const attachment of attachments) {
     const file = attachmentFileName(attachment.id, attachment.filename);
     const dest = resolveInside(dir, file);
     assertNoLinks(root, dest);
     if (lexists(dest)) continue;
     if (attachment.size > MAX_ATTACHMENT_BYTES) {
-      warn(`Omito ${file}: pesa más de ${MAX_ATTACHMENT_BYTES / BYTES_PER_MB} MB. Descárgalo a mano si lo necesitas.`);
+      oversize += 1;
       continue;
     }
-    try {
-      await jira.downloadAttachment(attachment.content, dest, MAX_ATTACHMENT_BYTES);
-    } catch (err: unknown) {
-      warn(`No pude descargar ${file}: ${(err as Error).message}`);
-      continue;
+    pending.push({ attachment, file, dest });
+  }
+
+  if (oversize > 0) report(oversizeSummary(oversize));
+
+  const results: Downloaded[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < pending.length) {
+      const { attachment, file, dest } = pending[next++];
+      try {
+        await jira.downloadAttachment(attachment.content, dest, MAX_ATTACHMENT_BYTES);
+        results.push({ file });
+      } catch (err: unknown) {
+        results.push({ file, error: err as Error });
+      }
     }
+  };
+  await Promise.all(Array.from({ length: Math.min(DOWNLOAD_CONCURRENCY, pending.length) }, worker));
+
+  // El estado se escribe en serie: updateState relee y reescribe el mismo archivo
+  for (const { file, error } of results) {
+    if (error) continue;
     await updateState(root, key, (s) => {
       if (s.attachments.some((a) => a.file === file)) return;
       s.attachments.push({ file, purpose: 'analysis', origin: 'jira', taskIds: [], uploaded: {} });
     });
   }
+  const failures = results.flatMap((result) => (result.error ? [result.error] : []));
+  if (failures.length > 0) report(failureSummary(failures));
 }
 
-export async function prepareStory(jira: JiraService, root: string, key: string): Promise<void> {
+export async function prepareStory(
+  jira: JiraService,
+  root: string,
+  key: string,
+  report: DownloadReport = warn,
+): Promise<void> {
   const issue = await jira.getIssueWithDescription(key);
   const attachments = await jira.getAttachments(key);
   await ensureStory(root, key, issue.fields.summary, issue.fields.parent?.key ?? null);
   safeWriteFile(root, storyDocPath(root, key), renderStoryDoc(issue, attachments));
-  await downloadAttachments(jira, root, key, attachments);
+  await downloadAttachments(jira, root, key, attachments, report);
   await advancePhase(root, key, 'debate');
 }
 

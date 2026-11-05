@@ -62,6 +62,8 @@ const FAKE_KB_BASE = 'PROYECTOS/X';
 export interface FakeKnowledge {
   status?: KnowledgeStatus;
   statusError?: boolean;
+  // Simula la lectura lenta del estado de la base: la app queda un rato en 'routing'
+  statusDelayMs?: number;
   inspection?: ServerInspection;
   // Carpetas de la base falsa: ruta -> listado
   listings?: Record<string, KnowledgeListing>;
@@ -99,6 +101,7 @@ export function createFakeChat(
     newSession: () => void (calls.newSession += 1),
     close: async () => void (calls.close += 1),
     knowledgeStatus: async () => {
+      if (knowledge.statusDelayMs) await new Promise((resolve) => setTimeout(resolve, knowledge.statusDelayMs));
       if (knowledge.statusError) throw new Error('estado ilegible');
       return knowledge.status ?? 'set';
     },

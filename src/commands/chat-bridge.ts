@@ -158,7 +158,7 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
       key = storyKey;
       listener = onEvent;
       contextTokens = 0;
-      await prepareStory(getJira(), root, key);
+      await prepareStory(getJira(), root, key, (message) => emit({ type: 'error', message }));
       await renderDashboard(root);
       await ensureSkill();
       await closeKnowledge();

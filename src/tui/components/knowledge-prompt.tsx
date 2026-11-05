@@ -22,14 +22,16 @@ type Step =
 
 type Kind = 'mcp' | 'local' | 'none';
 const KINDS: Kind[] = ['mcp', 'local', 'none'];
+const DIGIT_PICK = /^[1-9]$/;
 
 function KindList({ onPick, onCancel }: { onPick: (kind: Kind) => void; onCancel: () => void }) {
   const [selected, setSelected] = useState(0);
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (key.escape) onCancel();
     else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
     else if (key.downArrow) setSelected((i) => Math.min(KINDS.length - 1, i + 1));
     else if (key.return) onPick(KINDS[selected]);
+    else if (DIGIT_PICK.test(input) && Number(input) <= KINDS.length) onPick(KINDS[Number(input) - 1]);
   });
   return (
     <Box flexDirection="column">
@@ -40,6 +42,7 @@ function KindList({ onPick, onCancel }: { onPick: (kind: Kind) => void; onCancel
           {index === selected ? HOME_TEXTS.selectedMarker : ' '} {KNOWLEDGE_TEXTS.options[kind]}
         </Text>
       ))}
+      <Text color={COLORS.muted}>{KNOWLEDGE_TEXTS.kindKeysHint}</Text>
       <Text color={COLORS.muted}>{KNOWLEDGE_TEXTS.kindNextStep}</Text>
     </Box>
   );

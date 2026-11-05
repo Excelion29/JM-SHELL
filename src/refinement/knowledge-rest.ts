@@ -45,7 +45,12 @@ interface RawResponse {
   body: string;
 }
 
-function request(url: URL, options: https.RequestOptions, truncateAt?: number): Promise<RawResponse> {
+function request(
+  url: URL,
+  options: https.RequestOptions,
+  truncateAt?: number,
+  payload?: string,
+): Promise<RawResponse> {
   return new Promise((resolve, reject) => {
     let done = false;
     const req = https.request(url, { ...options, timeout: REST_TIMEOUT_MS }, (res) => {
@@ -70,7 +75,7 @@ function request(url: URL, options: https.RequestOptions, truncateAt?: number): 
     req.on('error', (err) => {
       if (!done) reject(err);
     });
-    req.end();
+    req.end(payload);
   });
 }
 
@@ -152,4 +157,52 @@ export async function inspectServerTls(mcpUrl: string): Promise<TlsInspection> {
   }
   const pem = await peerCertificate(url);
   return { tls: 'untrusted', pem, fingerprint: fingerprintOf(pem) };
+}
+
+const MCP_PROTOCOL_VERSION = '2025-03-26';
+const MCP_CLIENT_NAME = 'jm';
+const LINE_BREAK = /\r?\n/;
+const SSE_DATA_LINE = /^data: ?(.*)$/;
+const INITIALIZE_REQUEST = JSON.stringify({
+  jsonrpc: '2.0',
+  id: 1,
+  method: 'initialize',
+  params: { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: MCP_CLIENT_NAME, version: '1' } },
+});
+
+function hasInitializeResult(body: string): boolean {
+  const candidates = [body, ...body.split(LINE_BREAK).map((line) => SSE_DATA_LINE.exec(line)?.[1] ?? '')];
+  return candidates.some((text) => {
+    try {
+      const parsed = JSON.parse(text) as { result?: unknown };
+      return typeof parsed === 'object' && parsed !== null && parsed.result !== undefined;
+    } catch {
+      return false;
+    }
+  });
+}
+
+export interface McpEndpoint {
+  url: string;
+  apiKey: string;
+  ca?: string;
+}
+
+// Confirma que la URL contesta como MCP (initialize), no solo que el servidor está vivo
+export async function verifyMcpEndpoint({ url, apiKey, ca }: McpEndpoint): Promise<void> {
+  const target = new URL(url);
+  const hint = `La URL no responde como MCP; prueba con ${target.origin}/mcp`;
+  const agent = createKnowledgeAgent(ca);
+  try {
+    const headers = {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    };
+    const res = await request(target, { method: 'POST', headers, agent }, undefined, INITIALIZE_REQUEST);
+    if (res.status === HTTP_UNAUTHORIZED) throw new Error('La API key no es válida para este servidor.');
+    if (res.status !== HTTP_OK || !hasInitializeResult(res.body)) throw new Error(hint);
+  } finally {
+    agent.destroy();
+  }
 }

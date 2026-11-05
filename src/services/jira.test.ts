@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { JiraService } from './jira';
+import { atStep, isTimeoutError, JiraService } from './jira';
 
 const CONFIG = { jiraUrl: 'https://acme.atlassian.net', email: 'a@b.c', apiToken: 'x' };
 
@@ -19,4 +19,16 @@ test('una clave con ruta o query nunca llega a la URL REST', async () => {
     await assert.rejects(jira.uploadAttachment(bad, 'a.txt', Buffer.alloc(1)), /inválida/);
   }
   await assert.rejects(jira.getIssueTypes('../x'), /inválida/);
+});
+
+test('atStep conserva el code del error original y solo los códigos de tiempo cuentan como timeout', async () => {
+  for (const code of ['ECONNABORTED', 'ETIMEDOUT']) {
+    const err = await atStep('x', () => Promise.reject(Object.assign(new Error('a'), { code }))).catch((e) => e);
+    assert.equal(err.code, code);
+    assert.match(err.message, /^falló x: a$/);
+    assert.equal(isTimeoutError(err), true);
+  }
+  const reset = await atStep('x', () => Promise.reject(Object.assign(new Error('timeout'), { code: 'ECONNRESET' }))).catch((e) => e);
+  assert.equal(isTimeoutError(reset), false);
+  assert.equal(isTimeoutError(new Error('timeout')), false);
 });

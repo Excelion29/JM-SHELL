@@ -28,6 +28,11 @@ const baseProps = {
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, TICK_MS));
 
+const ROUTING_DELAY_MS = 150;
+const STORIES = [
+  { key: 'AQ-45', summary: 'Login', phase: 'debate', block: '-', nextStep: 'sigue', updatedAt: '2026-01-01' },
+];
+
 function openApp(knowledge: FakeKnowledge) {
   const fake = createFakeChat({}, [], knowledge);
   const view = render(
@@ -221,4 +226,42 @@ test('base sin confirmar: cualquier otra tecla vuelve al inicio sin confiar ni a
   await waitText(HOME_TEXTS.title);
   assert.equal(fake.calls.trusted, 0);
   assert.equal(fake.calls.opened.length, 0);
+});
+
+test('los dígitos 1-3 eligen la opción directo y la pista los menciona', async () => {
+  const { fake, type, waitText, frame } = openApp({ status: 'unset' });
+  await waitText(KNOWLEDGE_TEXTS.question);
+  assert.ok(frame().includes(KNOWLEDGE_TEXTS.kindKeysHint));
+  await type('3');
+  await waitFor(() => fake.calls.opened.length > 0);
+  assert.deepEqual(fake.calls.saved, [{ type: 'none' }]);
+  const second = openApp({ status: 'unset' });
+  await second.waitText(KNOWLEDGE_TEXTS.question);
+  await second.type('2');
+  await second.waitText(KNOWLEDGE_TEXTS.rootLabel);
+});
+
+test('pasar por "routing" no apaga el modo raw: las flechas y el chat siguen respondiendo', async () => {
+  const fake = createFakeChat({}, [], { status: 'unset', statusDelayMs: ROUTING_DELAY_MS });
+  const view = render(<App projectKey="AQ" stories={STORIES} unlocked {...baseProps} chat={fake.chat} />);
+  const rawCalls: boolean[] = [];
+  (view.stdin as unknown as { setRawMode: (enabled: boolean) => void }).setRawMode = (enabled) =>
+    void rawCalls.push(enabled);
+  const frame = () => view.lastFrame() ?? '';
+  const press = async (text: string) => {
+    view.stdin.write(text);
+    await tick();
+  };
+  await press(ENTER);
+  await waitFor(() => frame().includes(KNOWLEDGE_TEXTS.routing), 'el texto de preparación');
+  await waitFor(() => frame().includes(KNOWLEDGE_TEXTS.question), 'la pregunta de la base');
+  await press(DOWN);
+  assert.ok(frame().includes(`${HOME_TEXTS.selectedMarker} ${KNOWLEDGE_TEXTS.options.local}`));
+  await press(DOWN);
+  await press(ENTER);
+  await waitFor(() => fake.calls.opened.length > 0);
+  await waitFor(() => !frame().includes(CHAT_TEXTS.preparing), 'el chat abierto');
+  await press('hola');
+  assert.ok(frame().includes('hola'));
+  assert.ok(!rawCalls.includes(false), 'setRawMode(false) no debe llamarse durante la transición');
 });
