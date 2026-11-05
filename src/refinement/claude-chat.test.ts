@@ -155,6 +155,7 @@ test('el subagente explorador usa Haiku y solo herramientas de lectura', () => {
 interface FakeProc extends ChatProcess {
   args: string[];
   written: string[];
+  stderr: (data: string) => void;
   ended: boolean;
   killed: boolean;
   failWrite: boolean;
@@ -163,7 +164,7 @@ interface FakeProc extends ChatProcess {
   exit: (code: number | null) => void;
 }
 
-function harness(clock = { now: 0 }, failWrites = false) {
+function harness(clock = { now: 0 }, failWrites = false, save?: (id: string) => Promise<void>) {
   const procs: FakeProc[] = [];
   const saved: string[] = [];
   const events: ChatEvent[] = [];
@@ -172,9 +173,11 @@ function harness(clock = { now: 0 }, failWrites = false) {
     let onData: (chunk: string) => void = () => undefined;
     let onExit: (code: number | null) => void = () => undefined;
     let onError: (error: Error) => void = () => undefined;
+    let onStderr: (chunk: string) => void = () => undefined;
     const proc: FakeProc = {
       args,
       written: [],
+      stderr: (data) => onStderr(data),
       ended: false,
       killed: false,
       failWrite: failWrites,
@@ -186,7 +189,7 @@ function harness(clock = { now: 0 }, failWrites = false) {
       end: () => void (proc.ended = true),
       kill: () => void (proc.killed = true),
       onData: (listener) => void (onData = listener),
-      onStderr: () => undefined,
+      onStderr: (listener) => void (onStderr = listener),
       onExit: (listener) => void (onExit = listener),
       onError: (listener) => void (onError = listener),
       emit: (data) => onData(data),
@@ -201,7 +204,10 @@ function harness(clock = { now: 0 }, failWrites = false) {
     agentsFile: AGENTS,
     settingsFile: SETTINGS,
     spawner,
-    saveSessionId: (id) => void saved.push(id),
+    saveSessionId: (id) => {
+      saved.push(id);
+      return save?.(id);
+    },
     newSessionId: () => ids.shift() ?? 'x',
     now: () => clock.now,
   });
@@ -232,17 +238,53 @@ test('send escribe el texto solo por stdin: nunca aparece en los argumentos', as
   assert.ok(h.procs[0].args.every((arg) => !arg.includes('PATH')));
 });
 
-test('sesión guardada: retoma con --resume y pide el resumen de dos líneas', async () => {
+// Abre una conversación ya empezada y manda el primer mensaje del dev (lanza el proceso con --resume)
+async function reopened(h: ReturnType<typeof harness>, text = 'sigamos') {
+  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  h.session.send(text);
+}
+
+test('sesión guardada: al reabrir no lanza proceso ni envía nada hasta que el dev escribe', async () => {
   const h = harness();
   await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
-  assert.deepEqual(h.procs[0].args.slice(-2), ['--resume', SESSION]);
-  assert.match(userText(h.procs[0].written[0]), /2 líneas/);
+  assert.equal(h.procs.length, 0);
+  assert.equal(h.session.isBusy, false);
   assert.deepEqual(h.saved, []);
+});
+
+test('el primer mensaje del dev retoma con --resume y se entrega tal cual', async () => {
+  const h = harness();
+  await reopened(h, 'qué decidimos');
+  assert.equal(h.procs.length, 1);
+  assert.deepEqual(h.procs[0].args.slice(-2), ['--resume', SESSION]);
+  assert.deepEqual(h.procs[0].written.map(userText), ['qué decidimos']);
+  assert.equal(h.session.isBusy, true);
+  assert.deepEqual(h.saved, []);
+});
+
+test('con historial y sin sesión guardada, el primer mensaje abre una sesión nueva con la recuperación', async () => {
+  const h = harness();
+  await h.session.start({ key: 'AQ-45', sessionId: null, model: 'sonnet', hasHistory: true });
+  assert.equal(h.procs.length, 0);
+  h.session.send('hola');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(h.saved, [SESSION]);
+  assert.ok(h.procs[0].args.includes('--session-id'));
+  assert.match(userText(h.procs[0].written[0]), /bitacora\.md[\s\S]*hola$/);
+});
+
+test('cambiar de modelo antes del primer mensaje no lanza proceso y se aplica al retomar', async () => {
+  const h = harness();
+  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  h.session.switchModel('opus');
+  assert.equal(h.procs.length, 0);
+  h.session.send('hola');
+  assert.equal(h.procs[0].args[h.procs[0].args.indexOf('--model') + 1], 'opus');
 });
 
 test('switchModel retoma la misma sesión con --model opus y vuelve con otro switch', async () => {
   const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(h);
   h.procs[0].emit(line(RESULT));
   h.session.switchModel('opus');
   assert.ok(h.procs[0].killed);
@@ -257,35 +299,105 @@ test('switchModel retoma la misma sesión con --model opus y vuelve con otro swi
 
 test('switchModel con una respuesta en curso no corta el proceso y avisa', async () => {
   const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(h);
   h.session.switchModel('opus');
   assert.equal(h.procs.length, 1);
   assert.equal(h.events.at(-1)?.type, 'error');
 });
 
-test('si --resume falla al instante abre una sesión nueva desde la bitácora', async () => {
-  const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: 'gone', model: 'sonnet' }).catch(() => undefined);
+test('si --resume falla al instante abre una sesión nueva con la recuperación y el texto del dev', async () => {
   const resumed = harness();
-  await resumed.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(resumed, 'continúa');
   resumed.clock.now = 100;
+  resumed.procs[0].stderr(`No conversation found with session ID: ${SESSION}
+`);
   resumed.procs[0].exit(1);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(resumed.procs.length, 2);
   assert.deepEqual(resumed.saved, [SESSION]);
   assert.ok(resumed.procs[1].args.includes('--session-id'));
-  assert.match(userText(resumed.procs[1].written[0]), /bitacora\.md/);
+  assert.match(userText(resumed.procs[1].written[0]), /bitacora\.md[\s\S]*continúa$/);
   assert.ok(!resumed.events.some((e) => e.type === 'exit'));
+});
+
+test('con el result de error que emite el CLI real ante una sesión inexistente también abre una sesión nueva', async () => {
+  const h = harness();
+  await reopened(h, 'continúa');
+  h.clock.now = 100;
+  h.procs[0].emit(
+    line({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      num_turns: 0,
+      total_cost_usd: 0,
+      usage: {},
+    }),
+  );
+  h.procs[0].stderr(`No conversation found with session ID: ${SESSION}\n`);
+  h.procs[0].exit(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.procs.length, 2);
+  assert.ok(h.procs[1].args.includes('--session-id'));
+  assert.match(userText(h.procs[1].written[0]), /continúa$/);
+  assert.ok(!h.events.some((e) => e.type === 'turnEnd' || e.type === 'exit'));
+});
+
+test('un error a mitad de vuelta con salida parcial no abre otra sesión y conserva el id', async () => {
+  const h = harness();
+  await reopened(h, 'continúa');
+  h.procs[0].emit(
+    line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Ho' } } }),
+  );
+  h.procs[0].stderr('No conversation found with session ID\n');
+  h.procs[0].exit(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.procs.length, 1);
+  assert.deepEqual(h.saved, []);
+  assert.equal(h.session.currentSessionId, SESSION);
+  assert.ok(h.events.some((e) => e.type === 'error'));
+});
+
+test('si --resume falla sin salida pero el stderr no es de sesión inexistente, no abre otra sesión', async () => {
+  const h = harness();
+  await reopened(h, 'continúa');
+  h.procs[0].stderr('rate limit exceeded\n');
+  h.procs[0].exit(1);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.procs.length, 1);
+  assert.equal(h.session.currentSessionId, SESSION);
+  assert.ok(h.events.some((e) => e.type === 'error'));
+});
+
+test('cerrar durante el guardado del id no lanza ningún proceso', async () => {
+  let release: () => void = () => undefined;
+  const h = harness({ now: 0 }, false, () => new Promise<void>((resolve) => void (release = resolve)));
+  const starting = h.session.start({ key: 'AQ-45', sessionId: null, model: 'sonnet' });
+  h.session.close(true);
+  release();
+  await starting;
+  assert.equal(h.procs.length, 0);
 });
 
 test('si el proceso con --resume ya respondió, la salida con error no abre otra sesión', async () => {
   const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(h);
   h.procs[0].emit(line(RESULT));
   h.procs[0].exit(1);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(h.procs.length, 1);
   assert.equal(h.events.at(-1)?.type, 'exit');
+});
+
+test('startFromLog tras reabrir sin mensajes abre una sesión nueva y anula la espera', async () => {
+  const h = harness();
+  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await h.session.startFromLog();
+  assert.equal(h.procs.length, 1);
+  assert.ok(h.procs[0].args.includes('--session-id'));
+  h.session.send('hola');
+  assert.equal(h.procs.length, 1);
+  assert.equal(userText(h.procs[0].written[1]), 'hola');
 });
 
 test('startFromLog abre una sesión con otro uuid y cierra la anterior', async () => {
@@ -299,19 +411,19 @@ test('startFromLog abre una sesión con otro uuid y cierra la anterior', async (
 
 test('close sin forzar cierra stdin y deja terminar; forzado corta el proceso', async () => {
   const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(h);
   h.session.close();
   assert.ok(h.procs[0].ended);
   assert.ok(!h.procs[0].killed);
   const forced = harness();
-  await forced.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(forced);
   forced.session.close(true);
   assert.ok(forced.procs[0].killed);
 });
 
 test('los eventos de un proceso reemplazado ya no llegan', async () => {
   const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(h);
   h.procs[0].emit(line(RESULT));
   h.session.switchModel('opus');
   const before = h.events.length;
@@ -410,7 +522,7 @@ test('los ajustes de jm desactivan hooks y espejan el allowlist y las negaciones
 
 test('un EPIPE al escribir no tumba la app: avisa y limpia el estado', async () => {
   const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(h);
   h.procs[0].emit(line(RESULT));
   h.procs[0].failWrite = true;
   assert.throws(() => h.session.send('hola'), /No pude enviar/);
@@ -419,7 +531,7 @@ test('un EPIPE al escribir no tumba la app: avisa y limpia el estado', async () 
 
 test('un error asíncrono del proceso (stdin cerrado) se informa como error y corta el hijo', async () => {
   const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(h);
   h.procs[0].fail(new Error('write EPIPE'));
   assert.ok(h.procs[0].killed);
   assert.equal(h.events.at(-1)?.type, 'error');
@@ -435,7 +547,7 @@ test('si el primer mensaje no se puede escribir, se informa en vez de lanzar', a
 
 test('el costo acumulado por proceso se registra como diferencia entre vueltas', async () => {
   const h = harness();
-  await h.session.start({ key: 'AQ-45', sessionId: SESSION, model: 'sonnet' });
+  await reopened(h);
   h.procs[0].emit(line({ ...RESULT, total_cost_usd: 0.1 }));
   h.procs[0].emit(line({ ...RESULT, total_cost_usd: 0.25 }));
   const costs = h.events
@@ -485,7 +597,10 @@ test('el texto del asistente (completo y en deltas) llega a la app sin secuencia
   const events = parseAll([
     line({
       type: 'stream_event',
-      event: { type: 'content_block_delta', delta: { type: 'text_delta', text: `hola ${ESC}[2J${ESC}]52;c;QQ${BEL}mundo` } },
+      event: {
+        type: 'content_block_delta',
+        delta: { type: 'text_delta', text: `hola ${ESC}[2J${ESC}]52;c;QQ${BEL}mundo` },
+      },
     }),
     line({ type: 'assistant', message: { content: [{ type: 'text', text: `${ESC}[31mrojo${ESC}[0m${BEL}\nfin` }] } }),
   ]);
@@ -525,6 +640,9 @@ test('una raíz con tildes y paréntesis funciona: los archivos de jm viajan rel
 });
 
 test('una ruta absoluta de archivo ya no pasa el filtro de argumentos', () => {
-  assert.throws(() => assertSafeArgs(['--settings', path.join('C:', 'José (v2)', '.jm', 'claude-settings.json')]), /no permitido/);
+  assert.throws(
+    () => assertSafeArgs(['--settings', path.join('C:', 'José (v2)', '.jm', 'claude-settings.json')]),
+    /no permitido/,
+  );
   assert.throws(() => assertSafeArgs(['--settings', '.jm/../x.json']), /no permitido/);
 });

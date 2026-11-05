@@ -14,11 +14,15 @@ import { formatDuration } from '../components/duration.js';
 import { LoadGate } from '../components/load-gate.js';
 import { ManualKeyInput } from '../components/manual-key-input.js';
 import { PickerList } from '../components/picker-list.js';
+import { alignCreated } from '../components/task-table.js';
+import { useTerminalSize } from '../components/terminal-size.js';
 import { useLoad } from '../components/use-load.js';
 import {
+  CHAT_DEFAULT_TERMINAL_COLUMNS,
   COLORS,
   CREATE_TEXTS,
   FOOTER_HINTS,
+  FRAME_HORIZONTAL_OVERHEAD,
   HOME_TEXTS,
   KEYS,
   PROGRESS_VISIBLE_LINES,
@@ -251,7 +255,7 @@ function Confirm({
       <Text bold color={COLORS.accent}>
         {CREATE_TEXTS.confirmTitle}
       </Text>
-      <Text>{CREATE_TEXTS.tasks(preview.taskCount, formatDuration(preview.expectedSeconds))}</Text>
+      <Text>{CREATE_TEXTS.tasks(preview.taskCount, formatDuration(preview.estimateSeconds))}</Text>
       <Text>{CREATE_TEXTS.parent(target.parentKey, target.parentSummary)}</Text>
       <Text>{CREATE_TEXTS.type(target.issueTypeName)}</Text>
       <Text>{CREATE_TEXTS.assignee(assignee.displayName)}</Text>
@@ -328,9 +332,13 @@ function Running({
   useEffect(() => {
     let cancelled = false;
     plan
-      .create(storyKey, { target, assigneeId: assignee.accountId, adopt: Object.fromEntries(existing.map((m) => [m.taskId, m.key])) }, (progress) => {
-        if (!cancelled) setLines((l) => [...l, progress]);
-      })
+      .create(
+        storyKey,
+        { target, assigneeId: assignee.accountId, adopt: Object.fromEntries(existing.map((m) => [m.taskId, m.key])) },
+        (progress) => {
+          if (!cancelled) setLines((l) => [...l, progress]);
+        },
+      )
       .then((outcome) => {
         if (!cancelled) onFinished(outcome);
       })
@@ -376,6 +384,11 @@ function Result({
   onFinished: () => void;
 }) {
   const [openError, setOpenError] = useState<string | null>(null);
+  const size = useTerminalSize();
+  const created = alignCreated(
+    outcome.created.map((c) => ({ key: c.key, summary: c.summary, note: c.existing ? CREATE_TEXTS.existingNote : '' })),
+    (size.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS) - FRAME_HORIZONTAL_OVERHEAD,
+  );
 
   useInput((input, key) => {
     if (outcome.ok) {
@@ -394,8 +407,8 @@ function Result({
       <Text bold color={outcome.ok ? COLORS.accent : COLORS.error}>
         {outcome.ok ? CREATE_TEXTS.doneTitle : CREATE_TEXTS.failedTitle}
       </Text>
-      {outcome.created.map((c) => (
-        <Text key={c.taskId}>{CREATE_TEXTS.doneLine(c.key, c.summary, c.existing)}</Text>
+      {created.map((line, index) => (
+        <Text key={outcome.created[index].taskId}>{line}</Text>
       ))}
       {outcome.ok ? (
         <>

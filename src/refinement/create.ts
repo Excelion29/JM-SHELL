@@ -7,7 +7,8 @@ import { getAvailableTypes, getLevel, IssueTypeInfo, isEpicType } from '../utils
 import { formatSeconds } from '../utils/time';
 import { MAX_ATTACHMENT_BYTES } from './attachments';
 import { loadPlan } from './plan';
-import { taskExpectedSeconds } from './pert';
+import { effectiveSeconds, taskExpectedSeconds } from './pert';
+import { scheduleOf, todayIso } from './schedule';
 import { attachmentFilePath } from './review';
 import type {
   AssigneeView,
@@ -26,8 +27,7 @@ import { advancePhase, assertKey, planPath, readState, renderDashboard, updateSt
 import { projectKeyOfStory } from './repos';
 import { PlannedTask, RefinementPlan, Risk, StoryState } from './types';
 
-// Jira trabaja mejor con estimaciones redondas; los decimales del PERT no aportan
-export const ESTIMATE_ROUND_SECONDS = 5 * 60;
+export { ESTIMATE_ROUND_SECONDS, estimateForJira } from './pert';
 const BYTES_PER_MB = 1024 * 1024;
 const DONE_CATEGORY = 'done';
 const SUBTASK_TYPE_PREFERENCE = /sub-?tarea|sub-?task/i;
@@ -44,13 +44,6 @@ export type CreateJira = Pick<
 
 const RISK_LABELS: Record<Risk, string> = { low: 'bajo', medium: 'medio', high: 'alto' };
 
-export function estimateForJira(expectedSeconds: number): number {
-  return Math.max(
-    ESTIMATE_ROUND_SECONDS,
-    Math.round(expectedSeconds / ESTIMATE_ROUND_SECONDS) * ESTIMATE_ROUND_SECONDS,
-  );
-}
-
 // Un salto de línea dentro de un ítem rompería la lista del markdown
 export const oneLine = (text: string): string => text.replace(NEWLINES, ' ').trim();
 
@@ -62,9 +55,11 @@ export function buildDescriptionMarkdown(task: PlannedTask): string {
   if (task.doneCriteria.length) {
     parts.push(['## Criterio de terminado', ...task.doneCriteria.map((item) => `- ${oneLine(item)}`)].join('\n'));
   }
-  parts.push(
-    `Estimación: ${optimistic} / ${likely} / ${pessimistic} · esperado ${expected} · riesgo ${RISK_LABELS[task.risk]}`,
-  );
+  const final = task.finalEstimate?.trim();
+  const estimateLine = final
+    ? `Estimación: ${final} (del dev) · PERT: O ${optimistic} / M ${likely} / P ${pessimistic}, esperado ${expected}`
+    : `Estimación: ${optimistic} / ${likely} / ${pessimistic} · esperado ${expected}`;
+  parts.push(`${estimateLine} · riesgo ${RISK_LABELS[task.risk]}`);
   return parts.join('\n\n');
 }
 
@@ -156,7 +151,10 @@ export async function listAssignees(jira: AssigneeJira, projectKey: string): Pro
   } catch {
     // sin la lista solo se ofrece el usuario actual: crear no depende de ella
   }
-  return [{ accountId: me.accountId, displayName: me.displayName }, ...others.map(({ accountId, displayName }) => ({ accountId, displayName }))];
+  return [
+    { accountId: me.accountId, displayName: me.displayName },
+    ...others.map(({ accountId, displayName }) => ({ accountId, displayName })),
+  ];
 }
 
 export async function defaultAssignee(
@@ -165,16 +163,16 @@ export async function defaultAssignee(
   configuredId: string | null,
 ): Promise<AssigneeView> {
   const users = await listAssignees(jira, projectKey);
-  return users.find((u) => u.accountId === configuredId) ?? (configuredId ? { accountId: configuredId, displayName: configuredId } : users[0]);
+  return (
+    users.find((u) => u.accountId === configuredId) ??
+    (configuredId ? { accountId: configuredId, displayName: configuredId } : users[0])
+  );
 }
 
 // Hijos del padre: con subtareas se lee el campo `subtasks` del propio issue (consistente al instante);
 // el índice de búsqueda puede ir atrasado justo tras crear
-async function childrenOf(
-  jira: CreateJira,
-  target: CreationTarget,
-): Promise<Array<{ key: string; summary: string }>> {
-  if (target.childKind === "subtask") {
+async function childrenOf(jira: CreateJira, target: CreationTarget): Promise<Array<{ key: string; summary: string }>> {
+  if (target.childKind === 'subtask') {
     const issue = await jira.getIssue(target.parentKey);
     return (issue.fields.subtasks ?? []).map((s) => ({
       key: s.key,
@@ -182,10 +180,7 @@ async function childrenOf(
     }));
   }
   assertKey(target.parentKey);
-  const found = await jira.searchAllIssues(
-    `parent = "${target.parentKey}"`,
-    CHILDREN_FIELDS,
-  );
+  const found = await jira.searchAllIssues(`parent = "${target.parentKey}"`, CHILDREN_FIELDS);
   return found.map((c) => ({ key: c.key, summary: c.fields.summary }));
 }
 
@@ -196,9 +191,7 @@ export async function findExistingMatches(
   storyKey: string,
   target: CreationTarget,
 ): Promise<ExistingMatch[]> {
-  const tasks = (await loadPlan(planPath(root, storyKey))).tasks.filter(
-    (t) => t.include,
-  );
+  const tasks = (await loadPlan(planPath(root, storyKey))).tasks.filter((t) => t.include);
   const state = await readState(root, storyKey);
   const known = new Set(Object.values(state?.createdIssues ?? {}));
   const pending = tasks.filter((t) => !state?.createdIssues[t.id]);
@@ -206,8 +199,7 @@ export async function findExistingMatches(
   const bySummary = new Map<string, string>();
   for (const child of await childrenOf(jira, target)) {
     const summary = oneLine(child.summary);
-    if (!known.has(child.key) && !bySummary.has(summary))
-      bySummary.set(summary, child.key);
+    if (!known.has(child.key) && !bySummary.has(summary)) bySummary.set(summary, child.key);
   }
   const matches: ExistingMatch[] = [];
   for (const task of pending) {
@@ -224,7 +216,7 @@ export async function buildPreview(
   jira: CreateJira,
   root: string,
   storyKey: string,
-  assignee: CreatePreview["assignee"],
+  assignee: CreatePreview['assignee'],
 ): Promise<CreatePreview> {
   const plan = await loadPlan(planPath(root, storyKey));
   const state = await readState(root, storyKey);
@@ -233,35 +225,22 @@ export async function buildPreview(
   const parent = await resolveParent(jira, storyKey);
   return {
     taskCount: included.length,
-    expectedSeconds: Math.round(
-      included.reduce((sum, t) => sum + taskExpectedSeconds(t), 0),
-    ),
+    estimateSeconds: included.reduce((sum, t) => sum + effectiveSeconds(t), 0),
     parent,
     assignee,
     uploads: plannedUploads(state, plan),
-    existing:
-      parent.kind === "ready"
-        ? await findExistingMatches(jira, root, storyKey, parent.target)
-        : [],
+    existing: parent.kind === 'ready' ? await findExistingMatches(jira, root, storyKey, parent.target) : [],
   };
 }
 
 // Se abre sin seguir enlaces y se valida el descriptor: entre comprobar y leer nadie puede cambiar el archivo
-function withUploadFile<T>(
-  file: string,
-  label: string,
-  maxBytes: number,
-  use: (fd: number, size: number) => T,
-): T {
+function withUploadFile<T>(file: string, label: string, maxBytes: number, use: (fd: number, size: number) => T): T {
   const fd = fs.openSync(file, OPEN_FLAGS);
   try {
     const stat = fs.fstatSync(fd);
-    if (!stat.isFile())
-      throw new Error(`${label} no es un archivo regular; no lo subo.`);
+    if (!stat.isFile()) throw new Error(`${label} no es un archivo regular; no lo subo.`);
     if (stat.size > maxBytes) {
-      throw new Error(
-        `${label} pesa más de ${Math.round(maxBytes / BYTES_PER_MB)} MB; no lo subo.`,
-      );
+      throw new Error(`${label} pesa más de ${Math.round(maxBytes / BYTES_PER_MB)} MB; no lo subo.`);
     }
     return use(fd, stat.size);
   } finally {
@@ -275,10 +254,7 @@ const uploadFileSize = (file: string, label: string, maxBytes: number): number =
 const readUploadFile = (file: string, label: string, maxBytes: number): Buffer =>
   withUploadFile(file, label, maxBytes, (fd) => fs.readFileSync(fd));
 
-type RemoteFiles = Map<
-  string,
-  Array<{ id: string; filename: string; size: number }>
->;
+type RemoteFiles = Map<string, Array<{ id: string; filename: string; size: number }>>;
 
 async function uploadTaskAttachments(
   jira: CreateJira,
@@ -288,12 +264,10 @@ async function uploadTaskAttachments(
   issueKey: string,
   maxBytes: number,
   remote: RemoteFiles,
-  report: (step: "uploading" | "uploaded", detail: string) => void,
+  report: (step: 'uploading' | 'uploaded', detail: string) => void,
 ): Promise<void> {
   const state = await readState(root, storyKey);
-  const entries = (state?.attachments ?? []).filter(
-    (e) => hasUploadPurpose(e) && isAssigned(e, task),
-  );
+  const entries = (state?.attachments ?? []).filter((e) => hasUploadPurpose(e) && isAssigned(e, task));
   const record = (file: string, id: string) =>
     updateState(root, storyKey, (s) => {
       const target = s.attachments.find((a) => a.file === file);
@@ -304,25 +278,17 @@ async function uploadTaskAttachments(
     const filePath = attachmentFilePath(root, storyKey, entry.file);
     const size = uploadFileSize(filePath, entry.file, maxBytes);
     // Si un corte dejó el archivo en Jira sin anotarlo, se anota en vez de subirlo otra vez
-    if (!remote.has(issueKey))
-      remote.set(issueKey, await jira.getAttachments(issueKey));
-    const already = remote
-      .get(issueKey)
-      ?.find((r) => r.filename === entry.file && r.size === size);
+    if (!remote.has(issueKey)) remote.set(issueKey, await jira.getAttachments(issueKey));
+    const already = remote.get(issueKey)?.find((r) => r.filename === entry.file && r.size === size);
     if (already) {
       await record(entry.file, already.id);
       continue;
     }
     const data = readUploadFile(filePath, entry.file, maxBytes);
-    report("uploading", entry.file);
-    const id = await jira.uploadAttachment(
-      issueKey,
-      entry.file,
-      data,
-      maxBytes,
-    );
+    report('uploading', entry.file);
+    const id = await jira.uploadAttachment(issueKey, entry.file, data, maxBytes);
     await record(entry.file, id);
-    report("uploaded", entry.file);
+    report('uploaded', entry.file);
   }
 }
 
@@ -330,6 +296,8 @@ export interface CreationDeps {
   jira: CreateJira;
   root: string;
   maxUploadBytes?: number;
+  // Hoy (AAAA-MM-DD) para recomendar fechas; inyectable en pruebas
+  today?: string;
 }
 
 // Cada tarea queda anotada en estado.json apenas se crea: un reintento continúa donde se cortó
@@ -348,19 +316,19 @@ export async function runCreation(
     assertKey(storyKey);
     assertKey(target.parentKey);
     for (const key of Object.values(adopt)) assertKey(key);
-    const tasks = (await loadPlan(planPath(root, storyKey))).tasks.filter(
-      (t) => t.include,
-    );
+    const plan = await loadPlan(planPath(root, storyKey));
+    const tasks = plan.tasks.filter((t) => t.include);
+    const schedule = scheduleOf(plan, deps.today ?? todayIso());
     if (!tasks.length)
       return {
         ok: false,
-        message: "No hay tareas marcadas para crear.",
+        message: 'No hay tareas marcadas para crear.',
         created,
       };
-    await advancePhase(root, storyKey, "reviewed");
+    await advancePhase(root, storyKey, 'reviewed');
 
     for (const [position, task] of tasks.entries()) {
-      const report = (step: CreateProgress["step"], detail?: string) =>
+      const report = (step: CreateProgress['step'], detail?: string) =>
         onProgress({
           index: position + 1,
           total: tasks.length,
@@ -368,19 +336,18 @@ export async function runCreation(
           step,
           detail,
         });
-      let key =
-        (await readState(root, storyKey))?.createdIssues[task.id] ??
-        adopt[task.id];
+      let key = (await readState(root, storyKey))?.createdIssues[task.id] ?? adopt[task.id];
       const existing = Boolean(key);
       if (!key) {
-        report("creating");
+        report('creating');
         const result = await jira.createIssue({
           projectKey: projectKeyOfStory(target.parentKey),
           summary: oneLine(task.summary),
           issueTypeName: target.issueTypeName,
           issueTypeId: target.issueTypeId,
           assigneeId,
-          estimateSeconds: estimateForJira(taskExpectedSeconds(task)),
+          estimateSeconds: effectiveSeconds(task),
+          dueDate: schedule.get(task.id)?.dueDate,
           parentKey: target.parentKey,
           description: markdownToAdf(buildDescriptionMarkdown(task)),
         });
@@ -397,20 +364,11 @@ export async function runCreation(
         summary: task.summary,
         existing,
       });
-      report(existing ? "existing" : "created", issueKey);
-      await uploadTaskAttachments(
-        jira,
-        root,
-        storyKey,
-        task,
-        issueKey,
-        maxUploadBytes,
-        remote,
-        report,
-      );
+      report(existing ? 'existing' : 'created', issueKey);
+      await uploadTaskAttachments(jira, root, storyKey, task, issueKey, maxUploadBytes, remote, report);
     }
 
-    await advancePhase(root, storyKey, "created");
+    await advancePhase(root, storyKey, 'created');
     await renderDashboard(root);
     return { ok: true, created, parentKey: target.parentKey, estimateSkipped };
   } catch (err: unknown) {

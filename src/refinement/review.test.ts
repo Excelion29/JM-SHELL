@@ -123,3 +123,75 @@ test('assertSafeToOpen rechaza ejecutables y archivos sin extensión', () => {
     assert.throws(() => assertSafeToOpen(file), /por seguridad/);
   }
 });
+
+const THURSDAY = '2026-11-05';
+const FRIDAY = '2026-11-06';
+
+test('loadReview recomienda fechas desde hoy y las recalcula en cada carga', async () => {
+  const root = await seeded();
+  const first = await loadReview(root, KEY, THURSDAY);
+  assert.deepEqual(first.tasks.map((t) => [t.recommendedDate, t.effectiveDate, t.dateManual]), [
+    [THURSDAY, THURSDAY, false],
+    [THURSDAY, THURSDAY, false],
+  ]);
+  assert.equal(first.dailyCapacitySeconds, 8 * ONE_HOUR);
+  assert.equal(first.daySeconds[THURSDAY], 3900 + 2 * ONE_HOUR);
+  // Nada se persistió: al día siguiente la recomendación se corre sola
+  const saved = await fs.readJson(planPath(root, KEY));
+  assert.equal('dueDate' in saved.tasks[0], false);
+  assert.equal((await loadReview(root, KEY, FRIDAY)).tasks[0].effectiveDate, FRIDAY);
+});
+
+test('la estimación final reemplaza a la recomendación en tarea y totales, y se puede borrar', async () => {
+  const root = await seeded();
+  const model = await updateTask(root, KEY, 'T1', { finalEstimate: ' 3h ' }, THURSDAY);
+  assert.equal(model.tasks[0].recommendedSeconds, 3900);
+  assert.equal(model.tasks[0].effectiveSeconds, 3 * ONE_HOUR);
+  assert.equal(model.totals.effectiveSeconds, 3 * ONE_HOUR + 2 * ONE_HOUR);
+  assert.equal(model.totals.expectedSeconds, 3900 + 2 * ONE_HOUR);
+  assert.equal((await fs.readJson(planPath(root, KEY))).tasks[0].finalEstimate, '3h');
+  const cleared = await updateTask(root, KEY, 'T1', { finalEstimate: '' }, THURSDAY);
+  assert.equal(cleared.tasks[0].effectiveSeconds, 3900);
+  assert.equal('finalEstimate' in (await fs.readJson(planPath(root, KEY))).tasks[0], false);
+});
+
+test('una estimación final inválida se rechaza y el plan queda intacto', async () => {
+  const root = await seeded();
+  const before = await fs.readFile(planPath(root, KEY), 'utf8');
+  await assert.rejects(updateTask(root, KEY, 'T1', { finalEstimate: '3 horas' }), /Invalid time format/);
+  await assert.rejects(updateTask(root, KEY, 'T1', { finalEstimate: '0m' }), /mayor que 0/);
+  assert.equal(await fs.readFile(planPath(root, KEY), 'utf8'), before);
+});
+
+test('la fecha editada se guarda como manual (incluso fin de semana o sobre 8 h) y reiniciar vuelve a la recomendada', async () => {
+  const root = await seeded();
+  const manual = await updateTask(root, KEY, 'T2', { dueDate: '+2' }, THURSDAY);
+  assert.deepEqual(
+    [manual.tasks[1].effectiveDate, manual.tasks[1].recommendedDate, manual.tasks[1].dateManual],
+    ['2026-11-07', THURSDAY, true],
+  );
+  const saved = (await fs.readJson(planPath(root, KEY))).tasks[1];
+  assert.deepEqual([saved.dueDate, saved.dueDateManual], ['2026-11-07', true]);
+  // La fecha manual se conserva aunque "hoy" cambie
+  assert.equal((await loadReview(root, KEY, FRIDAY)).tasks[1].effectiveDate, '2026-11-07');
+  assert.equal((await updateTask(root, KEY, 'T1', { dueDate: 'hoy' }, THURSDAY)).tasks[0].dateManual, true);
+
+  const reset = await updateTask(root, KEY, 'T2', { dueDate: null }, THURSDAY);
+  assert.equal(reset.tasks[1].dateManual, false);
+  const after = (await fs.readJson(planPath(root, KEY))).tasks[1];
+  assert.equal('dueDate' in after || 'dueDateManual' in after, false);
+});
+
+test('una fecha inválida se rechaza y exceder 8 h en un día no bloquea', async () => {
+  const root = await seeded();
+  await assert.rejects(updateTask(root, KEY, 'T1', { dueDate: '31/12' }), /Fecha inválida/);
+  const model = await updateTask(root, KEY, 'T1', { finalEstimate: '9h' }, THURSDAY);
+  assert.ok(model.daySeconds[THURSDAY] > model.dailyCapacitySeconds);
+});
+
+test('las tareas sin marcar no tienen fecha ni ocupan días', async () => {
+  const root = await seeded();
+  const model = await updateTask(root, KEY, 'T1', { include: false }, THURSDAY);
+  assert.equal(model.tasks[0].effectiveDate, null);
+  assert.deepEqual(model.daySeconds, { [THURSDAY]: 2 * ONE_HOUR });
+});

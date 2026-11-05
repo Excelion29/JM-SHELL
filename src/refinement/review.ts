@@ -2,11 +2,20 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import { resolveInside, sanitizeFilename } from './attachments';
 import { loadPlan, validatePlan } from './plan';
-import { expectedSeconds, parseEstimate, planTotals, stdDevSeconds } from './pert';
+import {
+  effectiveSeconds,
+  expectedSeconds,
+  parseEstimate,
+  parseFinalEstimate,
+  planTotals,
+  recommendedSeconds,
+  stdDevSeconds,
+} from './pert';
+import { DAILY_CAPACITY_SECONDS, daySeconds, parseDueDateInput, scheduleOf, todayIso } from './schedule';
 import type { EstimatePreview, ReviewFile, ReviewModel, TaskPatch } from './review-types';
 import { assertNoLinks, lexists, safeWriteFile } from './safe-fs';
 import { attachmentsDir, planPath, readState, updateState } from './state';
-import { ATTACHMENT_PURPOSES, AttachmentPurpose, RefinementPlan, StoryState, TaskEstimate } from './types';
+import { ATTACHMENT_PURPOSES, AttachmentPurpose, PlannedTask, RefinementPlan, StoryState, TaskEstimate } from './types';
 
 const REVIEWABLE_PHASES: readonly string[] = ['plan', 'reviewed'];
 const TEMP_FILE_SUFFIX = /\.(part|tmp)$/;
@@ -104,9 +113,10 @@ export function attachmentFilePath(root: string, key: string, file: string): str
   return dest;
 }
 
-export async function loadReview(root: string, key: string): Promise<ReviewModel> {
+export async function loadReview(root: string, key: string, today: string = todayIso()): Promise<ReviewModel> {
   const state = await requireState(root, key);
   const plan = await readPlan(root, key);
+  const schedule = scheduleOf(plan, today);
   const files: ReviewFile[] = listLocalFiles(root, key).map((file) => {
     const entry = state.attachments.find((a) => a.file === file);
     const planned = plan.tasks.filter((t) => t.attachments.includes(file)).map((t) => t.id);
@@ -122,18 +132,53 @@ export async function loadReview(root: string, key: string): Promise<ReviewModel
     phase: state.phase,
     tasks: plan.tasks.map((task) => {
       const { optimistic, likely, pessimistic } = parseEstimate(task.estimate);
+      const entry = schedule.get(task.id);
       return {
         ...task,
         expectedSeconds: Math.round(expectedSeconds(optimistic, likely, pessimistic)),
         stdDevSeconds: Math.round(stdDevSeconds(optimistic, pessimistic)),
+        recommendedSeconds: recommendedSeconds(task),
+        effectiveSeconds: effectiveSeconds(task),
+        recommendedDate: entry?.recommended ?? null,
+        effectiveDate: entry?.dueDate ?? null,
+        dateManual: entry?.manual ?? false,
       };
     }),
     files,
     totals: planTotals(plan),
+    daySeconds: daySeconds(plan, schedule),
+    dailyCapacitySeconds: DAILY_CAPACITY_SECONDS,
   };
 }
 
-export async function updateTask(root: string, key: string, taskId: string, patch: TaskPatch): Promise<ReviewModel> {
+function applyFinalEstimate(task: PlannedTask, value: string | null): void {
+  const text = value?.trim() ?? '';
+  if (!text) {
+    delete task.finalEstimate;
+    return;
+  }
+  parseFinalEstimate(text);
+  task.finalEstimate = text;
+}
+
+function applyDueDate(task: PlannedTask, value: string | null, today: string): void {
+  const text = value?.trim() ?? '';
+  if (!text) {
+    delete task.dueDate;
+    delete task.dueDateManual;
+    return;
+  }
+  task.dueDate = parseDueDateInput(text, today);
+  task.dueDateManual = true;
+}
+
+export async function updateTask(
+  root: string,
+  key: string,
+  taskId: string,
+  patch: TaskPatch,
+  today: string = todayIso(),
+): Promise<ReviewModel> {
   assertReviewable(await requireState(root, key));
   const plan = await readPlan(root, key);
   const task = plan.tasks.find((t) => t.id === taskId);
@@ -152,9 +197,11 @@ export async function updateTask(root: string, key: string, taskId: string, patc
     task.estimate = estimate;
   }
   if (patch.include !== undefined) task.include = patch.include;
+  if (patch.finalEstimate !== undefined) applyFinalEstimate(task, patch.finalEstimate);
+  if (patch.dueDate !== undefined) applyDueDate(task, patch.dueDate, today);
   writePlan(root, key, plan);
   await markReviewed(root, key);
-  return loadReview(root, key);
+  return loadReview(root, key, today);
 }
 
 function assertLocalFile(root: string, key: string, file: string): void {

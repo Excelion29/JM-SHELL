@@ -4,7 +4,7 @@ import * as fs from 'fs-extra';
 import * as os from 'os';
 import * as path from 'path';
 import { adfToMarkdown } from '../utils/adf';
-import { buildDescriptionMarkdown, estimateForJira, findExistingMatches, plannedUploads, resolveParent, resolveTarget, runCreation } from './create';
+import { buildDescriptionMarkdown, buildPreview, estimateForJira, findExistingMatches, plannedUploads, resolveParent, resolveTarget, runCreation } from './create';
 import type { CreateRequest, CreationTarget } from './review-types';
 import { attachmentsDir, readState, statePath } from './state';
 import { attachment, createFakeJira, seedStory, task, tempRoot } from './test-support';
@@ -338,4 +338,50 @@ test('un enlace simbólico dentro de adjuntos no se sube', async (t) => {
   const outcome = await runCreation({ jira, root }, KEY, REQUEST);
   assert.ok(!outcome.ok && /enlace/.test(outcome.message));
   assert.ok(!calls.uploads.some((u) => u.file === 'enlace.txt'));
+});
+
+const THURSDAY = '2026-11-05';
+const ONE_HOUR = 3600;
+
+test('la descripción declara la estimación del dev y conserva PERT como referencia', () => {
+  const markdown = buildDescriptionMarkdown(task('T1', { finalEstimate: '3h' }));
+  assert.match(markdown, /Estimación: 3h \(del dev\) · PERT: O 30m \/ M 1h \/ P 2h, esperado 1h5m · riesgo medio/);
+});
+
+test('crea con la estimación propia del dev y la fecha recomendada; sin ella, la recomendación redondeada', async () => {
+  const root = await tempRoot();
+  await seedStory(root, KEY, [task('T1', { finalEstimate: '3h' }), task('T2'), task('T3')], { phase: 'reviewed' });
+  const { jira, calls } = createFakeJira();
+  const outcome = await runCreation({ jira, root, today: THURSDAY }, KEY, REQUEST);
+  assert.ok(outcome.ok);
+  const sent = calls.created.map((p) => [p.estimateSeconds, p.dueDate]);
+  // 3h + 1h05 + 1h05 caben en un día
+  assert.deepEqual(sent, [
+    [3 * ONE_HOUR, THURSDAY],
+    [3900, THURSDAY],
+    [3900, THURSDAY],
+  ]);
+});
+
+test('crea con la fecha manual y pasa al día siguiente lo que ya no cabe', async () => {
+  const root = await tempRoot();
+  await seedStory(
+    root,
+    KEY,
+    [task('T1', { finalEstimate: '7h' }), task('T2', { dueDate: '2026-11-08', dueDateManual: true }), task('T3')],
+    { phase: 'reviewed' },
+  );
+  const { jira, calls } = createFakeJira();
+  await runCreation({ jira, root, today: THURSDAY }, KEY, REQUEST);
+  assert.deepEqual(calls.created.map((p) => p.dueDate), [THURSDAY, '2026-11-08', '2026-11-06']);
+});
+
+test('la vista previa suma lo que irá a Jira y la creación no usa transiciones', async () => {
+  const root = await tempRoot();
+  await seedStory(root, KEY, [task('T1', { finalEstimate: '3h' }), task('T2')], { phase: 'reviewed' });
+  const { jira } = createFakeJira({ issues: { [KEY]: {} } });
+  const preview = await buildPreview(jira, root, KEY, { accountId: 'acc-1', displayName: 'Yo' });
+  assert.equal(preview.estimateSeconds, 3 * ONE_HOUR + 3900);
+  // CreateJira no expone transiciones: crear no puede mover la tarea de su estado inicial
+  assert.equal('doTransition' in jira || 'transitionToStatus' in jira, false);
 });

@@ -34,7 +34,11 @@ const WAIT_TIMEOUT_MS = 2000;
 const WAIT_POLL_MS = 15;
 
 // Espera a que se cumpla una condición (el render y los puentes falsos son asíncronos)
-export async function waitFor(condition: () => boolean, what = 'la condición', timeoutMs = WAIT_TIMEOUT_MS): Promise<void> {
+export async function waitFor(
+  condition: () => boolean,
+  what = 'la condición',
+  timeoutMs = WAIT_TIMEOUT_MS,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
     if (Date.now() > deadline) throw new Error(`Se agotó el tiempo esperando ${what}`);
@@ -42,7 +46,7 @@ export async function waitFor(condition: () => boolean, what = 'la condición', 
   }
 }
 
-export const FAKE_CODE_FOLDER = 'C:\repo\jm';
+export const FAKE_CODE_FOLDER = 'C:\\repo\\jm';
 
 export const BASE_HEADER: ChatHeader = {
   key: 'AQ-45',
@@ -94,7 +98,7 @@ export function createFakeChat(
       if (knowledge.openError) throw new Error(knowledge.openError);
       listener = onEvent;
       calls.opened.push(key);
-      return { header: { ...BASE_HEADER, ...header, key }, codeFolder: FAKE_CODE_FOLDER, history };
+      return { header: { ...BASE_HEADER, ...header, key }, codeFolder: FAKE_CODE_FOLDER, history, idle: history.length > 0 };
     },
     send: (text) => void sent.push(text),
     toggleDeep: () => void (calls.toggle += 1),
@@ -157,16 +161,28 @@ export const fakeTask = (id: string, patch: Partial<ReviewTask> = {}): ReviewTas
   attachments: [],
   expectedSeconds: 3900,
   stdDevSeconds: 900,
+  recommendedSeconds: 3900,
+  effectiveSeconds: 3900,
+  recommendedDate: '2026-11-05',
+  effectiveDate: '2026-11-05',
+  dateManual: false,
   ...patch,
 });
+
+const FAKE_CAPACITY_SECONDS = 8 * SECONDS_PER_HOUR;
 
 function withTotals(model: ReviewModel): ReviewModel {
   const included = model.tasks.filter((t) => t.include);
   return {
     ...model,
+    daySeconds: included.reduce<Record<string, number>>((days, t) => {
+      if (t.effectiveDate) days[t.effectiveDate] = (days[t.effectiveDate] ?? 0) + t.effectiveSeconds;
+      return days;
+    }, {}),
     totals: {
       taskCount: included.length,
       expectedSeconds: included.reduce((sum, t) => sum + t.expectedSeconds, 0),
+      effectiveSeconds: included.reduce((sum, t) => sum + t.effectiveSeconds, 0),
       stdDevSeconds: Math.round(Math.sqrt(included.reduce((sum, t) => sum + t.stdDevSeconds ** 2, 0))),
     },
   };
@@ -200,9 +216,14 @@ export function createFakePlan(options: FakePlanOptions = {}) {
     storyKey: 'AQ-45',
     summary: 'Login social',
     phase: 'plan',
-    tasks: options.tasks ?? [fakeTask('T1'), fakeTask('T2', { expectedSeconds: 7200, stdDevSeconds: 1800 })],
+    tasks: options.tasks ?? [
+      fakeTask('T1'),
+      fakeTask('T2', { expectedSeconds: 7200, stdDevSeconds: 1800, recommendedSeconds: 7200, effectiveSeconds: 7200 }),
+    ],
     files: options.files ?? [],
-    totals: { taskCount: 0, expectedSeconds: 0, stdDevSeconds: 0 },
+    totals: { taskCount: 0, expectedSeconds: 0, effectiveSeconds: 0, stdDevSeconds: 0 },
+    daySeconds: {},
+    dailyCapacitySeconds: FAKE_CAPACITY_SECONDS,
   });
   const calls = {
     updates: [] as Array<{ taskId: string; patch: TaskPatch }>,
@@ -232,9 +253,24 @@ export function createFakePlan(options: FakePlanOptions = {}) {
           if (t.id !== taskId) return t;
           const next = { ...t, ...(patch.summary !== undefined ? { summary: patch.summary } : {}) };
           if (patch.include !== undefined) next.include = patch.include;
+          if (patch.finalEstimate !== undefined) {
+            const text = patch.finalEstimate?.trim() ?? '';
+            next.finalEstimate = text || undefined;
+            next.effectiveSeconds = text ? fakeSeconds(text) : next.recommendedSeconds;
+          }
+          if (patch.dueDate !== undefined) {
+            const text = patch.dueDate?.trim() ?? '';
+            next.dueDateManual = Boolean(text);
+            next.dateManual = Boolean(text);
+            next.effectiveDate = text || next.recommendedDate;
+          }
           if (patch.estimate) {
             const preview = fakePreview(patch.estimate) as Extract<EstimatePreview, { ok: true }>;
-            Object.assign(next, { estimate: patch.estimate, expectedSeconds: preview.expectedSeconds, stdDevSeconds: preview.stdDevSeconds });
+            Object.assign(next, {
+              estimate: patch.estimate,
+              expectedSeconds: preview.expectedSeconds,
+              stdDevSeconds: preview.stdDevSeconds,
+            });
           }
           return next;
         }),
@@ -252,7 +288,10 @@ export function createFakePlan(options: FakePlanOptions = {}) {
         ...model,
         files: model.files.map((f) =>
           f.file === file
-            ? { ...f, taskIds: f.taskIds.includes(taskId) ? f.taskIds.filter((id) => id !== taskId) : [...f.taskIds, taskId] }
+            ? {
+                ...f,
+                taskIds: f.taskIds.includes(taskId) ? f.taskIds.filter((id) => id !== taskId) : [...f.taskIds, taskId],
+              }
             : f,
         ),
       };
@@ -261,7 +300,7 @@ export function createFakePlan(options: FakePlanOptions = {}) {
     openAttachment: async (_key, file) => void calls.openedFiles.push(file),
     prepareCreate: async () => ({
       taskCount: model.totals.taskCount,
-      expectedSeconds: model.totals.expectedSeconds,
+      estimateSeconds: model.totals.effectiveSeconds,
       parent: { kind: 'ready', target: FAKE_TARGET },
       assignee: FAKE_ASSIGNEE,
       uploads: [],
@@ -277,7 +316,9 @@ export function createFakePlan(options: FakePlanOptions = {}) {
     create: async (_key, request, onProgress) => {
       calls.created.push(request);
       for (const progress of options.progress ?? []) onProgress(progress);
-      const outcomes = options.outcomes ?? [{ ok: true, created: [], parentKey: request.target.parentKey, estimateSkipped: false }];
+      const outcomes = options.outcomes ?? [
+        { ok: true, created: [], parentKey: request.target.parentKey, estimateSkipped: false },
+      ];
       return outcomes[Math.min(createCall++, outcomes.length - 1)];
     },
     openInBrowser: async (issueKey) => void calls.opened.push(issueKey),

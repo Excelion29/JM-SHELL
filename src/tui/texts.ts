@@ -108,13 +108,16 @@ export const CHAT_KEYS = {
 
 export const CHAT_VISIBLE_MIN_ROWS = 6;
 // Alto que ocupan marco, encabezado, actividad, entrada y pie alrededor de la conversación
-export const CHAT_CHROME_ROWS = 14;
+export const CHAT_CHROME_ROWS = 17;
 export const CHAT_DEFAULT_TERMINAL_ROWS = 30;
 export const CHAT_DEFAULT_TERMINAL_COLUMNS = 80;
 export const CHAT_HORIZONTAL_MARGIN = 8;
 export const MESSAGE_INDENT = 2;
 export const CONTEXT_K = 1000;
 export const CURSOR = '▌';
+// Filas máximas del campo de escritura (al pegar bloques grandes) y ancho con que se pintan las tabulaciones
+export const CHAT_INPUT_MAX_ROWS = 5;
+export const TAB_WIDTH = 4;
 // Los deltas de texto se juntan y se pintan a este ritmo: pintar cada uno satura la terminal
 export const STREAM_FLUSH_MS = 75;
 // Mensajes (no filas) que el chat conserva en pantalla: cubre la copia local completa (500)
@@ -130,6 +133,7 @@ export const CHAT_TEXTS = {
   codeFolderLine: (folder: string) => `código: ${folder}`,
   assistantLabel: 'Claude',
   inputPrompt: '> ',
+  inputClipped: (hidden: number) => `(+${hidden} líneas arriba)`,
   thinking: 'Claude está pensando...',
   scrolledHint: 'Estás viendo mensajes anteriores. PgDn para volver al final.',
   headerBlock: 'bloque',
@@ -169,11 +173,14 @@ export const FOOTER_HINTS = {
   choose: (count: number) => `1-${count} elegir`,
   knowledge: 'Esc cancelar',
   knowledgeBrowse: `↑↓ elegir · Enter abrir carpeta o nota · Backspace subir · ${KEYS.selectFolder} elegir esta carpeta · Esc cancelar`,
-  chat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo · Esc inicio`,
+  chat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo (vuelves con /exit) · Esc inicio`,
 } as const;
 export const SECONDS_PER_HOUR = 3600;
 export const SECONDS_PER_MINUTE = 60;
-export const SUMMARY_MAX_CHARS = 44;
+export const FRAME_HORIZONTAL_OVERHEAD = 4;
+export const FRAME_BOTTOM_MARGIN = 1;
+export const REVIEW_CHROME_ROWS = 15;
+export const REVIEW_MIN_VISIBLE_ROWS = 3;
 export const PROGRESS_VISIBLE_LINES = 12;
 export const ELLIPSIS = '…';
 
@@ -206,8 +213,14 @@ export const PLAN_TEXTS = {
   empty: 'El plan no tiene tareas.',
   included: '[x]',
   excluded: '[ ]',
-  total: (count: number, expected: string, deviation: string) =>
-    `Total (${count} marcada(s)): esperado ${expected} · σ ${deviation}`,
+  total: (count: number, estimate: string, expected: string, deviation: string) =>
+    `Total (${count} marcada(s)): a Jira ${estimate} · esperado PERT ${expected} · σ ${deviation}`,
+  jiraEstimate: (estimate: string, own: boolean) => `Jira ${estimate}${own ? ' (tuya)' : ''}`,
+  dueDate: (date: string, manual: boolean) => `vence ${date} ${manual ? '(manual)' : '(rec.)'}`,
+  overload: (date: string, total: string, capacity: string) =>
+    `Aviso: el ${date} suma ${total} (más de ${capacity} por día). Puedes dejarlo así.`,
+  reference: (recommended: string, date: string | null) =>
+    `Recomendado: ${recommended}${date ? ` · fecha recomendada ${date}` : ''}`,
   saveError: (message: string) => `No pude guardar el cambio: ${message}`,
   noneIncluded: 'Marca al menos una tarea para crearla en Jira.',
   nextStep: `Siguiente paso: marca lo que quieres crear y pulsa ${'c'}.`,
@@ -218,6 +231,8 @@ export const PLAN_TEXTS = {
     optimistic: 'Optimista (O)',
     likely: 'Probable (M)',
     pessimistic: 'Pesimista (P)',
+    finalEstimate: 'Tu estimación (ej. 3h; vacío = recomendada)',
+    dueDate: 'Fecha (AAAA-MM-DD, hoy, mañana, +2; vacío = recomendada)',
   },
   preview: (expected: string, deviation: string) => `esperado ${expected} · σ ${deviation}`,
   detailTitle: (id: string, summary: string) => `${id} · ${summary}`,
@@ -251,7 +266,7 @@ export const CREATE_TEXTS = {
   otherChecking: 'Revisando esa clave...',
   otherError: (message: string) => `Esa clave no sirve: ${message}`,
   confirmTitle: 'Confirma antes de crear',
-  tasks: (count: number, expected: string) => `${count} tarea(s) · esperado total ${expected}`,
+  tasks: (count: number, estimate: string) => `${count} tarea(s) · estimado total ${estimate}`,
   parent: (key: string, summary: string) => `Padre: ${key} · ${summary}`,
   type: (name: string) => `Tipo: ${name}`,
   assignee: (name: string) => `Responsable: ${name}`,
@@ -271,7 +286,7 @@ export const CREATE_TEXTS = {
   },
   line: (index: number, total: number, summary: string, state: string) => `[${index}/${total}] ${summary} · ${state}`,
   doneTitle: 'Listo, tareas creadas',
-  doneLine: (key: string, summary: string, existing: boolean) => `${key} · ${summary}${existing ? ' (ya estaba)' : ''}`,
+  existingNote: '(ya estaba)',
   estimateSkipped: 'Jira no acepta estimación en este proyecto: se crearon sin ella.',
   doneNextStep: (parentKey: string) => `Siguiente paso: pulsa o para abrir ${parentKey} en Jira.`,
   openError: (message: string) => `No pude abrir el navegador: ${message}`,

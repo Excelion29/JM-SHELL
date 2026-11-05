@@ -13,3 +13,11 @@ export function wrapText(text: string, width: number): string[] {
   }
   return rows;
 }
+
+export const expandTabs = (text: string, tabWidth: number): string => text.replace(/\t/g, ' '.repeat(tabWidth));
+
+// Últimas `max` filas y cuántas quedaron arriba sin mostrar
+export function clipRows(rows: string[], max: number): { shown: string[]; hidden: number } {
+  const hidden = Math.max(0, rows.length - max);
+  return { shown: rows.slice(hidden), hidden };
+}

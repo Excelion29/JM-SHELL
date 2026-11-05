@@ -60,7 +60,8 @@ export async function importCommand(issueKeyArg?: string): Promise<void> {
     assertKey(key);
     const jira = new JiraService(await requireAuth());
     const root = storyRootFor(key);
-    if (!(await readState(root, key))) throw new Error(`La historia ${key} aún no tiene plan. Ejecuta \`jm refinar ${key}\`.`);
+    if (!(await readState(root, key)))
+      throw new Error(`La historia ${key} aún no tiene plan. Ejecuta \`jm refinar ${key}\`.`);
 
     const assignee = await defaultAssignee(jira, projectKeyOfStory(key), await configuredAssignee());
     const preview = await buildPreview(jira, root, key, assignee);
@@ -71,8 +72,11 @@ export async function importCommand(issueKeyArg?: string): Promise<void> {
       return;
     }
 
-    const existing = preview.parent.kind === 'ready' ? preview.existing : await findExistingMatches(jira, root, key, target);
-    console.log(chalk.bold(`\n  Se crearán ${preview.taskCount} tarea(s) · esperado ${formatSeconds(preview.expectedSeconds)}`));
+    const existing =
+      preview.parent.kind === 'ready' ? preview.existing : await findExistingMatches(jira, root, key, target);
+    console.log(
+      chalk.bold(`\n  Se crearán ${preview.taskCount} tarea(s) · estimado ${formatSeconds(preview.estimateSeconds)}`),
+    );
     console.log(`  Padre: ${target.parentKey} — ${target.parentSummary}`);
     console.log(`  Tipo: ${target.issueTypeName}`);
     console.log(`  Responsable: ${assignee.displayName}`);
@@ -90,8 +94,12 @@ export async function importCommand(issueKeyArg?: string): Promise<void> {
       return;
     }
 
-    const outcome = await runCreation({ jira, root }, key, { target, assigneeId: assignee.accountId, adopt: Object.fromEntries(existing.map((m) => [m.taskId, m.key])) }, (progress) =>
-      info(`[${progress.index}/${progress.total}] ${progress.step} ${progress.detail ?? progress.summary}`),
+    const outcome = await runCreation(
+      { jira, root },
+      key,
+      { target, assigneeId: assignee.accountId, adopt: Object.fromEntries(existing.map((m) => [m.taskId, m.key])) },
+      (progress) =>
+        info(`[${progress.index}/${progress.total}] ${progress.step} ${progress.detail ?? progress.summary}`),
     );
     if (!outcome.ok) {
       error(outcome.message);

@@ -174,6 +174,7 @@ function messages(options: {
   });
   return {
     written,
+    send: (text: string) => session.send(text),
     start: () =>
       session.start({
         key: 'AQ-45',
@@ -192,7 +193,9 @@ test('los mensajes iniciales llevan el contexto de la base: primero, retoma y de
   assert.match(first.written[0], /skill refinar.*AQ-45.*00-JM-ADR/);
   const resumed = messages({ kbContext: CONTEXT, sessionId: SESSION });
   await resumed.start();
-  assert.match(resumed.written[0], /2 líneas.*00-JM-ADR/);
+  assert.deepEqual(resumed.written, []);
+  resumed.send('hola');
+  assert.equal(resumed.written[0], `hola ${CONTEXT}`);
   const fromNote = messages({ kbContext: CONTEXT, sessionId: null, startMessage: 'fromNote' });
   await fromNote.start();
   assert.match(fromNote.written[0], /nota de esta historia: léela primero.*00-JM-ADR/);

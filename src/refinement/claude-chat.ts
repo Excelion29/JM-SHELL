@@ -22,6 +22,8 @@ export const MODELS = { conversation: 'sonnet', explorer: 'haiku', deep: 'opus' 
 
 // Un --resume con sesión inexistente termina casi al instante con código != 0
 const RESUME_FAIL_WINDOW_MS = 5000;
+// Cómo avisa Claude Code de que la sesión a retomar no existe ("No conversation found with session ID")
+const SESSION_NOT_FOUND_PATTERN = /No conversation found|session .{0,60}not found|no such session/i;
 // Si el hijo no cierra solo tras cerrar su stdin, se corta para no dejar procesos huérfanos
 const CLOSE_GRACE_MS = 60_000;
 const TARGET_MAX_CHARS = 80;
@@ -36,11 +38,6 @@ const withContext = (message: string, context: string | null) => (context ? `${m
 export const CHAT_MESSAGES = {
   first: (key: string, context: string | null = null) =>
     withContext(`Sigue la skill refinar para la historia ${key}.`, context),
-  resumed: (key: string, context: string | null = null) =>
-    withContext(
-      `Retomamos la historia ${key}. Resume en 2 líneas lo decidido y dónde íbamos, y sigue desde ahí.`,
-      context,
-    ),
   fromLog: (key: string, context: string | null = null) =>
     withContext(
       `Esta es una sesión nueva de la historia ${key}. Retoma desde bitacora.md y estado.json: resume en 2 líneas lo decidido y sigue en el bloque actual.`,
@@ -48,6 +45,10 @@ export const CHAT_MESSAGES = {
     ),
   fromNote: (key: string, context: string) =>
     `Sigue la skill refinar para la historia ${key}. Es la primera vez en esta carpeta, pero la base de conocimiento ya tiene una nota de esta historia: léela primero, resume en 2 líneas lo decidido y sigue desde ahí. ${context}`,
+  // Primer mensaje real del dev cuando hay que reconstruir el contexto en una sesión nueva
+  withUserText: (recovery: string, text: string) => `${recovery}
+
+Mensaje del dev: ${text}`,
 } as const;
 
 export const EXPLORER_AGENTS = {
@@ -307,6 +308,8 @@ export interface ChatStartOptions {
   model: ChatModel;
   // Cómo abrir una sesión sin id guardado: desde cero, desde la bitácora o desde la nota de la base
   startMessage?: 'first' | 'fromLog' | 'fromNote';
+  // Hay conversación previa (sesión guardada o historial): no se envía nada hasta el primer mensaje del dev
+  hasHistory?: boolean;
 }
 
 type Listener = (event: ChatEvent) => void;
@@ -321,6 +324,11 @@ export class ChatSession {
   private sessionId = '';
   private model: ChatModel = MODELS.conversation;
   private busy = false;
+  // Evita lanzar procesos tras cerrar mientras una apertura espera en saveSessionId
+  private closed = false;
+  // Conversación reabierta sin proceso: el primer send() la retoma
+  private awaitingFirstMessage = false;
+  private recoveryMessage = '';
 
   constructor(private readonly options: ChatSessionOptions) {
     this.spawner = options.spawner ?? spawnChatProcess;
@@ -340,16 +348,23 @@ export class ChatSession {
     return this.sessionId;
   }
 
+  get isAwaitingFirstMessage(): boolean {
+    return this.awaitingFirstMessage;
+  }
+
   get isBusy(): boolean {
     return this.busy;
   }
 
-  async start({ key, sessionId, model, startMessage = 'first' }: ChatStartOptions): Promise<void> {
+  async start({ key, sessionId, model, startMessage = 'first', hasHistory = false }: ChatStartOptions): Promise<void> {
     this.key = key;
     this.model = model;
-    if (sessionId) {
-      this.sessionId = sessionId;
-      this.launch(true, CHAT_MESSAGES.resumed(key, this.context));
+    this.closed = false;
+    this.awaitingFirstMessage = false;
+    if (sessionId || hasHistory) {
+      this.sessionId = sessionId ?? '';
+      this.recoveryMessage = this.messageFor(startMessage === 'fromNote' ? 'fromNote' : 'fromLog');
+      this.awaitingFirstMessage = true;
       return;
     }
     await this.startFresh(this.messageFor(startMessage));
@@ -358,10 +373,15 @@ export class ChatSession {
   // Sesión nueva (otro uuid) que retoma desde la bitácora en lugar de arrastrar el contexto
   async startFromLog(): Promise<void> {
     this.detach(true);
+    this.awaitingFirstMessage = false;
     await this.startFresh(CHAT_MESSAGES.fromLog(this.key, this.context));
   }
 
   send(text: string): void {
+    if (this.awaitingFirstMessage) {
+      this.openWith(text);
+      return;
+    }
     if (!this.process) throw new Error('La conversación no está abierta.');
     this.busy = true;
     try {
@@ -375,6 +395,10 @@ export class ChatSession {
   // Misma sesión, otro modelo: Claude solo cambia de modelo al arrancar, así que se retoma con --resume
   switchModel(model: ChatModel): void {
     if (model === this.model) return;
+    if (this.awaitingFirstMessage) {
+      this.model = model;
+      return;
+    }
     if (this.busy) {
       this.listener({ type: 'error', message: 'Espera a que termine la respuesta para cambiar de modelo.' });
       return;
@@ -386,6 +410,7 @@ export class ChatSession {
 
   // force=false deja terminar la vuelta en curso y el hijo sale solo al cerrarse su stdin
   close(force = false): void {
+    this.closed = true;
     this.detach(force);
   }
 
@@ -399,9 +424,24 @@ export class ChatSession {
     return CHAT_MESSAGES.first(this.key, this.context);
   }
 
+  private openWith(text: string): void {
+    this.awaitingFirstMessage = false;
+    this.busy = true;
+    const recovery = CHAT_MESSAGES.withUserText(this.recoveryMessage, text);
+    if (this.sessionId) {
+      this.launch(true, withContext(text, this.context), recovery);
+      return;
+    }
+    this.startFresh(recovery).catch((err: unknown) => {
+      this.busy = false;
+      this.listener({ type: 'error', message: `No pude abrir una sesión nueva: ${(err as Error).message}` });
+    });
+  }
+
   private async startFresh(firstMessage: string): Promise<void> {
     this.sessionId = this.newSessionId();
     await this.options.saveSessionId(this.sessionId);
+    if (this.closed) return;
     this.launch(false, firstMessage);
   }
 
@@ -421,7 +461,11 @@ export class ChatSession {
     setTimeout(() => current.kill(), CLOSE_GRACE_MS).unref();
   }
 
-  private launch(resume: boolean, firstMessage: string | null): void {
+  private launch(
+    resume: boolean,
+    firstMessage: string | null,
+    fallbackMessage = CHAT_MESSAGES.fromLog(this.key, this.context),
+  ): void {
     const args = buildChatArgs({
       key: this.key,
       model: this.model,
@@ -433,12 +477,19 @@ export class ChatSession {
       kb: this.options.kb,
     });
     assertSafeArgs(args);
-    let sawTurn = false;
+    let sawOutput = false;
+    // Con sesión inexistente el CLI real emite un result de error (0 vueltas) antes de salir: se retiene hasta
+    // saber si toca abrir una sesión nueva, para no mostrar un error que el respaldo va a resolver
+    let heldErrorEnd: ChatEvent | null = null;
     // total_cost_usd es acumulado por proceso (verificado con 2 vueltas reales): se registra la diferencia
     let lastTotalCost = 0;
     const parser = createNdjsonParser((event) => {
+      if (event.type === 'turnEnd' && event.isError && resume && firstMessage !== null && !sawOutput) {
+        heldErrorEnd = event;
+        return;
+      }
+      sawOutput = true;
       if (event.type !== 'turnEnd') return this.handle(proc, event);
-      sawTurn = true;
       const delta = Math.max(0, event.costUsd - lastTotalCost);
       lastTotalCost = event.costUsd;
       this.handle(proc, { ...event, costUsd: delta });
@@ -457,13 +508,18 @@ export class ChatSession {
       if (this.process !== proc) return;
       this.process = null;
       this.busy = false;
-      const failedFast = code !== 0 && !sawTurn && this.now() - started < RESUME_FAIL_WINDOW_MS;
-      if (resume && failedFast && firstMessage !== null) {
-        void this.startFresh(CHAT_MESSAGES.fromLog(this.key, this.context)).catch((err: unknown) =>
+      const sessionMissing =
+        code !== 0 &&
+        !sawOutput &&
+        this.now() - started < RESUME_FAIL_WINDOW_MS &&
+        SESSION_NOT_FOUND_PATTERN.test(stderrTail);
+      if (resume && sessionMissing && firstMessage !== null) {
+        void this.startFresh(fallbackMessage).catch((err: unknown) =>
           this.listener({ type: 'error', message: `No pude abrir una sesión nueva: ${(err as Error).message}` }),
         );
         return;
       }
+      if (heldErrorEnd) this.handle(proc, heldErrorEnd);
       if (code !== 0 && stderrTail) {
         this.listener({ type: 'error', message: `Claude terminó con error: ${stripControlChars(stderrTail.trim())}` });
       }

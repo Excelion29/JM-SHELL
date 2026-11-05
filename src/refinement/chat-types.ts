@@ -39,6 +39,8 @@ export interface ChatOpenResult {
   header: ChatHeader;
   // Carpeta donde corre Claude: la de jm
   codeFolder: string;
+  // La conversación ya existía: Claude no está trabajando y espera el primer mensaje del dev
+  idle: boolean;
   history: ChatLine[];
 }
 

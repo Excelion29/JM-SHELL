@@ -4,7 +4,7 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import { App } from './app.js';
 import { BASE_HEADER, createFakeChat, createFakePlan, FAKE_CODE_FOLDER, waitFor } from './test-support.js';
-import { CHAT_TEXTS, HOME_TEXTS, STREAM_FLUSH_MS } from './texts.js';
+import { CHAT_INPUT_MAX_ROWS, CHAT_TEXTS, HOME_TEXTS, STREAM_FLUSH_MS, TAB_WIDTH } from './texts.js';
 
 const ENTER = '\r';
 const ESC = '\u001b';
@@ -113,6 +113,29 @@ test('una nueva línea (Ctrl+J o pegado) queda en el mismo mensaje', async () =>
   await app.press('dos');
   await app.press(ENTER);
   assert.deepEqual(app.fake.sent, ['uno\ndos']);
+});
+
+const LINE_COUNT = 12;
+const pastedBlock = () => Array.from({ length: LINE_COUNT }, (_, i) => `\tlinea ${i + 1}`).join('\n');
+
+test('un pegado grande muestra solo las últimas filas con aviso, tabs como espacios, y envía el texto completo', async () => {
+  const app = await openIdleChat();
+  await app.press(pastedBlock());
+  const frame = app.frame();
+  const hidden = LINE_COUNT - CHAT_INPUT_MAX_ROWS;
+  assert.ok(frame.includes(CHAT_TEXTS.inputClipped(hidden)));
+  assert.ok(frame.includes(`${' '.repeat(TAB_WIDTH)}linea ${LINE_COUNT}`));
+  assert.ok(!frame.includes('linea 1\n') && !frame.includes(' linea 1 '));
+  assert.ok(!frame.includes('\t'));
+  await app.press(ENTER);
+  assert.deepEqual(app.fake.sent, [pastedBlock().trim()]);
+  assert.ok(!app.frame().includes('\t'));
+});
+
+test('un texto corto no muestra el aviso de líneas ocultas', async () => {
+  const app = await openIdleChat();
+  await app.press('uno\ndos');
+  assert.ok(!app.frame().includes('líneas arriba'));
 });
 
 test('Ctrl+O alterna Opus y la letra o escrita es texto del mensaje', async () => {
@@ -244,4 +267,49 @@ test('el historial completo es alcanzable, no solo los últimos 12 mensajes', as
   const app = await openIdleChat(createFakeChat({}, longHistory(60)));
   for (let i = 0; i < 40; i += 1) await app.press(PAGE_UP);
   assert.ok(app.frame().includes('mensaje-0'));
+});
+
+test('el aviso de vuelta de Claude se muestra una vez y desaparece al pulsar una tecla', async () => {
+  const notice = 'Volviste de Claude Code.';
+  const utils = render(
+    <App
+      projectKey="AQ"
+      stories={[STORY]}
+      unlocked
+      unlock={async () => ({ ok: true })}
+      fetchEpics={NO_ITEMS}
+      fetchStories={NO_ITEMS}
+      fetchProjects={NO_ITEMS}
+      setProject={async () => ({ ok: true })}
+      loadStories={async () => [STORY]}
+      chat={createFakeChat().chat}
+      plan={createFakePlan().plan}
+      notice={notice}
+    />,
+  );
+  assert.match(utils.lastFrame() ?? '', /Volviste de Claude Code\./);
+  utils.stdin.write('x');
+  await tick();
+  assert.doesNotMatch(utils.lastFrame() ?? '', /Volviste de Claude Code\./);
+});
+
+test('una tabla Markdown en el chat se dibuja con bordes y sin barras crudas', async () => {
+  const table = '| ID | Título |\n|---|---|\n| T1 | Login |\n| T2 | Pagos |';
+  const history = [{ role: 'assistant' as const, text: table, at: 't' }];
+  const app = await openIdleChat(createFakeChat({}, history));
+  const frame = app.frame();
+  assert.ok(frame.includes('┌') && frame.includes('├') && frame.includes('└'));
+  assert.ok(frame.includes('│ T1 │ Login  │'));
+  assert.ok(!frame.includes('|---|'));
+});
+
+test('al reabrir una historia con conversación el chat queda listo sin esperar un turno', async () => {
+  const fake = createFakeChat({}, [{ role: 'assistant', text: 'Quedamos en riesgos', at: 't' }]);
+  const app = setup(fake);
+  await app.press(ENTER);
+  await tick();
+  assert.ok(bodyOf(app.frame()).includes('Quedamos en riesgos'));
+  await app.press('seguimos');
+  await app.press(ENTER);
+  assert.deepEqual(app.fake.sent, ['seguimos']);
 });

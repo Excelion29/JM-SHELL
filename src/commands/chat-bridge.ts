@@ -139,8 +139,14 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
     current.onEvent((event) => handle(event, current));
     const history = await readTranscript(root, key, TRANSCRIPT_MAX_ENTRIES);
     const startMessage = runtime.startMessage === 'resume' ? undefined : runtime.startMessage;
-    await current.start({ key, sessionId, model: MODELS.conversation, startMessage });
-    return { header: await buildHeader(current.currentModel), codeFolder: root, history };
+    await current.start({
+      key,
+      sessionId,
+      model: MODELS.conversation,
+      startMessage,
+      hasHistory: history.length > 0,
+    });
+    return { header: await buildHeader(current.currentModel), codeFolder: root, history, idle: current.isAwaitingFirstMessage };
   }
 
   return {

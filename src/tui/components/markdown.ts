@@ -1,5 +1,6 @@
 // Renderizador de markdown mínimo para el chat: devuelve filas ya partidas al ancho de la terminal
 import { COLORS } from '../texts.js';
+import { isDelimiterRow, parseTable, renderTable, splitAtWidth, textWidth } from './table.js';
 
 export interface Span {
   text: string;
@@ -62,7 +63,7 @@ export const plainText = (text: string): string =>
     .map((span) => span.text)
     .join('');
 
-const lengthOf = (spans: Span[]) => spans.reduce((total, span) => total + span.text.length, 0);
+const lengthOf = (spans: Span[]) => spans.reduce((total, span) => total + textWidth(span.text), 0);
 
 type Style = Omit<Span, 'text'>;
 
@@ -89,21 +90,23 @@ function wrapSpans(spans: Span[], width: number, first: Span[], rest: Span[]): M
   };
   const push = (text: string, style: Style) => {
     current.push({ text, ...style });
-    used += text.length;
+    used += textWidth(text);
     hasWord = true;
   };
   for (const { text, style } of toWords(spans)) {
     let word = text;
-    if (hasWord && used + 1 + word.length <= width) {
+    if (hasWord && used + 1 + textWidth(word) <= width) {
       push(` ${word}`, style);
       continue;
     }
     if (hasWord) newRow();
     // Palabra más larga que la fila: se corta en trozos
-    while (used + word.length > width) {
-      const space = Math.max(1, width - used);
-      push(word.slice(0, space), style);
-      word = word.slice(space);
+    let remaining = textWidth(word);
+    while (used + remaining > width) {
+      const [head, tail, headWidth] = splitAtWidth(word, Math.max(1, width - used));
+      push(head, style);
+      word = tail;
+      remaining -= headWidth;
       newRow();
     }
     push(word, style);
@@ -127,7 +130,11 @@ function codeBlock(lines: string[], language: string, width: number): MdRow[] {
   };
   const body = lines.flatMap((line) => {
     const chunks: string[] = [];
-    for (let at = 0; at < line.length; at += inner) chunks.push(line.slice(at, at + inner));
+    for (let rest = line; rest; ) {
+      const [head, tail] = splitAtWidth(rest, inner);
+      chunks.push(head);
+      rest = tail;
+    }
     return (chunks.length ? chunks : ['']).map((chunk): MdRow => ({
       spans: [
         { text: CODE_BAR, dim: true },
@@ -136,6 +143,26 @@ function codeBlock(lines: string[], language: string, width: number): MdRow[] {
     }));
   });
   return [edge('┌', language), ...body, edge('└', '')];
+}
+
+function tableBlock(lines: string[], width: number): MdRow[] {
+  const parsed = parseTable(lines);
+  return renderTable(
+    {
+      header: parsed.header.map(parseInline),
+      aligns: parsed.aligns,
+      rows: parsed.rows.map((row) => row.map(parseInline)),
+    },
+    width,
+  );
+}
+
+// Una tabla GFM: fila con barras, fila de alineación y todas las filas con barras que siguen
+function tableEnd(lines: string[], start: number): number {
+  if (!TABLE_ROW.test(lines[start]) || !isDelimiterRow(lines[start + 1] ?? '')) return start;
+  let end = start + 1;
+  while (end + 1 < lines.length && TABLE_ROW.test(lines[end + 1])) end += 1;
+  return end;
 }
 
 function numberedChoice(line: string): string[] {
@@ -211,6 +238,11 @@ function renderBlocks(lines: string[], width: number, depth = 0): MdResult {
       }
       const lead = `${indent}${bullet ? BULLET_CHAR : `${numbered?.[2]}.`} `;
       rows.push(...wrapSpans(parseInline(text), width, [{ text: lead }], [{ text: ' '.repeat(lead.length) }]));
+    } else if (tableEnd(lines, i) > i) {
+      flush();
+      const end = tableEnd(lines, i);
+      rows.push(...tableBlock(lines.slice(i, end + 1), width));
+      i = end;
     } else if (TABLE_ROW.test(line)) {
       flush();
       rows.push(...wrapSpans(parseInline(line.trim()), width, [], []));

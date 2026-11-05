@@ -29,7 +29,21 @@ test('tolera description, rationale y attachments ausentes', () => {
   assert.equal(plan.tasks[0].description, '');
 });
 
+test('acepta estimación final y fecha manual opcionales y no las agrega si faltan', () => {
+  const plan = validatePlan(planWith({ finalEstimate: ' 3h ', dueDate: '2026-11-08', dueDateManual: true }));
+  assert.equal(plan.tasks[0].finalEstimate, '3h');
+  assert.equal(plan.tasks[0].dueDate, '2026-11-08');
+  assert.equal(plan.tasks[0].dueDateManual, true);
+  const bare = validatePlan({ storyKey: 'AQ-45', tasks: [goodTask()] }).tasks[0];
+  assert.equal('finalEstimate' in bare || 'dueDate' in bare || 'dueDateManual' in bare, false);
+});
+
 const failures: Array<[string, unknown, RegExp]> = [
+  ['finalEstimate con formato libre', planWith({ finalEstimate: '3 horas' }), /La tarea T1.*estimación final inválida/],
+  ['finalEstimate en cero', planWith({ finalEstimate: '0m' }), /mayor que 0/],
+  ['finalEstimate no texto', planWith({ finalEstimate: 3 }), /finalEstimate/],
+  ['dueDate imposible', planWith({ dueDate: '2026-02-30' }), /dueDate/],
+  ['dueDateManual no booleano', planWith({ dueDateManual: 'si' }), /dueDateManual/],
   ['no es objeto', [], /objeto JSON/],
   ['sin storyKey', { tasks: [] }, /storyKey/],
   ['sin tasks', { storyKey: 'AQ-1' }, /tasks/],

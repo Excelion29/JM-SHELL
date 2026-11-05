@@ -148,12 +148,52 @@ Pedido del dev tras usarlo con PM-136:
 - **Skill `/refinar`:** tareas por entregable (no por repo ni capa salvo que cambie quién o cuándo), juntar tareas de
   menos de 1 h, sin tareas de "documentar" o "lo ya hecho" salvo pedido; la tabla de tareas trae la estimación
   recomendada (O/M/P, esperado y porqué) y el dev confirma o ajusta en el mismo paso.
+- **Estimación con IA** (pedido del dev 2026-11-05): la skill estima el tiempo de hacerlo con Claude Code (pedir,
+  revisar, probar, corregir), no a mano; cambio acotado con patrón existente ~15m–45m; ante la duda propone bajo.
+
+### Parte 3.4 — Interfaz pulida (agregada 2026-11-05)
+
+Pedido del dev: las tablas del chat salen como texto crudo y la pantalla se desforma al cambiar el tamaño de la consola.
+Se mantiene Ink (misma base que Claude Code); el problema es de uso, no de librería.
+1. Pantalla alternativa (como `htop`/`vim`): `jm` ocupa la ventana y al salir la terminal queda como estaba.
+2. Redibujo limpio al cambiar el tamaño y marco del alto exacto de la ventana.
+3. Tablas Markdown dibujadas con bordes y columnas alineadas; en ventanas angostas, cada fila como ficha.
+4. Pulido visual: encabezado y pie fijos, chat con desplazamiento propio, tablas alineadas en revisión y creación.
+Orden pedido por el dev: primero una prueba de 1 y 2 en su terminal; si resuelve, el resto de corrido.
+
+### Parte 3.5 — El estado de la historia vive en la base de conocimiento (agregada 2026-11-05)
+
+Pedido del dev: no crear `.jm/` dentro del repositorio cuando hay una base conectada.
+- Con base (MCP o carpeta local): historia, bitácora, plan, estado, conversación y adjuntos van a
+  `<base>/NN-JM-ADR/<KEY>/` junto a la nota `<KEY>.md`; Claude trabaja con el código del repo pero escribe ahí.
+- Archivos técnicos de la sesión (settings de Claude, mcp.json, copia de la skill) van a una carpeta de trabajo de
+  `jm` en el usuario (`~/.jira-tool/trabajo/…`), nunca al repo.
+- Sin base: `.jm/` en el proyecto como hoy, agregada a `.git/info/exclude` (no toca el `.gitignore` del equipo).
+- Lo existente en `.jm/historias/<KEY>` se mueve automáticamente a la base la primera vez que se abre la historia.
+- Va antes de la parte 4 (que depende de dónde vive el estado).
 
 ### Parte 4 — Ejecución tarea por tarea (idea registrada 2026-11-05, por diseñar)
 
 Elegir una tarea, iniciarla (pasa a "En curso"/"In Progress"), trabajar con Claude con ese contexto y al terminarla
 pasarla a "Finalizada". Finalizar solo cambia el estado: **la estimación original no se toca**. El tiempo real se
 registra aparte para la calibración estimado vs. real.
+
+Decisión del dev (2026-11-05): **opción B**. Iniciar una tarea abre Claude Code completo con el contexto de esa tarea
+(se ve lo que toca y pide permisos a su manera, menos tokens que replicarlo en `jm`); se trabaja ahí hasta terminarla y
+al salir con `/exit` se vuelve a `jm`, que pregunta si se terminó para pasarla a "Finalizada".
+
+Diseño aprobado (2026-11-05, "todo del plan me agrada"):
+- Pantalla "Tareas" de la historia: subtareas creadas con su estado real en Jira, estimación y fecha.
+- `i` iniciar: transición a "En curso", hora de inicio local, y Claude completo con el contexto de la tarea (título,
+  descripción, criterio de terminado, bitácora, nota JM-ADR y lo hecho en tareas anteriores), con la base de
+  conocimiento conectada por el intermediario.
+- Al terminar, Claude agrega a la nota JM-ADR y a la bitácora una sección por tarea: qué se hizo, archivos tocados,
+  decisiones y pendientes. Así se puede retomar a medias, otro día o desde otra carpeta.
+- Al volver con `/exit`: "¿Terminaste la tarea?" → sí: "Finalizada" (sin tocar la estimación original) y tiempo real
+  guardado localmente; no: queda "En curso".
+
+Ajuste previo (en 3.4): al reabrir una conversación existente, `jm` no le manda nada a Claude; muestra el historial y
+espera al dev. El primer mensaje del dev retoma la sesión (o la reconstruye desde la bitácora si ya no existe).
 
 ## Fuera de alcance
 
@@ -236,4 +276,8 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Accept intermediario MCP 3.2 | Marcello Cano | 2026-11-05 | aprobado ("okey genial, sí vamos con intermediario") |
 | Commit parte 3.2 | Marcello Cano | 2026-11-05 | aprobado ("okey genial apruebo"); review 3 dimensiones + re-review seguridad (0 bloqueantes); prueba real con Obsidian pendiente |
 | Commit fix teclado + /mcp + adjuntos | Marcello Cano | 2026-11-05 | aprobado ("okey genial si"); probado escribiendo en el chat real |
+| Accept parte 3.5 (estado en la base, sin .jm en el repo) | Marcello Cano | 2026-11-05 | aprobado ("me queda claro y apruebo"); migración automática; antes de la 4 |
+| Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |
+| Commit 3.3 + 3.4 | Marcello Cano | 2026-11-05 | aprobado ("haz el reajuste, luego commiteamos"); review por partes aplicada |
+| Accept parte 3.4 (interfaz pulida) | Marcello Cano | 2026-11-05 | aprobado ("sí, primero pruebas y luego de corrido") |
 | Accept parte 3.3 (estimación propia, fechas, chat, skill) | Marcello Cano | 2026-11-05 | aprobado (desde hoy, 8 h/día recomendado, sin descontar Jira, fechas editables) |

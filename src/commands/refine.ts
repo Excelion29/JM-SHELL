@@ -155,28 +155,49 @@ async function hasFreshPlan(planFile: string, sessionStartMs: number): Promise<b
   return (await fs.stat(planFile)).mtimeMs >= sessionStartMs;
 }
 
-async function summarizeAfterClaude(root: string, key: string, sessionStartMs: number): Promise<void> {
+// `notice` va a la app; `printCli` es la salida por consola de `jm refinar --claude`, con su pista de comando
+interface ClaudeOutcome {
+  notice: string;
+  printCli: () => void;
+}
+
+async function summarizeAfterClaude(root: string, key: string, sessionStartMs: number): Promise<ClaudeOutcome> {
   const planFile = planPath(root, key);
   if (!(await hasFreshPlan(planFile, sessionStartMs))) {
-    info(`Quedaste en el debate. Siguiente paso: vuelve con \`jm refinar ${key}\` para continuar.`);
-    return;
+    return {
+      notice: 'Quedaste en el debate.',
+      printCli: () => info(`Quedaste en el debate. Siguiente paso: vuelve con \`jm refinar ${key}\` para continuar.`),
+    };
   }
   try {
     const totals = planTotals(await loadPlan(planFile));
     await advancePhase(root, key, 'plan');
-    success(`Plan listo: ${totals.taskCount} tarea(s), esperado ${formatSeconds(totals.expectedSeconds)}.`);
-    info('Siguiente paso: revisa el plan y decide qué tareas crear.');
+    const ready = `Plan listo: ${totals.taskCount} tarea(s), esperado ${formatSeconds(totals.expectedSeconds)}.`;
+    return {
+      notice: `${ready} Revisa el plan y decide qué tareas crear.`,
+      printCli: () => {
+        success(ready);
+        info('Siguiente paso: revisa el plan y decide qué tareas crear.');
+      },
+    };
   } catch (err: unknown) {
-    warn(`El plan.json no es válido todavía. ${(err as Error).message}`);
-    info(`Siguiente paso: vuelve con \`jm refinar ${key}\` y pide a Claude que lo corrija.`);
+    const invalid = `El plan.json no es válido todavía. ${(err as Error).message}`;
+    return {
+      notice: `${invalid} Pide a Claude que lo corrija.`,
+      printCli: () => {
+        warn(invalid);
+        info(`Siguiente paso: vuelve con \`jm refinar ${key}\` y pide a Claude que lo corrija.`);
+      },
+    };
   }
 }
 
-async function runClaudeSession(root: string, key: string): Promise<void> {
+async function runClaudeSession(root: string, key: string): Promise<ClaudeOutcome> {
   const state = await readState(root, key);
   const knowledge = await openKnowledge({ root, key, hasSession: Boolean(state?.claudeSessionId) });
   const sessionStartMs = Date.now();
-  info('Abriendo Claude Code. Cuando termines, sal con /exit para volver aquí.');
+  let outcome: ClaudeOutcome;
+  info('Abriendo Claude Code. Para volver a JM-SHELL escribe /exit o pulsa Ctrl+C dos veces.');
   releaseStdin();
   try {
     applyKnowledgeFiles(root, knowledge);
@@ -192,14 +213,20 @@ async function runClaudeSession(root: string, key: string): Promise<void> {
         });
       },
     });
-    await summarizeAfterClaude(root, key, sessionStartMs);
+    outcome = await summarizeAfterClaude(root, key, sessionStartMs);
   } finally {
     await knowledge.close();
     await renderDashboard(root);
   }
+  return outcome;
 }
 
-export async function runRefine(key: string): Promise<void> {
+export interface RunRefineOptions {
+  inApp?: boolean;
+}
+
+// Dentro de la app el resumen vuelve como aviso (la pantalla alterna ocultaría la consola); en la CLI se imprime
+export async function runRefine(key: string, options: RunRefineOptions = {}): Promise<string> {
   assertKey(key);
   if (!isClaudeAvailable()) {
     throw new Error(`No encontré \`claude\` en tu terminal. ${CLAUDE_INSTALL_HINT}`);
@@ -211,7 +238,9 @@ export async function runRefine(key: string): Promise<void> {
   await prepareStory(jira, root, key);
   await renderDashboard(root);
   await ensureSkill();
-  await runClaudeSession(root, key);
+  const outcome = await runClaudeSession(root, key);
+  if (!options.inApp) outcome.printCli();
+  return outcome.notice;
 }
 
 export interface RefineOptions {

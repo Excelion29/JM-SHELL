@@ -1,21 +1,26 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { PlanBridge, ReviewModel, ReviewTask } from '../../refinement/review-types.js';
 import { AttachmentsView } from '../components/attachments-view.js';
-import { formatDuration, truncate } from '../components/duration.js';
+import { formatDuration } from '../components/duration.js';
 import { LoadGate } from '../components/load-gate.js';
+import { buildTaskCells, COLUMN_GAP, TaskCells } from '../components/task-table.js';
+import { useTerminalSize } from '../components/terminal-size.js';
 import { TaskEditForm } from '../components/task-edit-form.js';
 import { useLoad } from '../components/use-load.js';
 import {
+  CHAT_DEFAULT_TERMINAL_COLUMNS,
+  CHAT_DEFAULT_TERMINAL_ROWS,
   COLORS,
   FOOTER_HINTS,
+  FRAME_HORIZONTAL_OVERHEAD,
   HOME_TEXTS,
   KEYS,
   PLAN_TEXTS,
   PURPOSE_LABELS,
+  REVIEW_CHROME_ROWS,
+  REVIEW_MIN_VISIBLE_ROWS,
   RISK_COLORS,
-  RISK_LABELS,
-  SUMMARY_MAX_CHARS,
 } from '../texts.js';
 import { CreateScreen } from './create-screen.js';
 
@@ -72,6 +77,9 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished }: ReviewBodyP
   };
 
   const current = model.tasks[selected];
+  const size = useTerminalSize();
+  const available = (size.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS) - FRAME_HORIZONTAL_OVERHEAD;
+  const cells = useMemo(() => buildTaskCells(model.tasks, available), [model.tasks, available]);
 
   useInput(
     (input, key) => {
@@ -142,36 +150,80 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished }: ReviewBodyP
     );
   }
 
+  const overloaded = overloadedDays(model);
+  const visibleRows = Math.max(
+    REVIEW_MIN_VISIBLE_ROWS,
+    (size.rows ?? CHAT_DEFAULT_TERMINAL_ROWS) - REVIEW_CHROME_ROWS - overloaded.length,
+  );
+  const first = Math.max(0, selected - visibleRows + 1);
+
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" flexGrow={1}>
       <Text bold color={COLORS.accent}>
         {PLAN_TEXTS.title(model.storyKey, model.summary)}
       </Text>
       {model.tasks.length === 0 && <Text>{PLAN_TEXTS.empty}</Text>}
-      {model.tasks.map((task, index) => (
-        <TaskRow key={task.id} task={task} active={index === selected} />
-      ))}
-      <Text bold>
-        {PLAN_TEXTS.total(
-          model.totals.taskCount,
-          formatDuration(model.totals.expectedSeconds),
-          formatDuration(model.totals.stdDevSeconds),
-        )}
-      </Text>
-      {error && <Text color={COLORS.error}>{error}</Text>}
-      <Text color={COLORS.muted}>{PLAN_TEXTS.nextStep}</Text>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.review}</Text>
+      <Box flexDirection="column" flexShrink={1} overflow="hidden">
+        {model.tasks.slice(first, first + visibleRows).map((task, offset) => (
+          <TaskRow
+            key={task.id}
+            task={task}
+            cells={cells[first + offset]}
+            active={first + offset === selected}
+            overloaded={
+              task.effectiveDate !== null && (model.daySeconds[task.effectiveDate] ?? 0) > model.dailyCapacitySeconds
+            }
+          />
+        ))}
+      </Box>
+      <Box flexDirection="column" flexShrink={0}>
+        <Text bold>
+          {PLAN_TEXTS.total(
+            model.totals.taskCount,
+            formatDuration(model.totals.effectiveSeconds),
+            formatDuration(model.totals.expectedSeconds),
+            formatDuration(model.totals.stdDevSeconds),
+          )}
+        </Text>
+        {overloaded.map(([date, seconds]) => (
+          <Text key={date} color={COLORS.code}>
+            {PLAN_TEXTS.overload(date, formatDuration(seconds), formatDuration(model.dailyCapacitySeconds))}
+          </Text>
+        ))}
+        {error && <Text color={COLORS.error}>{error}</Text>}
+        <Text color={COLORS.muted}>{PLAN_TEXTS.nextStep}</Text>
+        <Text color={COLORS.muted}>{FOOTER_HINTS.review}</Text>
+      </Box>
     </Box>
   );
 }
 
-function TaskRow({ task, active }: { task: ReviewTask; active: boolean }) {
-  const { optimistic, likely, pessimistic } = task.estimate;
+function overloadedDays(model: ReviewModel): Array<[string, number]> {
+  return Object.entries(model.daySeconds)
+    .filter(([, seconds]) => seconds > model.dailyCapacitySeconds)
+    .sort(([a], [b]) => a.localeCompare(b));
+}
+
+interface TaskRowProps {
+  task: ReviewTask;
+  cells: TaskCells;
+  active: boolean;
+  overloaded: boolean;
+}
+
+function TaskRow({ task, cells, active, overloaded }: TaskRowProps) {
   return (
-    <Text color={active ? COLORS.brand : undefined} dimColor={!task.include}>
-      {active ? HOME_TEXTS.selectedMarker : ' '} {task.include ? PLAN_TEXTS.included : PLAN_TEXTS.excluded} {task.id}{' '}
-      {truncate(task.summary, SUMMARY_MAX_CHARS)} · O {optimistic} M {likely} P {pessimistic} · ~
-      {formatDuration(task.expectedSeconds)} · <Text color={RISK_COLORS[task.risk]}>{RISK_LABELS[task.risk]}</Text>
+    <Text color={active ? COLORS.brand : undefined} dimColor={!task.include} wrap="truncate-end">
+      {active ? HOME_TEXTS.selectedMarker : ' '} {task.include ? PLAN_TEXTS.included : PLAN_TEXTS.excluded} {cells.id}
+      {COLUMN_GAP}
+      {cells.title}
+      {COLUMN_GAP}
+      {cells.pert !== null && `${cells.pert}${COLUMN_GAP}`}
+      {cells.jira}
+      {COLUMN_GAP}
+      <Text color={overloaded ? COLORS.code : undefined}>{cells.due}</Text>
+      {COLUMN_GAP}
+      <Text color={RISK_COLORS[task.risk]}>{cells.risk}</Text>
     </Text>
   );
 }

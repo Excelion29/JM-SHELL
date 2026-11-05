@@ -73,14 +73,14 @@ test('r abre la revisión solo con la historia en plan o revisado', async () => 
   assert.ok(frame.includes('O 30m M 1h P 2h'));
   assert.ok(frame.includes('~1h5m'));
   assert.ok(frame.includes('medio'));
-  assert.ok(frame.includes(PLAN_TEXTS.total(2, '3h5m', '33m')));
+  assert.ok(frame.includes(PLAN_TEXTS.total(2, '3h5m', '3h5m', '33m')));
 });
 
 test('espacio marca o desmarca la tarea y cambia el total, guardando al instante', async () => {
   const app = await openReview();
   await app.press(SPACE);
   await app.has('[ ] T1');
-  assert.ok(app.frame().includes(PLAN_TEXTS.total(1, '2h', '30m')));
+  assert.ok(app.frame().includes(PLAN_TEXTS.total(1, '2h', '2h', '30m')));
   assert.deepEqual(app.calls.updates, [{ taskId: 'T1', patch: { include: false } }]);
 });
 
@@ -95,19 +95,61 @@ test('e edita O/M/P con recálculo en vivo y guarda solo si es válido', async (
   await app.press(ENTER);
   await app.press(ENTER);
   await app.press(ENTER);
+  await app.press(ENTER);
+  await app.press(ENTER);
   assert.equal(app.calls.updates.length, 0);
 
-  await app.press(UP);
-  await app.press(UP);
+  for (let i = 0; i < 4; i++) await app.press(UP);
   for (let i = 0; i < 2; i++) await app.press(BACKSPACE);
   await app.press('1h');
   await app.has(PLAN_TEXTS.preview('1h10m', '10m'));
   await app.press(ENTER);
   await app.press(ENTER);
   await app.press(ENTER);
+  await app.press(ENTER);
+  await app.press(ENTER);
   await app.has(PLAN_TEXTS.title('AQ-45', 'Login social'));
   assert.equal(app.calls.updates.length, 1);
   assert.deepEqual(app.calls.updates[0].patch.estimate, { optimistic: '1h', likely: '1h', pessimistic: '2h' });
+});
+
+test('la fila muestra lo que va a Jira y la fecha recomendada; e fija estimación y fecha propias', async () => {
+  const app = await openReview();
+  assert.ok(app.frame().includes('Jira 1h5m') && app.frame().includes('vence 2026-11-05 (rec.)'));
+  await app.press('e');
+  await app.has(PLAN_TEXTS.editTitle('T1'));
+  assert.ok(app.frame().includes(PLAN_TEXTS.reference('1h5m', '2026-11-05')));
+  for (let i = 0; i < 4; i++) await app.press(ENTER);
+  await app.press('3h');
+  await app.press(ENTER);
+  await app.press('2026-11-08');
+  await app.press(ENTER);
+  await app.has(PLAN_TEXTS.title('AQ-45', 'Login social'));
+  assert.equal(app.calls.updates[0].patch.finalEstimate, '3h');
+  assert.equal(app.calls.updates[0].patch.dueDate, '2026-11-08');
+  assert.ok(app.frame().includes('Jira 3h (tuya)') && app.frame().includes('vence 2026-11-08 (manual)'));
+});
+
+test('editar solo el título de una tarea excluida conserva su fecha manual', async () => {
+  const app = await openReview({
+    tasks: [fakeTask('T1', { include: false, effectiveDate: null, dateManual: true, dueDate: '2026-11-08', dueDateManual: true })],
+  });
+  await app.press('e');
+  await app.has(PLAN_TEXTS.editTitle('T1'));
+  await app.press('!');
+  for (let i = 0; i < 6; i++) await app.press(ENTER);
+  await app.has(PLAN_TEXTS.title('AQ-45', 'Login social'));
+  assert.equal(app.calls.updates[0].patch.dueDate, '2026-11-08');
+});
+
+test('avisa cuando un día suma más de la capacidad diaria, sin bloquear', async () => {
+  const app = await openReview({
+    tasks: [
+      fakeTask('T1', { effectiveSeconds: 6 * 3600 }),
+      fakeTask('T2', { effectiveSeconds: 3 * 3600 }),
+    ],
+  });
+  assert.ok(app.frame().includes(PLAN_TEXTS.overload('2026-11-05', '9h', '8h')));
 });
 
 test('e permite cambiar el título y Esc descarta', async () => {
@@ -333,4 +375,23 @@ test('la confirmación muestra lo que ya existe y solo con s se vincula', async 
   await app.press('s');
   await app.has(CREATE_TEXTS.doneTitle);
   assert.deepEqual(app.calls.created[0].adopt, { T2: 'AQ-7' });
+});
+
+test('las tareas se alinean en columnas y la elegida lleva el marcador', async () => {
+  const app = await openReview({
+    tasks: [fakeTask('T1', { summary: 'Corto' }), fakeTask('T2', { summary: 'Un título bastante más largo' })],
+  });
+  const rows = app.frame().split('\n').filter((row) => /\[x\] T\d/.test(row));
+  assert.equal(rows.length, 2);
+  assert.ok(rows[0].includes(`${HOME_TEXTS.selectedMarker} [x] T1`));
+  assert.equal(rows[0].indexOf('Jira'), rows[1].indexOf('Jira'));
+  assert.equal(rows[0].indexOf('vence'), rows[1].indexOf('vence'));
+});
+
+test('con muchas tareas la lista se desplaza y el pie con el total sigue visible', async () => {
+  const tasks = Array.from({ length: 40 }, (_, index) => fakeTask(`T${index + 1}`));
+  const app = await openReview({ tasks });
+  for (let i = 0; i < 35; i++) await app.press(DOWN);
+  assert.ok(app.frame().includes('T36'));
+  assert.ok(app.frame().includes(PLAN_TEXTS.total(40, '43h30m', '43h30m', '1h35m')) || app.frame().includes('Total (40'));
 });

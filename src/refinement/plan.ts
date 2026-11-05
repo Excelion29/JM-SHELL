@@ -1,5 +1,6 @@
 import * as fs from 'fs-extra';
-import { parseEstimate } from './pert';
+import { parseEstimate, parseFinalEstimate } from './pert';
+import { isValidIsoDate } from './schedule';
 import { PlannedTask, RefinementPlan, RISKS, Risk } from './types';
 
 export class PlanValidationError extends Error {}
@@ -56,6 +57,30 @@ function readEstimate(raw: Raw, label: string): PlannedTask['estimate'] {
   return estimate;
 }
 
+function readOptionalFields(raw: Raw, label: string): Partial<PlannedTask> {
+  const extra: Partial<PlannedTask> = {};
+  if (raw.finalEstimate !== undefined) {
+    if (typeof raw.finalEstimate !== 'string') fail(`${label}: "finalEstimate" debe ser texto como 3h.`);
+    try {
+      parseFinalEstimate(raw.finalEstimate);
+    } catch (err: unknown) {
+      fail(`${label}: estimación final inválida. ${(err as Error).message}`);
+    }
+    extra.finalEstimate = raw.finalEstimate.trim();
+  }
+  if (raw.dueDate !== undefined) {
+    if (typeof raw.dueDate !== 'string' || !isValidIsoDate(raw.dueDate)) {
+      fail(`${label}: "dueDate" debe ser una fecha AAAA-MM-DD válida.`);
+    }
+    extra.dueDate = raw.dueDate;
+  }
+  if (raw.dueDateManual !== undefined) {
+    if (typeof raw.dueDateManual !== 'boolean') fail(`${label}: "dueDateManual" debe ser true o false.`);
+    extra.dueDateManual = raw.dueDateManual;
+  }
+  return extra;
+}
+
 function readTask(raw: unknown, index: number): PlannedTask {
   if (!isObject(raw)) fail(`${where(index)} no es un objeto.`);
   const label = where(index, raw.id);
@@ -72,6 +97,7 @@ function readTask(raw: unknown, index: number): PlannedTask {
     rationale: optionalText(raw, 'rationale', label),
     include: raw.include,
     attachments: textList(raw, 'attachments', label, false),
+    ...readOptionalFields(raw, label),
   };
 }
 

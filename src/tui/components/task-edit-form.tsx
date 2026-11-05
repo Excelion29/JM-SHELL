@@ -5,8 +5,8 @@ import type { EstimatePreview, ReviewTask, TaskPatch } from '../../refinement/re
 import { COLORS, FOOTER_HINTS, PLAN_TEXTS } from '../texts.js';
 import { formatDuration } from './duration.js';
 
-type Field = 'summary' | 'optimistic' | 'likely' | 'pessimistic';
-const FIELD_ORDER: Field[] = ['summary', 'optimistic', 'likely', 'pessimistic'];
+type Field = 'summary' | 'optimistic' | 'likely' | 'pessimistic' | 'finalEstimate' | 'dueDate';
+const FIELD_ORDER: Field[] = ['summary', 'optimistic', 'likely', 'pessimistic', 'finalEstimate', 'dueDate'];
 
 interface TaskEditFormProps {
   task: ReviewTask;
@@ -17,7 +17,12 @@ interface TaskEditFormProps {
 }
 
 export function TaskEditForm({ task, previewEstimate, error, onSave, onCancel }: TaskEditFormProps) {
-  const [values, setValues] = useState<Record<Field, string>>({ summary: task.summary, ...task.estimate });
+  const [values, setValues] = useState<Record<Field, string>>({
+    summary: task.summary,
+    ...task.estimate,
+    finalEstimate: task.finalEstimate ?? '',
+    dueDate: task.dueDateManual ? (task.dueDate ?? '') : '',
+  });
   const [focus, setFocus] = useState(0);
 
   const estimate = { optimistic: values.optimistic, likely: values.likely, pessimistic: values.pessimistic };
@@ -32,7 +37,14 @@ export function TaskEditForm({ task, previewEstimate, error, onSave, onCancel }:
 
   const submit = () => {
     if (focus < FIELD_ORDER.length - 1) setFocus(focus + 1);
-    else if (preview.ok && summaryValid) void onSave({ summary: values.summary, estimate });
+    else if (preview.ok && summaryValid) {
+      void onSave({
+        summary: values.summary,
+        estimate,
+        finalEstimate: values.finalEstimate.trim() || null,
+        dueDate: values.dueDate.trim() || null,
+      });
+    }
   };
 
   return (
@@ -58,6 +70,9 @@ export function TaskEditForm({ task, previewEstimate, error, onSave, onCancel }:
       ) : (
         <Text color={COLORS.error}>{preview.message}</Text>
       )}
+      <Text color={COLORS.muted}>
+        {PLAN_TEXTS.reference(formatDuration(task.recommendedSeconds), task.recommendedDate)}
+      </Text>
       {!summaryValid && <Text color={COLORS.error}>{PLAN_TEXTS.emptySummary}</Text>}
       {error && <Text color={COLORS.error}>{error}</Text>}
       <Text color={COLORS.muted}>{FOOTER_HINTS.edit}</Text>

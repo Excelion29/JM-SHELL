@@ -6,3 +6,9 @@ export function releaseStdin(stdin: NodeJS.ReadStream = process.stdin): void {
   for (const event of STDIN_EVENTS) stdin.removeAllListeners(event);
   stdin.pause();
 }
+
+// Tras el traspaso a claude stdin queda pausado: sin esto el proceso se vacía de eventos y termina
+export function reclaimStdin(stdin: NodeJS.ReadStream = process.stdin): void {
+  stdin.ref?.();
+  stdin.resume();
+}

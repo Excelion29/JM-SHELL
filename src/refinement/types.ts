@@ -28,6 +28,11 @@ export interface PlannedTask {
   rationale: string;
   include: boolean;
   attachments: string[];
+  // Estimación propia del dev ("3h"): si existe, va a Jira en lugar de la recomendación
+  finalEstimate?: string;
+  // Fecha YYYY-MM-DD fijada a mano; solo vale con dueDateManual (si no, se recomienda al cargar)
+  dueDate?: string;
+  dueDateManual?: boolean;
 }
 
 export interface RefinementPlan {

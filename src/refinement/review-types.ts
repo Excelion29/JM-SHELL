@@ -4,6 +4,13 @@ import type { AttachmentPurpose, Phase, PlannedTask, TaskEstimate } from './type
 export interface ReviewTask extends PlannedTask {
   expectedSeconds: number;
   stdDevSeconds: number;
+  // Recomendación (PERT redondeado a 5 min) y lo que realmente irá a Jira
+  recommendedSeconds: number;
+  effectiveSeconds: number;
+  // Fechas YYYY-MM-DD; null en tareas sin marcar
+  recommendedDate: string | null;
+  effectiveDate: string | null;
+  dateManual: boolean;
 }
 
 export interface ReviewFile {
@@ -15,6 +22,7 @@ export interface ReviewFile {
 export interface ReviewTotals {
   taskCount: number;
   expectedSeconds: number;
+  effectiveSeconds: number;
   stdDevSeconds: number;
 }
 
@@ -25,12 +33,19 @@ export interface ReviewModel {
   tasks: ReviewTask[];
   files: ReviewFile[];
   totals: ReviewTotals;
+  // Carga por día (YYYY-MM-DD -> segundos) con las fechas efectivas, y capacidad para avisar al excederla
+  daySeconds: Record<string, number>;
+  dailyCapacitySeconds: number;
 }
 
 export interface TaskPatch {
   include?: boolean;
   summary?: string;
   estimate?: TaskEstimate;
+  // Texto vacío o null: borra la estimación propia y vuelve a la recomendación
+  finalEstimate?: string | null;
+  // AAAA-MM-DD, "hoy", "mañana" o "+N"; texto vacío o null: vuelve a la fecha recomendada
+  dueDate?: string | null;
 }
 
 export type EstimatePreview =
@@ -75,7 +90,8 @@ export interface ExistingMatch {
 
 export interface CreatePreview {
   taskCount: number;
-  expectedSeconds: number;
+  // Suma de lo que irá a Jira (estimación propia o recomendada)
+  estimateSeconds: number;
   parent: ParentOutcome;
   assignee: AssigneeView;
   uploads: PlannedUpload[];

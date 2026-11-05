@@ -7,13 +7,14 @@ import type { ChatBridge, KnowledgeStatus } from '../refinement/chat-types.js';
 import type { PlanBridge } from '../refinement/review-types.js';
 import type { BrowseItem, ProjectItem, StorySummary } from '../refinement/types.js';
 import { KnowledgeConfirm, KnowledgePrompt } from './components/knowledge-prompt.js';
+import { createAltScreen } from './terminal.js';
 import { PinPrompt } from './components/pin-prompt.js';
 import { BrowseScreen } from './screens/browse-screen.js';
 import { ChatScreen } from './screens/chat-screen.js';
 import { CloseScreen } from './screens/close-screen.js';
 import { PlanScreen } from './screens/plan-screen.js';
 import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
-import { FOOTER_HINTS, KNOWLEDGE_TEXTS, PIN_TEXTS } from './texts.js';
+import { COLORS, FOOTER_HINTS, KNOWLEDGE_TEXTS, PIN_TEXTS } from './texts.js';
 
 export type { StorySummary, BrowseItem, ProjectItem, SetProjectResult };
 
@@ -41,13 +42,15 @@ export interface AppProps {
   chat: ChatBridge;
   plan: PlanBridge;
   initialChatKey?: string | null;
+  notice?: string | null;
   onAction?: (action: AppAction) => void;
 }
 
 // 'routing': decide entre pedir la base de conocimiento o abrir el chat
 const ROUTE_BY_STATUS = { unset: 'knowledge', untrusted: 'knowledgeConfirm', set: 'chat' } as const;
 
-type Stage = 'pin' | 'home' | 'browse' | 'projects' | 'routing' | 'knowledge' | 'knowledgeConfirm' | 'chat' | 'review' | 'close';
+type Stage =
+  'pin' | 'home' | 'browse' | 'projects' | 'routing' | 'knowledge' | 'knowledgeConfirm' | 'chat' | 'review' | 'close';
 
 function hintFor(stage: Stage, choiceCount: number): string {
   if (stage === 'pin') return FOOTER_HINTS.pin;
@@ -56,9 +59,6 @@ function hintFor(stage: Stage, choiceCount: number): string {
   if (stage !== 'chat') return '';
   return choiceCount > 0 ? `${FOOTER_HINTS.choose(choiceCount)} · ${FOOTER_HINTS.chat}` : FOOTER_HINTS.chat;
 }
-
-// Ink apaga el modo raw al quedar sin ningún useInput montado, y en consolas Windows reactivarlo tras una pausa falla
-const keepRawModeAlive = () => undefined;
 
 export function App({
   projectKey: initialProjectKey,
@@ -73,10 +73,13 @@ export function App({
   chat,
   plan,
   initialChatKey = null,
+  notice: initialNotice = null,
   onAction,
 }: AppProps) {
   const { exit } = useApp();
-  useInput(keepRawModeAlive);
+  const [notice, setNotice] = useState(initialNotice);
+  // Ink apaga el modo raw al quedar sin ningún useInput montado, y en consolas Windows reactivarlo tras una pausa falla
+  useInput(() => setNotice(null));
   const [chatKey, setChatKey] = useState<string | null>(initialChatKey);
   const [storyKey, setStoryKey] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(unlocked ? (initialChatKey ? 'routing' : 'home') : 'pin');
@@ -144,6 +147,7 @@ export function App({
 
   return (
     <Frame projectKey={projectKey} hint={hintFor(stage, choiceCount)}>
+      {notice && (stage === 'home' || stage === 'chat') && <Text color={COLORS.brand}>{notice}</Text>}
       {stage === 'routing' && <Text>{KNOWLEDGE_TEXTS.routing}</Text>}
       {stage === 'pin' && <PinPrompt onSubmit={handlePin} error={pinError} checking={checking} />}
       {stage === 'home' && (
@@ -212,7 +216,14 @@ export function App({
 
 export async function runApp(props: Omit<AppProps, 'onAction'>): Promise<AppAction | null> {
   let action: AppAction | null = null;
-  const instance = render(<App {...props} onAction={(a) => (action = a)} />);
-  await instance.waitUntilExit();
+  const altScreen = createAltScreen(process.stdout);
+  altScreen.enter();
+  try {
+    const instance = render(<App {...props} onAction={(a) => (action = a)} />);
+    await instance.waitUntilExit();
+  } finally {
+    // Antes del traspaso a claude o de volver a la terminal, esta debe quedar como estaba
+    altScreen.leave();
+  }
   return action;
 }

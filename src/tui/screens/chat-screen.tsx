@@ -3,12 +3,14 @@ import { Box, Text, useInput, useStdout } from 'ink';
 // Solo tipos: se borra al compilar, la isla ESM no importa código CJS
 import type { ChatBridge, ChatHeader, ChatLine, ChatUiEvent } from '../../refinement/chat-types.js';
 import { MdRow, renderMarkdown, Span } from '../components/markdown.js';
-import { wrapText } from '../components/wrap-text.js';
+import { useTerminalSize } from '../components/terminal-size.js';
+import { clipRows, expandTabs, wrapText } from '../components/wrap-text.js';
 import {
   CHAT_CHROME_ROWS,
   CHAT_DEFAULT_TERMINAL_COLUMNS,
   CHAT_DEFAULT_TERMINAL_ROWS,
   CHAT_HORIZONTAL_MARGIN,
+  CHAT_INPUT_MAX_ROWS,
   CHAT_KEYS,
   CHAT_MODEL_LABELS,
   CHAT_TEXTS,
@@ -18,6 +20,7 @@ import {
   MAX_CHAT_LINES,
   MESSAGE_INDENT,
   STREAM_FLUSH_MS,
+  TAB_WIDTH,
 } from '../texts.js';
 
 export interface ChatScreenProps {
@@ -52,7 +55,8 @@ const bodyWidthOf = (width: number) => Math.max(1, width - MESSAGE_INDENT);
 // Etiqueta del rol en su propia fila, cuerpo sangrado y una fila en blanco entre mensajes
 function toRows(lines: ChatLine[], width: number): MdRow[] {
   const bodyWidth = bodyWidthOf(width);
-  return lines.flatMap(({ role, text }) => {
+  return lines.flatMap(({ role, text: rawText }) => {
+    const text = expandTabs(rawText, TAB_WIDTH);
     const label: Span =
       role === 'user'
         ? { text: CHAT_TEXTS.userLabel, bold: true, color: COLORS.brand }
@@ -100,6 +104,7 @@ function RowText({ row }: { row: MdRow }) {
 
 export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }: ChatScreenProps) {
   const { stdout } = useStdout();
+  const size = useTerminalSize();
   const [codeFolder, setCodeFolder] = useState('');
   const [header, setHeader] = useState<ChatHeader | null>(null);
   const [lines, setLines] = useState<ChatLine[]>([]);
@@ -161,6 +166,7 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
         if (closing.current) return;
         setHeader(opened.header);
         setCodeFolder(opened.codeFolder);
+        if (opened.idle) setBusy(false);
         setLines(capLines(opened.history));
       })
       .catch((err: unknown) => setOpenError((err as Error).message));
@@ -171,8 +177,8 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
     };
   }, [chatKey, chat]);
 
-  const columns = stdout?.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS;
-  const terminalRows = stdout?.rows ?? CHAT_DEFAULT_TERMINAL_ROWS;
+  const columns = size.columns ?? stdout?.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS;
+  const terminalRows = size.rows ?? stdout?.rows ?? CHAT_DEFAULT_TERMINAL_ROWS;
   const width = Math.max(20, columns - CHAT_HORIZONTAL_MARGIN);
   const visibleRows = Math.max(CHAT_VISIBLE_MIN_ROWS, terminalRows - CHAT_CHROME_ROWS);
   const committedRows = useMemo(() => toRows(lines, width), [lines, width]);
@@ -241,7 +247,10 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
   }
   if (!header) return <Text>{CHAT_TEXTS.preparing}</Text>;
 
-  const inputRows = wrapText(`${CHAT_TEXTS.inputPrompt}${input}${CURSOR}`, width);
+  const { shown: inputRows, hidden: hiddenInputRows } = clipRows(
+    wrapText(expandTabs(`${CHAT_TEXTS.inputPrompt}${input}${CURSOR}`, TAB_WIDTH), width),
+    CHAT_INPUT_MAX_ROWS,
+  );
   return (
     <Box flexDirection="column">
       <HeaderLine header={header} />
@@ -257,6 +266,7 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
       {message && <Text color={COLORS.error}>{message}</Text>}
       <Text color={COLORS.muted}>{busy ? (activity ?? CHAT_TEXTS.thinking) : ' '}</Text>
       <Box flexDirection="column">
+        {hiddenInputRows > 0 && <Text color={COLORS.muted}>{CHAT_TEXTS.inputClipped(hiddenInputRows)}</Text>}
         {inputRows.map((row, index) => (
           <Text key={index}>{row}</Text>
         ))}

@@ -32,3 +32,27 @@ test('atStep conserva el code del error original y solo los códigos de tiempo c
   assert.equal(isTimeoutError(reset), false);
   assert.equal(isTimeoutError(new Error('timeout')), false);
 });
+
+test('createIssue envía fecha y estimación en una sola llamada y nunca transiciona la tarea', async () => {
+  const jira = new JiraService(CONFIG);
+  const posts: Array<{ url: string; body: { fields: Record<string, unknown> } }> = [];
+  (jira as unknown as { client: unknown }).client = {
+    post: async (url: string, body: { fields: Record<string, unknown> }) => {
+      posts.push({ url, body });
+      return { data: { id: '1', key: 'AQ-9' } };
+    },
+  };
+  const result = await jira.createIssue({
+    projectKey: 'AQ',
+    summary: 'Tarea',
+    issueTypeName: 'Tarea',
+    assigneeId: 'acc-1',
+    estimateSeconds: 3 * 3600,
+    dueDate: '2026-11-06',
+  });
+  assert.equal(result.key, 'AQ-9');
+  assert.deepEqual(posts.map((p) => p.url), ['/issue']);
+  assert.equal(posts[0].body.fields.duedate, '2026-11-06');
+  assert.deepEqual(posts[0].body.fields.timetracking, { originalEstimate: '3h', remainingEstimate: '3h' });
+  assert.equal('transition' in posts[0].body, false);
+});

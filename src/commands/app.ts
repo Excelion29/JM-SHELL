@@ -1,4 +1,3 @@
-import * as readline from 'readline';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import {
@@ -13,17 +12,25 @@ import { JiraService } from '../services/jira';
 import { setSession, setSessionPin, getSession, clearSession } from '../utils/session';
 import { writeFileAtomicNoLinks } from '../utils/safe-write';
 import { error } from '../utils/format';
+import { reclaimStdin } from '../utils/terminal';
 import { listStories, projectRoot, toSummary } from '../refinement/state';
-import { BROWSE_LIMIT, buildEpicsJql, buildStoriesJql, filterByProject, isValidProjectKey, toBrowseItem } from '../refinement/browse';
+import {
+  BROWSE_LIMIT,
+  buildEpicsJql,
+  buildStoriesJql,
+  filterByProject,
+  isValidProjectKey,
+  toBrowseItem,
+} from '../refinement/browse';
 import { BrowseItem, ProjectItem } from '../refinement/types';
 import { createChatBridge } from './chat-bridge';
 import { createPlanBridge } from './plan-bridge';
 import { runRefine } from './refine';
 
+const BACK_NOTICE = 'Volviste de Claude Code.';
+
 // import() real: el CJS no puede hacer require() de la isla ESM (ink)
 const loadTui = () => import('../tui/app.js');
-
-const BACK_PROMPT = '\nPulsa Enter para volver a JM-SHELL...';
 
 async function readProjectKey(): Promise<string | null> {
   try {
@@ -56,8 +63,11 @@ function requireProjectKey(projectKey: string | null): string {
 }
 
 function writeProjectConfig(file: string, config: ProjectConfig): void {
-  writeFileAtomicNoLinks(file, `${JSON.stringify(config, null, 2)}
-`);
+  writeFileAtomicNoLinks(
+    file,
+    `${JSON.stringify(config, null, 2)}
+`,
+  );
 }
 
 // Con .jira.json existente solo cambia projectKey; sin él, se crea en el directorio actual
@@ -72,19 +82,16 @@ async function persistProjectKey(jira: JiraService, key: string): Promise<void> 
   writeProjectConfig(path.join(process.cwd(), PROJECT_CONFIG_NAME), { projectKey: key, defaultAssignee: me.accountId });
 }
 
-function waitForEnter(): Promise<void> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => rl.question(BACK_PROMPT, () => (rl.close(), resolve())));
-}
-
-// Ink ya está desmontado aquí: claude hereda la terminal completa
-async function handoffAndReturn(key: string): Promise<void> {
+// Ink ya está desmontado aquí: claude hereda la terminal completa. El resultado vuelve como aviso para la app
+async function handoffAndReturn(key: string): Promise<string> {
+  let notice: string;
   try {
-    await runRefine(key);
+    notice = `${BACK_NOTICE} ${await runRefine(key, { inApp: true })}`;
   } catch (err: unknown) {
-    error((err as Error).message);
+    notice = (err as Error).message;
   }
-  await waitForEnter();
+  reclaimStdin();
+  return notice;
 }
 
 export interface AppOptions {
@@ -101,6 +108,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
   let projectKey = await readProjectKey();
   let unlocked = false;
   let initialChatKey = options.chatKey ?? null;
+  let notice: string | null = null;
   const chat = createChatBridge(sessionJira);
   const plan = createPlanBridge(sessionJira);
 
@@ -114,8 +122,11 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
         chat,
         plan,
         initialChatKey,
+        notice,
         fetchEpics: async (): Promise<BrowseItem[]> =>
-          (await sessionJira().searchIssues(buildEpicsJql(requireProjectKey(projectKey)))).slice(0, BROWSE_LIMIT).map(toBrowseItem),
+          (await sessionJira().searchIssues(buildEpicsJql(requireProjectKey(projectKey))))
+            .slice(0, BROWSE_LIMIT)
+            .map(toBrowseItem),
         fetchStories: async (epicKey): Promise<BrowseItem[]> =>
           (await sessionJira().searchIssues(buildStoriesJql(requireProjectKey(projectKey), epicKey)))
             .slice(0, BROWSE_LIMIT)
@@ -143,10 +154,10 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
           }
         },
       });
-      initialChatKey = null;
       if (!action) break;
       chat.closeNow();
-      await handoffAndReturn(action.key);
+      initialChatKey = action.key;
+      notice = await handoffAndReturn(action.key);
     }
   } finally {
     clearSession();

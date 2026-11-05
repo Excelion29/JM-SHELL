@@ -91,8 +91,8 @@ En este orden: `scope` → `dependencies` → `risks` → `done-criteria` → `t
 | `dependencies` | Otras historias, servicios, datos, personas o accesos que hacen falta. |
 | `risks` | Lo que puede salir mal o tomar más de lo pensado. Lo desconocido. |
 | `done-criteria` | Cómo se sabe que está terminada. |
-| `tasks` | Las tareas concretas. |
-| `estimation` | O / M / P por tarea. |
+| `tasks` | Las tareas concretas, ya con su O / M / P. |
+| `estimation` | Confirmar o ajustar la tabla de tareas y estimaciones. |
 
 Reglas del debate:
 
@@ -114,22 +114,36 @@ es una pregunta abierta en la bitácora, no un criterio.
 ### Tareas
 
 - Propón tú la lista; el dev une, parte, renombra o descarta.
+- **Agrupa por entregable**, no por repo ni por capa (backend, front, tests). Separa solo si lo hace otra persona o en
+  otro momento.
+- **Une las tareas que esperas de menos de 1 h** con la tarea vecina. Apunta a medio día o un día por tarea; si pasa de un
+  día (esperado > 8h), pártela.
+- Nada de tareas de "documentar" ni de "lo ya hecho", salvo que el dev lo pida.
 - Título en imperativo, máximo 80 caracteres ("Validar payload del endpoint de mortalidad").
 - Cada tarea lleva su criterio de terminado (1-3 puntos verificables).
-- Si una tarea pasa de un día de trabajo (esperado > 8h), pártela.
 - Para cada adjunto, pregunta solo si no es obvio: ¿es solo para analizar, o va a Jira como evidencia o para el
   equipo? Los que van a Jira se listan en `attachments` de su tarea; el resto queda como análisis.
 
-### Estimación
+### Estimación (en el mismo paso que las tareas)
 
-1. **Pregunta ancla primero:** "¿Has hecho algo parecido? ¿Cuánto te tomó?". Úsala para calibrar.
-2. Por cada tarea, tres valores: **O** (optimista), **M** (lo más probable), **P** (pesimista). Propón tú los números
-   con base en el código y el ancla; el dev los ajusta.
-3. Formato estricto: horas y minutos sin espacios — `15m`, `1h`, `1h30m`. Sin días ni decimales. Se vale estimar en
+La propuesta de tareas ya trae su estimación: no hay un paso aparte, el dev confirma o ajusta todo junto.
+
+1. **El dev trabaja con IA (Claude Code).** Estima el tiempo de hacerlo así, no a mano: pedir el cambio, revisarlo,
+   probarlo y corregir. Lo que domina es entender, revisar y probar, no teclear. Referencia: un cambio acotado que
+   sigue un patrón existente suele ser `15m`–`45m`; una tarea de medio día sin IA suele quedar en `1h`–`2h`. Solo sube
+   cuando hay algo desconocido (datos reales, otro equipo, despliegue) y dilo en el porqué. Ante la duda, propone bajo:
+   el dev corrige hacia arriba si hace falta.
+2. **Pregunta ancla antes de proponer:** "¿Has hecho algo parecido con IA? ¿Cuánto te tomó?". Úsala para calibrar.
+3. Presenta una tabla con una fila por tarea: título, **O** (optimista), **M** (más probable), **P** (pesimista),
+   esperado y el porqué en una línea. Propón tú los números con base en el código y el ancla.
+4. Formato estricto: horas y minutos sin espacios — `15m`, `1h`, `1h30m`. Sin días ni decimales. Se vale estimar en
    minutos: no fuerces horas.
-4. Debe cumplirse 0 < O ≤ M ≤ P (nada de `0m`).
-5. Riesgo según la dispersión: con E = (O + 4M + P) / 6 y σ = (P − O) / 6, `high` si σ/E > 0.3, `medium` si > 0.15,
+5. Debe cumplirse 0 < O ≤ M ≤ P (nada de `0m`).
+6. Riesgo según la dispersión: con E = (O + 4M + P) / 6 y σ = (P − O) / 6, `high` si σ/E > 0.3, `medium` si > 0.15,
    si no `low`. Si una tarea sale `high`, comenta por qué en una línea: suele estar mal partida o tener algo desconocido.
+7. El dev puede dar su propia estimación final de una tarea (por ejemplo `3h`): va en `finalEstimate` y es la que `jm`
+   manda a Jira; sin ella va el esperado redondeado. Las fechas de vencimiento no las propones tú: `jm` las propone en la
+   revisión, desde hoy y a 8 h por día, y el dev las ajusta ahí.
 
 ## Bitácora
 
@@ -171,6 +185,8 @@ Escribe `plan.json` con este formato exacto (claves en inglés, contenido en esp
 ```
 
 - `id` correlativos: `T1`, `T2`, …
+- `finalEstimate` es opcional (mismo formato `15m`, `1h`, `1h30m`): inclúyelo solo si el dev dio su propia estimación. No
+  escribas fechas en el plan.
 - Luego pon `phase: "plan"` y `block: null` en `estado.json`.
 - Cierra con el total esperado y una línea: "Listo. Pulsa Esc y jm te abre la revisión para ajustar y crear las
   tareas."

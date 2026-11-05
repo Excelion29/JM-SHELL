@@ -27,6 +27,11 @@ const baseProps = {
 };
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, TICK_MS));
+const SETTLE_PASSES = 3;
+// Ink suscribe useInput en un efecto posterior al render: sin ceder el turno, la tecla se pierde si llega antes
+const settle = async () => {
+  for (let i = 0; i < SETTLE_PASSES; i += 1) await new Promise((resolve) => setImmediate(resolve));
+};
 
 const ROUTING_DELAY_MS = 150;
 const STORIES = [
@@ -39,11 +44,15 @@ function openApp(knowledge: FakeKnowledge) {
     <App projectKey="AQ" stories={[]} unlocked initialChatKey="AQ-45" {...baseProps} chat={fake.chat} />,
   );
   const type = async (text: string) => {
+    await settle();
     view.stdin.write(text);
     await tick();
   };
   const frame = () => view.lastFrame() ?? '';
-  const waitText = (text: string) => waitFor(() => frame().includes(text), `"${text}"`);
+  const waitText = async (text: string) => {
+    await waitFor(() => frame().includes(text), `"${text}"`);
+    await settle();
+  };
   return { fake, type, frame, waitText };
 }
 
@@ -249,6 +258,7 @@ test('pasar por "routing" no apaga el modo raw: las flechas y el chat siguen res
     void rawCalls.push(enabled);
   const frame = () => view.lastFrame() ?? '';
   const press = async (text: string) => {
+    await settle();
     view.stdin.write(text);
     await tick();
   };
