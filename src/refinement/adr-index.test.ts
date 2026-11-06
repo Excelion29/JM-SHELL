@@ -17,6 +17,7 @@ const state = (patch: Partial<StoryState> = {}): StoryState => ({
   claudeSessionId: null,
   parentKey: null,
   createdIssues: {},
+  taskRuns: {},
   attachments: [],
   usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, turns: 0 },
   updatedAt: '2026-11-05T10:00:00.000Z',

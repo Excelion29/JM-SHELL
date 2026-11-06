@@ -11,6 +11,8 @@ export interface ReviewTask extends PlannedTask {
   recommendedDate: string | null;
   effectiveDate: string | null;
   dateManual: boolean;
+  // Clave de Jira si la tarea ya se creó: deja de ser candidata
+  jiraKey: string | null;
 }
 
 export interface ReviewFile {
@@ -32,7 +34,9 @@ export interface ReviewModel {
   phase: Phase;
   tasks: ReviewTask[];
   files: ReviewFile[];
+  // Totales, fechas y avisos cuentan solo las marcadas aún sin crear
   totals: ReviewTotals;
+  createdCount: number;
   // Carga por día (YYYY-MM-DD -> segundos) con las fechas efectivas, y capacidad para avisar al excederla
   daySeconds: Record<string, number>;
   dailyCapacitySeconds: number;

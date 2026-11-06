@@ -5,6 +5,7 @@ import { HomeScreen } from './components/home-screen.js';
 // Solo tipos: se borra al compilar
 import type { ChatBridge, KnowledgeStatus } from '../refinement/chat-types.js';
 import type { PlanBridge } from '../refinement/review-types.js';
+import type { TaskFinishTarget, TasksBridge } from '../refinement/tasks-types.js';
 import type { BrowseItem, ProjectItem, StorySummary } from '../refinement/types.js';
 import { KnowledgeConfirm, KnowledgePrompt } from './components/knowledge-prompt.js';
 import { createAltScreen } from './terminal.js';
@@ -12,7 +13,10 @@ import { PinPrompt } from './components/pin-prompt.js';
 import { BrowseScreen } from './screens/browse-screen.js';
 import { ChatScreen } from './screens/chat-screen.js';
 import { CloseScreen } from './screens/close-screen.js';
+import { MyDayScreen } from './screens/my-day-screen.js';
 import { PlanScreen } from './screens/plan-screen.js';
+import { TaskFinishScreen } from './screens/task-finish-screen.js';
+import { TasksScreen } from './screens/tasks-screen.js';
 import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
 import { COLORS, FOOTER_HINTS, KNOWLEDGE_TEXTS, PIN_TEXTS } from './texts.js';
 
@@ -24,10 +28,10 @@ export interface UnlockResult {
 }
 
 // Pedido de abrir Claude Code completo: se atiende con la app ya desmontada
-export interface AppAction {
-  type: 'handoff';
-  key: string;
-}
+export type AppAction =
+  | { type: 'handoff'; key: string }
+  // Claude completo con el contexto de una subtarea; storyKey es null si no es de una historia de jm
+  | { type: 'runTask'; storyKey: string | null; issueKey: string };
 
 export interface AppProps {
   projectKey: string | null;
@@ -41,6 +45,8 @@ export interface AppProps {
   loadStories: (projectKey: string | null) => Promise<StorySummary[]>;
   chat: ChatBridge;
   plan: PlanBridge;
+  tasks?: TasksBridge;
+  initialTaskFinish?: TaskFinishTarget | null;
   initialChatKey?: string | null;
   notice?: string | null;
   onAction?: (action: AppAction) => void;
@@ -50,7 +56,21 @@ export interface AppProps {
 const ROUTE_BY_STATUS = { unset: 'knowledge', untrusted: 'knowledgeConfirm', set: 'chat' } as const;
 
 type Stage =
-  'pin' | 'home' | 'browse' | 'projects' | 'routing' | 'knowledge' | 'knowledgeConfirm' | 'chat' | 'review' | 'close';
+  | 'pin'
+  | 'home'
+  | 'browse'
+  | 'projects'
+  | 'routing'
+  | 'knowledge'
+  | 'knowledgeConfirm'
+  | 'chat'
+  | 'review'
+  | 'close'
+  | 'tasks'
+  | 'taskFinish'
+  | 'myDay';
+
+const NOTICE_STAGES: readonly Stage[] = ['home', 'chat', 'tasks', 'myDay'];
 
 function hintFor(stage: Stage, choiceCount: number): string {
   if (stage === 'pin') return FOOTER_HINTS.pin;
@@ -72,6 +92,8 @@ export function App({
   loadStories,
   chat,
   plan,
+  tasks,
+  initialTaskFinish = null,
   initialChatKey = null,
   notice: initialNotice = null,
   onAction,
@@ -82,7 +104,10 @@ export function App({
   useInput(() => setNotice(null));
   const [chatKey, setChatKey] = useState<string | null>(initialChatKey);
   const [storyKey, setStoryKey] = useState<string | null>(null);
-  const [stage, setStage] = useState<Stage>(unlocked ? (initialChatKey ? 'routing' : 'home') : 'pin');
+  const [stage, setStage] = useState<Stage>(
+    unlocked ? (initialTaskFinish && tasks ? 'taskFinish' : initialChatKey ? 'routing' : 'home') : 'pin',
+  );
+  const [finishTarget, setFinishTarget] = useState(initialTaskFinish);
   const [projectsReturnTo, setProjectsReturnTo] = useState<Stage>('home');
   const [projectKey, setProjectKey] = useState(initialProjectKey);
   const [stories, setStories] = useState(initialStories);
@@ -133,7 +158,7 @@ export function App({
     setStage('home');
   };
 
-  const openStoryScreen = (key: string, next: 'review' | 'close') => {
+  const openStoryScreen = (key: string, next: 'review' | 'close' | 'tasks') => {
     setStoryKey(key);
     setStage(next);
   };
@@ -143,6 +168,20 @@ export function App({
     exit();
   };
 
+  const handleRunTask = (taskStoryKey: string | null, issueKey: string) => {
+    onAction?.({ type: 'runTask', storyKey: taskStoryKey, issueKey });
+    exit();
+  };
+
+  const finishTask = (message: string) => {
+    // Después de la tecla que respondió: el useInput global de arriba borra el aviso con cada pulsación
+    queueMicrotask(() => setNotice(message));
+    const target = finishTarget;
+    setFinishTarget(null);
+    if (target?.storyKey) openStoryScreen(target.storyKey, 'tasks');
+    else void leaveStoryScreen();
+  };
+
   const openProjects = (from: Stage) => {
     setProjectsReturnTo(from);
     setStage('projects');
@@ -150,7 +189,7 @@ export function App({
 
   return (
     <Frame projectKey={projectKey} hint={hintFor(stage, choiceCount)}>
-      {notice && (stage === 'home' || stage === 'chat') && <Text color={COLORS.brand}>{notice}</Text>}
+      {notice && NOTICE_STAGES.includes(stage) && <Text color={COLORS.brand}>{notice}</Text>}
       {stage === 'routing' && <Text>{KNOWLEDGE_TEXTS.routing}</Text>}
       {stage === 'pin' && <PinPrompt onSubmit={handlePin} error={pinError} checking={checking} />}
       {stage === 'home' && (
@@ -161,6 +200,8 @@ export function App({
           onChangeProject={() => openProjects('home')}
           onReview={(key) => openStoryScreen(key, 'review')}
           onCloseStory={(key) => openStoryScreen(key, 'close')}
+          onTasks={(key) => tasks && openStoryScreen(key, 'tasks')}
+          onMyDay={() => tasks && setStage('myDay')}
           onQuit={exit}
         />
       )}
@@ -199,6 +240,21 @@ export function App({
       )}
       {stage === 'close' && storyKey && (
         <CloseScreen storyKey={storyKey} plan={plan} onBack={() => void leaveStoryScreen()} />
+      )}
+      {stage === 'tasks' && storyKey && tasks && (
+        <TasksScreen
+          storyKey={storyKey}
+          tasks={tasks}
+          plan={plan}
+          onBack={() => void leaveStoryScreen()}
+          onRunTask={handleRunTask}
+        />
+      )}
+      {stage === 'myDay' && tasks && (
+        <MyDayScreen tasks={tasks} onBack={() => void leaveStoryScreen()} onRunTask={handleRunTask} />
+      )}
+      {stage === 'taskFinish' && finishTarget && tasks && (
+        <TaskFinishScreen target={finishTarget} tasks={tasks} onDone={finishTask} />
       )}
       {stage === 'projects' && (
         <ProjectScreen

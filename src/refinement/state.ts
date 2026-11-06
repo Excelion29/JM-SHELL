@@ -18,6 +18,7 @@ import {
   StoryState,
   StorySummary,
   StoryUsage,
+  TaskRun,
 } from './types';
 
 const PROJECT_CONFIG_NAME = '.jira.json';
@@ -143,6 +144,28 @@ const readSessionId = (value: unknown): string | null =>
 const readCount = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 
+const readTimestamp = (value: unknown): string | null =>
+  typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null;
+
+function readTaskRuns(value: unknown): Record<string, TaskRun> {
+  if (!isRecord(value)) return {};
+  const runs: Record<string, TaskRun> = {};
+  for (const [issueKey, raw] of Object.entries(value)) {
+    const startedAt = isRecord(raw) ? readTimestamp(raw.startedAt) : null;
+    if (!isRecord(raw) || !isValidIssueKey(issueKey) || startedAt === null) continue;
+    runs[issueKey] = {
+      issueKey,
+      claudeSessionId: readSessionId(raw.claudeSessionId),
+      startedAt,
+      finishedAt: readTimestamp(raw.finishedAt),
+      activeMs: readCount(raw.activeMs),
+      status: raw.status === 'done' ? 'done' : 'started',
+      ...(raw.pendingDone === true ? { pendingDone: true } : {}),
+    };
+  }
+  return runs;
+}
+
 export const emptyUsage = (): StoryUsage => ({
   inputTokens: 0,
   outputTokens: 0,
@@ -174,6 +197,7 @@ function normalize(raw: unknown, key: string, file: string, progressed: boolean)
     claudeSessionId: readSessionId(raw.claudeSessionId),
     parentKey: typeof raw.parentKey === 'string' ? raw.parentKey : null,
     createdIssues: readKeyMap(raw.createdIssues, false),
+    taskRuns: readTaskRuns(raw.taskRuns),
     attachments: readAttachments(raw.attachments),
     usage: readUsage(raw.usage),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date(0).toISOString(),
@@ -298,6 +322,7 @@ function unreadableStory(key: string, location: string): StoryState {
     claudeSessionId: null,
     parentKey: null,
     createdIssues: {},
+    taskRuns: {},
     attachments: [],
     usage: emptyUsage(),
     updatedAt: UNREADABLE_STATE_EPOCH,

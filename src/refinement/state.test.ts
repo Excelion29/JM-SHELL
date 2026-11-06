@@ -291,6 +291,7 @@ function emptyStoryFor(key: string) {
     claudeSessionId: null,
     parentKey: null,
     createdIssues: {},
+    taskRuns: {},
     attachments: [],
     usage: emptyUsage(),
     updatedAt: '2026-11-05T10:00:00.000Z',

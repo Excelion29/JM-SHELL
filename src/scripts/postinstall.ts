@@ -1,7 +1,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
-import { installSkill } from '../refinement/skill';
+import { installSkills } from '../refinement/skill';
 
 // Solo ejecutar en instalaciones globales
 if (process.env.npm_config_global !== 'true') process.exit(0);
@@ -47,11 +47,12 @@ async function configureVSCode(): Promise<boolean> {
 
 async function configureSkill(): Promise<void> {
   try {
-    const result = await installSkill();
-    if (result === 'missing-asset') console.log('  ℹ No encontré la skill /refinar en el paquete.');
-    else console.log('  ✓ Skill /refinar lista en ~/.claude/skills.');
+    for (const [name, result] of Object.entries(await installSkills())) {
+      if (result === 'missing-asset') console.log(`  ℹ No encontré la skill /${name} en el paquete.`);
+      else console.log(`  ✓ Skill /${name} lista en ~/.claude/skills.`);
+    }
   } catch (err: unknown) {
-    console.log(`  ℹ No pude instalar la skill /refinar: ${(err as Error).message}`);
+    console.log(`  ℹ No pude instalar las skills: ${(err as Error).message}`);
   }
 }
 

@@ -47,6 +47,8 @@ export interface JiraAttachment {
 export interface JiraTransition {
   id: string;
   name: string;
+  // Estado al que lleva; Jira lo trae en cada transición
+  to?: { name: string; statusCategory?: { key: string } };
 }
 
 export interface JiraUser {

@@ -28,6 +28,14 @@ import type {
   TargetResult,
   TaskPatch,
 } from '../refinement/review-types.js';
+import type {
+  DeleteResult,
+  MyDayModel,
+  TaskRow,
+  TasksBridge,
+  TransitionOptions,
+  TransitionOutcome,
+} from '../refinement/tasks-types.js';
 import type { TaskEstimate } from '../refinement/types.js';
 
 const WAIT_TIMEOUT_MS = 2000;
@@ -166,15 +174,17 @@ export const fakeTask = (id: string, patch: Partial<ReviewTask> = {}): ReviewTas
   recommendedDate: '2026-11-05',
   effectiveDate: '2026-11-05',
   dateManual: false,
+  jiraKey: null,
   ...patch,
 });
 
 const FAKE_CAPACITY_SECONDS = 8 * SECONDS_PER_HOUR;
 
 function withTotals(model: ReviewModel): ReviewModel {
-  const included = model.tasks.filter((t) => t.include);
+  const included = model.tasks.filter((t) => t.include && !t.jiraKey);
   return {
     ...model,
+    createdCount: model.tasks.filter((t) => t.jiraKey).length,
     daySeconds: included.reduce<Record<string, number>>((days, t) => {
       if (t.effectiveDate) days[t.effectiveDate] = (days[t.effectiveDate] ?? 0) + t.effectiveSeconds;
       return days;
@@ -222,6 +232,7 @@ export function createFakePlan(options: FakePlanOptions = {}) {
     ],
     files: options.files ?? [],
     totals: { taskCount: 0, expectedSeconds: 0, effectiveSeconds: 0, stdDevSeconds: 0 },
+    createdCount: 0,
     daySeconds: {},
     dailyCapacitySeconds: FAKE_CAPACITY_SECONDS,
   });
@@ -332,4 +343,74 @@ export function createFakePlan(options: FakePlanOptions = {}) {
     },
   };
   return { plan, calls, getModel: () => model };
+}
+
+export const fakeRow = (key: string, patch: Partial<TaskRow> = {}): TaskRow => ({
+  key,
+  title: `Subtarea ${key}`,
+  status: 'Por hacer',
+  category: 'new',
+  assignee: 'Ana Pérez',
+  estimateSeconds: 3600,
+  dueDate: '2026-11-05',
+  inPlan: true,
+  missing: false,
+  pendingDone: false,
+  ...patch,
+});
+
+export interface FakeTasksOptions {
+  rows?: TaskRow[];
+  start?: TransitionOutcome[];
+  finish?: TransitionOutcome[];
+  returnOptions?: string[];
+  removeResults?: Record<string, DeleteResult>;
+  myDay?: MyDayModel;
+}
+
+// Puente de tareas falso en memoria: registra lo que la pantalla pide, sin Jira ni disco
+export function createFakeTasks(options: FakeTasksOptions = {}) {
+  let rows = options.rows ?? [fakeRow('AQ-101'), fakeRow('AQ-102', { status: 'En curso', category: 'indeterminate' })];
+  const calls = {
+    started: [] as Array<{ key: string; options: TransitionOptions }>,
+    finished: [] as Array<{ key: string; options: TransitionOptions }>,
+    returned: [] as Array<{ key: string; name: string }>,
+    removed: [] as string[][],
+    retried: 0,
+    loads: 0,
+  };
+  const startOutcomes = [...(options.start ?? [])];
+  const finishOutcomes = [...(options.finish ?? [])];
+  const tasks: TasksBridge = {
+    load: async (storyKey) => (calls.loads++, { storyKey, summary: 'Login social', rows }),
+    start: async (storyKey, key, opts) => {
+      calls.started.push({ key, options: opts });
+      return startOutcomes.shift() ?? { kind: 'ok', storyKey };
+    },
+    startMyDay: async (key, parentKey, opts) => {
+      calls.started.push({ key, options: opts });
+      return startOutcomes.shift() ?? { kind: 'ok', storyKey: parentKey };
+    },
+    finish: async ({ storyKey, issueKey }, opts) => {
+      calls.finished.push({ key: issueKey, options: opts });
+      return finishOutcomes.shift() ?? { kind: 'ok', storyKey };
+    },
+    retryPending: async () => (calls.retried++, { finished: ['AQ-102'], failed: [] }),
+    returnOptions: async () => options.returnOptions ?? ['Backlog', 'Por hacer'],
+    returnTo: async (key, name) => {
+      calls.returned.push({ key, name });
+      rows = rows.map((r) => (r.key === key ? { ...r, status: name, category: 'new' } : r));
+    },
+    remove: async (_storyKey, keys) => {
+      calls.removed.push(keys);
+      const results = keys.map((key) => options.removeResults?.[key] ?? { key, ok: true });
+      const gone = new Set(results.filter((r) => r.ok).map((r) => r.key));
+      rows = rows.filter((r) => !gone.has(r.key));
+      return results;
+    },
+    myDay: async () =>
+      options.myDay ?? { rows: [], totalSeconds: 0, capacitySeconds: 8 * SECONDS_PER_HOUR },
+    openInBrowser: async () => undefined,
+  };
+  return { tasks, calls };
 }

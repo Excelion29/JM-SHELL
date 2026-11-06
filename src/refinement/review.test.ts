@@ -9,7 +9,7 @@ import {
   toggleAttachmentTask,
   updateTask,
 } from './review';
-import { readState } from './state';
+import { readState, updateState } from './state';
 import type { StoryStore } from './story-store';
 import { attachment, seedStory, storeAt, task, tempRoot } from './test-support';
 
@@ -211,4 +211,28 @@ test('marcar como revisada una fase ya revisada no reescribe estado.json', async
   };
   await updateTask(spying, KEY, 'T1', { include: true });
   assert.ok(!writes.includes('estado.json'), writes.join(','));
+});
+
+test('las tareas ya creadas llevan su clave de Jira y no cuentan en totales ni fechas', async () => {
+  const store = await seeded();
+  await updateState(store, KEY, (s) => {
+    s.createdIssues.T1 = 'PM-2080';
+  });
+  const model = await loadReview(store, KEY, '2026-11-05');
+  assert.equal(model.tasks[0].jiraKey, 'PM-2080');
+  assert.equal(model.tasks[1].jiraKey, null);
+  assert.equal(model.tasks[0].effectiveDate, null);
+  assert.equal(model.createdCount, 1);
+  assert.equal(model.totals.taskCount, 1);
+  assert.equal(model.totals.expectedSeconds, 2 * ONE_HOUR);
+  assert.deepEqual(model.daySeconds, { '2026-11-05': 2 * ONE_HOUR });
+});
+
+test('una tarea ya creada no se puede marcar ni editar', async () => {
+  const store = await seeded();
+  await updateState(store, KEY, (s) => {
+    s.createdIssues.T1 = 'PM-2080';
+  });
+  await assert.rejects(updateTask(store, KEY, 'T1', { include: false }), /PM-2080/);
+  await assert.rejects(updateTask(store, KEY, 'T1', { summary: 'Otro' }), /ya se creó/);
 });

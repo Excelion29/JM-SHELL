@@ -21,7 +21,7 @@ import {
 import { loadPlan } from '../refinement/plan';
 import { attachmentStoreName } from '../refinement/review';
 import { planTotals } from '../refinement/pert';
-import { installSkill } from '../refinement/skill';
+import { installSkills } from '../refinement/skill';
 import {
   advancePhase,
   assertKey,
@@ -181,10 +181,12 @@ export async function prepareStory(
 
 export async function ensureSkill(): Promise<void> {
   try {
-    const result = await installSkill();
-    if (result === 'missing-asset') warn('No encontré la skill /refinar dentro del paquete. Reinstala JM-SHELL.');
+    const results = await installSkills();
+    for (const [name, result] of Object.entries(results)) {
+      if (result === 'missing-asset') warn(`No encontré la skill /${name} dentro del paquete. Reinstala JM-SHELL.`);
+    }
   } catch (err: unknown) {
-    warn(`No pude instalar la skill /refinar: ${(err as Error).message}`);
+    warn(`No pude instalar las skills de Claude: ${(err as Error).message}`);
   }
 }
 

@@ -49,6 +49,9 @@ const ALLOWED_ARGS: RegExp[] = [
   SESSION_ID_PATTERN,
   new RegExp(`^refinar ${KEY_SOURCE}$`),
   new RegExp(`^/refinar ${KEY_SOURCE}$`),
+  // Ejecución de una tarea: historia + subtarea (iguales cuando la tarea no pertenece a una historia de jm)
+  new RegExp(`^ejecutar ${CHAT_KEY_SOURCE}$`),
+  new RegExp(`^/ejecutar ${CHAT_KEY_SOURCE} ${CHAT_KEY_SOURCE}$`),
   // Flags fijas del chat headless (el texto del dev viaja por stdin, nunca por argv)
   /^(-p|--verbose|--include-partial-messages|--strict-mcp-config)$/,
   /^(--input-format|--output-format|--setting-sources|--permission-mode|--model)$/,
@@ -217,13 +220,17 @@ export const runClaude: ClaudeRunner = (args, cwd) =>
     child.on('close', (code) => resolve({ code, elapsedMs: Date.now() - started }));
   });
 
-export const buildNewSessionArgs = (key: string, sessionId: string): string[] => [
-  '--session-id',
-  sessionId,
-  '-n',
-  `refinar ${key}`,
-  `/refinar ${key}`,
-];
+export type ClaudeCommand = 'refinar' | 'ejecutar';
+
+export const buildNewSessionArgs = (
+  key: string,
+  sessionId: string,
+  command: ClaudeCommand = 'refinar',
+  issueKey: string = key,
+): string[] =>
+  command === 'refinar'
+    ? ['--session-id', sessionId, '-n', `refinar ${key}`, `/refinar ${key}`]
+    : ['--session-id', sessionId, '-n', `ejecutar ${issueKey}`, `/ejecutar ${key} ${issueKey}`];
 
 export const buildResumeArgs = (sessionId: string): string[] => ['--resume', sessionId];
 
@@ -249,6 +256,12 @@ export const handoffKnowledgeArgs = (kb: ChatKnowledge | null, files: WorkFiles)
   return kb?.type === 'local' ? [ADD_DIR_FLAG, kb.root, ...context] : [];
 };
 
+// Al ejecutar una tarea el contexto de la tarea viaja siempre, haya o no base conectada
+export const taskHandoffArgs = (kb: ChatKnowledge | null, files: WorkFiles): string[] => {
+  const args = handoffKnowledgeArgs(kb, files);
+  return args.length > 0 ? args : ['--append-system-prompt-file', files.context];
+};
+
 export interface LaunchOptions {
   key: string;
   existingSessionId: string | null;
@@ -257,10 +270,23 @@ export interface LaunchOptions {
   saveSessionId: (sessionId: string) => Promise<void>;
   newSessionId?: () => string;
   extraArgs?: string[];
+  command?: ClaudeCommand;
+  // Subtarea que se ejecuta; solo con command 'ejecutar' ('key' es entonces la historia)
+  issueKey?: string;
 }
 
 export async function launchClaude(options: LaunchOptions): Promise<void> {
-  const { key, existingSessionId, cwd, run, saveSessionId, newSessionId = randomUUID, extraArgs = [] } = options;
+  const {
+    key,
+    existingSessionId,
+    cwd,
+    run,
+    saveSessionId,
+    newSessionId = randomUUID,
+    extraArgs = [],
+    command = 'refinar',
+    issueKey,
+  } = options;
   if (existingSessionId) {
     const result = await run([...extraArgs, ...buildResumeArgs(existingSessionId)], cwd);
     const resumed = result.code === 0 || result.elapsedMs >= RESUME_FAIL_WINDOW_MS;
@@ -268,5 +294,5 @@ export async function launchClaude(options: LaunchOptions): Promise<void> {
   }
   const sessionId = newSessionId();
   await saveSessionId(sessionId);
-  await run([...extraArgs, ...buildNewSessionArgs(key, sessionId)], cwd);
+  await run([...extraArgs, ...buildNewSessionArgs(key, sessionId, command, issueKey)], cwd);
 }

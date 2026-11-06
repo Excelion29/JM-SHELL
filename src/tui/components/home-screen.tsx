@@ -11,13 +11,26 @@ interface HomeScreenProps {
   onChangeProject: () => void;
   onReview: (key: string) => void;
   onCloseStory: (key: string) => void;
+  onTasks: (key: string) => void;
+  onMyDay: () => void;
   onQuit: () => void;
 }
 
 const REVIEW_PHASES: readonly string[] = ['plan', 'reviewed'];
 const CLOSE_PHASES: readonly string[] = ['created', 'in-progress'];
+const TASKS_PHASES: readonly string[] = ['created', 'in-progress'];
 
-export function HomeScreen({ stories, onRefine, onBrowse, onChangeProject, onReview, onCloseStory, onQuit }: HomeScreenProps) {
+export function HomeScreen({
+  stories,
+  onRefine,
+  onBrowse,
+  onChangeProject,
+  onReview,
+  onCloseStory,
+  onTasks,
+  onMyDay,
+  onQuit,
+}: HomeScreenProps) {
   const [selected, setSelected] = useState(0);
   const current = stories[selected];
 
@@ -27,6 +40,8 @@ export function HomeScreen({ stories, onRefine, onBrowse, onChangeProject, onRev
     else if (input === KEYS.changeProject) onChangeProject();
     else if (input === KEYS.review && current?.phaseId && REVIEW_PHASES.includes(current.phaseId)) onReview(current.key);
     else if (input === KEYS.closeStory && current?.phaseId && CLOSE_PHASES.includes(current.phaseId)) onCloseStory(current.key);
+    else if (input === KEYS.tasks && current?.phaseId && TASKS_PHASES.includes(current.phaseId)) onTasks(current.key);
+    else if (input === KEYS.myDay) onMyDay();
     else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
     else if (key.downArrow) setSelected((i) => Math.min(stories.length - 1, i + 1));
     else if (key.return && stories[selected]) onRefine(stories[selected].key);

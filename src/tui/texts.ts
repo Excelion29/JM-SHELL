@@ -22,7 +22,17 @@ export const KEYS = {
   toggle: ' ',
   open: 'o',
   selectFolder: 's',
+  tasks: 't',
+  start: 'i',
+  myDay: 'h',
+  removeTasks: 'd',
+  giveBack: 'b',
+  pendingFilter: 'p',
+  viewPlan: 'v',
 } as const;
+
+// Palabra que hay que escribir completa para borrar subtareas de Jira
+export const DELETE_CONFIRM_WORD = 'borrar';
 
 // Mismo formato que ISSUE_KEY_STRICT en src/refinement/state.ts (la isla ESM no importa CJS)
 export const ISSUE_KEY_PATTERN = /^[A-Z][A-Z0-9_]+-\d+$/;
@@ -152,7 +162,7 @@ export const CHAT_TEXTS = {
 
 export const FOOTER_HINTS = {
   pin: 'Enter confirmar · Ctrl+C salir',
-  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.quit} salir`,
+  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.quit} salir`,
   picker: `↑↓ elegir · Enter abrir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · ${KEYS.changeProject} proyecto · Esc volver`,
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
@@ -173,6 +183,12 @@ export const FOOTER_HINTS = {
   choose: (count: number) => `1-${count} elegir`,
   knowledge: 'Esc cancelar',
   knowledgeBrowse: `↑↓ elegir · Enter abrir carpeta o nota · Backspace subir · ${KEYS.selectFolder} elegir esta carpeta · Esc cancelar`,
+  reviewReadOnly: `↑↓ moverte · ${KEYS.detail} detalle · Esc volver`,
+  tasks: `↑↓ moverte · espacio marcar · ${KEYS.start} iniciar · ${KEYS.giveBack} devolver · ${KEYS.removeTasks} borrar · ${KEYS.pendingFilter} pendientes · ${KEYS.retry} actualizar · ${KEYS.open} abrir · ${KEYS.viewPlan} ver plan · Esc inicio`,
+  myDay: `↑↓ moverte · ${KEYS.start} iniciar · ${KEYS.retry} actualizar · ${KEYS.open} abrir · Esc inicio`,
+  options: '↑↓ elegir · Enter confirmar · Esc cancelar',
+  yesNo: `${KEYS.confirmYes}/${KEYS.confirmNo}`,
+  typeConfirm: 'Escribe la palabra y pulsa Enter · Esc cancelar',
   chat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo (vuelves con /exit) · Esc inicio`,
 } as const;
 export const SECONDS_PER_HOUR = 3600;
@@ -213,6 +229,8 @@ export const PLAN_TEXTS = {
   empty: 'El plan no tiene tareas.',
   included: '[x]',
   excluded: '[ ]',
+  createdCount: (count: number) => `${count} ya creada(s) en Jira (t para verlas)`,
+  allCreated: 'Todo el plan ya está en Jira; usa t para ver las tareas.',
   total: (count: number, estimate: string, expected: string, deviation: string) =>
     `Total (${count} marcada(s)): a Jira ${estimate} · esperado PERT ${expected} · σ ${deviation}`,
   jiraEstimate: (estimate: string, own: boolean) => `Jira ${estimate}${own ? ' (tuya)' : ''}`,
@@ -360,4 +378,60 @@ export const KNOWLEDGE_TEXTS = {
   confirmError: (message: string) => `No pude leer la base configurada: ${message}`,
   rootNotAllowed: 'No puedes elegir la raíz de la bóveda: entra a una carpeta y pulsa de nuevo.',
   browseNextStep: `Siguiente paso: entra a la carpeta donde continuar y pulsa ${KEYS.selectFolder} para elegirla.`,
+} as const;
+
+export const TASKS_TEXTS = {
+  title: (key: string, summary: string) => `Tareas · ${key} ${summary}`,
+  loading: 'Leyendo las subtareas en Jira...',
+  empty: 'La historia no tiene subtareas en Jira.',
+  notInPlan: 'no es del plan',
+  missing: 'no encontrada en Jira',
+  pendingDone: 'cierre por reintentar',
+  noAssignee: 'sin asignar',
+  noEstimate: '—',
+  noDate: '—',
+  summary: (done: number, total: number, pending: string) =>
+    `${done} de ${total} finalizadas · ${pending} pendientes`,
+  filterOn: 'Filtro: solo pendientes',
+  nextStep: `Siguiente paso: elige una tarea y pulsa ${KEYS.start} para iniciarla.`,
+  doneBlocked: (key: string) => `${key} está finalizada: no se puede borrar ni editar.`,
+  inProgressBlocked: (key: string) => `${key} está en curso: devuélvela con ${KEYS.giveBack} antes de borrarla.`,
+  nothingSelected: 'Marca con espacio las tareas que quieres borrar.',
+  starting: (key: string) => `Iniciando ${key} en Jira...`,
+  reopenQuestion: (key: string) => `${key} ya está finalizada. ¿La reabro y la inicio? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  chooseTransition: (key: string) => `Jira no ofrece el estado esperado para ${key}. Elige la transición:`,
+  chooseReturn: (key: string) => `¿A qué estado devuelves ${key}?`,
+  returned: (key: string, name: string) => `${key} devuelta con «${name}». Ya puedes borrarla.`,
+  actionError: (message: string) => `No pude completar la acción: ${message}`,
+  deleteTitle: 'Se borrarán de Jira estas subtareas:',
+  deleteLine: (key: string, title: string, status: string, assignee: string) =>
+    `  ${key} · ${title} · ${status} · ${assignee}`,
+  deletePrompt: `Escribe ${DELETE_CONFIRM_WORD} para confirmar: `,
+  deleteMismatch: `Eso no es «${DELETE_CONFIRM_WORD}»: no borré nada.`,
+  deleting: 'Borrando en Jira...',
+  deleteDone: (ok: number, failed: number) => `Borradas ${ok}; con problemas ${failed}.`,
+  deleteFailLine: (key: string, message: string) => `  ${key}: ${message}`,
+  retryDone: (finished: number, failed: number) =>
+    `Cierres reintentados: ${finished} listos, ${failed} siguen pendientes.`,
+  openError: (message: string) => `No pude abrir el navegador: ${message}`,
+  planTitle: 'Plan (solo lectura)',
+} as const;
+
+export const FINISH_TEXTS = {
+  question: (key: string) => `¿Terminaste ${key}? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  working: 'Pasando la tarea a Finalizada...',
+  done: (key: string) => `${key} quedó Finalizada. La estimación original no se tocó.`,
+  keptInProgress: (key: string) => `${key} sigue En curso.`,
+  chooseTransition: (key: string) => `Jira no ofrece «Finalizada» para ${key}. Elige la transición:`,
+  failed: (message: string) => `No pude finalizarla: ${message}`,
+} as const;
+
+export const MY_DAY_TEXTS = {
+  title: 'Mi día',
+  loading: 'Buscando tus tareas de hoy en Jira...',
+  empty: 'No tienes tareas que venzan hoy ni vencidas.',
+  noParent: 'sin historia',
+  total: (hours: string, capacity: string) => `Total: ${hours} de ${capacity}`,
+  overdue: 'vencida',
+  nextStep: `Siguiente paso: elige una tarea y pulsa ${KEYS.start} para iniciarla.`,
 } as const;

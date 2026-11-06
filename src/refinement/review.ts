@@ -144,7 +144,11 @@ function buildReview(
   localFiles: string[],
   today: string,
 ): ReviewModel {
-  const schedule = scheduleOf(plan, today);
+  const pendingPlan: RefinementPlan = {
+    ...plan,
+    tasks: plan.tasks.filter((t) => !state.createdIssues[t.id]),
+  };
+  const schedule = scheduleOf(pendingPlan, today);
   const files: ReviewFile[] = localFiles.map((file) => {
     const entry = state.attachments.find((a) => a.file === file);
     const planned = plan.tasks.filter((t) => t.attachments.includes(file)).map((t) => t.id);
@@ -170,11 +174,13 @@ function buildReview(
         recommendedDate: entry?.recommended ?? null,
         effectiveDate: entry?.dueDate ?? null,
         dateManual: entry?.manual ?? false,
+        jiraKey: state.createdIssues[task.id] ?? null,
       };
     }),
     files,
-    totals: planTotals(plan),
-    daySeconds: daySeconds(plan, schedule),
+    totals: planTotals(pendingPlan),
+    createdCount: plan.tasks.filter((t) => state.createdIssues[t.id]).length,
+    daySeconds: daySeconds(pendingPlan, schedule),
     dailyCapacitySeconds: DAILY_CAPACITY_SECONDS,
   };
 }
@@ -213,10 +219,14 @@ export async function updateTask(
   patch: TaskPatch,
   today: string = todayIso(),
 ): Promise<ReviewModel> {
-  assertReviewable(await requireState(store, key));
+  const before = await requireState(store, key);
+  assertReviewable(before);
   const plan = await readPlan(store, key);
   const task = plan.tasks.find((t) => t.id === taskId);
   if (!task) throw new Error(`No encontré la tarea ${taskId} en el plan.`);
+  if (before.createdIssues[taskId]) {
+    throw new Error(`La tarea ${taskId} ya se creó en Jira (${before.createdIssues[taskId]}); no se puede cambiar aquí.`);
+  }
   if (patch.summary !== undefined) {
     if (!patch.summary.trim()) throw new Error('El título no puede quedar vacío.');
     task.summary = patch.summary.trim();

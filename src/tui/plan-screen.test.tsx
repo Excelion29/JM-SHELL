@@ -395,3 +395,18 @@ test('con muchas tareas la lista se desplaza y el pie con el total sigue visible
   assert.ok(app.frame().includes('T36'));
   assert.ok(app.frame().includes(PLAN_TEXTS.total(40, '43h30m', '43h30m', '1h35m')) || app.frame().includes('Total (40'));
 });
+
+test('las tareas ya creadas no se listan: solo un resumen y los totales cuentan las pendientes', async () => {
+  const app = await openReview({ tasks: [fakeTask('T1', { jiraKey: 'PM-2080' }), fakeTask('T2')] });
+  const frame = app.frame();
+  assert.ok(!frame.includes('T1') && frame.includes('[x] T2'));
+  assert.ok(frame.includes(PLAN_TEXTS.total(1, '1h5m', '1h5m', '15m')));
+  assert.ok(frame.includes(PLAN_TEXTS.createdCount(1)));
+  await app.press(SPACE);
+  assert.deepEqual(app.calls.updates, [{ taskId: 'T2', patch: { include: false } }]);
+});
+
+test('con todo el plan creado el siguiente paso lo dice', async () => {
+  const app = await openReview({ tasks: [fakeTask('T1', { jiraKey: 'PM-2080' })] });
+  assert.ok(app.frame().includes(PLAN_TEXTS.allCreated));
+});

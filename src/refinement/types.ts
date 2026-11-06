@@ -56,6 +56,20 @@ export interface StoryUsage {
   turns: number;
 }
 
+export type TaskRunStatus = 'started' | 'done';
+
+// Tiempo real de una tarea: reloj de pared (startedAt -> finishedAt) y suma de sesiones de Claude (activeMs)
+export interface TaskRun {
+  issueKey: string;
+  claudeSessionId: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  activeMs: number;
+  status: TaskRunStatus;
+  // Se terminó pero Jira no respondió: se reintenta con `r`
+  pendingDone?: boolean;
+}
+
 export interface StoryState {
   key: string;
   summary: string;
@@ -64,6 +78,8 @@ export interface StoryState {
   claudeSessionId: string | null;
   parentKey: string | null;
   createdIssues: Record<string, string>;
+  // Por clave de Jira de la subtarea
+  taskRuns: Record<string, TaskRun>;
   attachments: StoryAttachment[];
   usage: StoryUsage;
   updatedAt: string;

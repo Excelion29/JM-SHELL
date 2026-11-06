@@ -30,14 +30,23 @@ interface PlanScreenProps {
   onBack: () => void;
   // La historia ya quedó creada: la app vuelve al inicio y recarga
   onFinished: () => void;
+  // Solo mirar: sin marcar, editar ni crear (se abre desde Tareas)
+  readOnly?: boolean;
 }
 
-export function PlanScreen({ storyKey, plan, onBack, onFinished }: PlanScreenProps) {
+export function PlanScreen({ storyKey, plan, onBack, onFinished, readOnly = false }: PlanScreenProps) {
   const { state, retry } = useLoad(() => plan.load(storyKey));
   return (
     <LoadGate state={state} loadingText={PLAN_TEXTS.loading} onRetry={retry} onBack={onBack}>
       {(model) => (
-        <ReviewBody initial={model} storyKey={storyKey} plan={plan} onBack={onBack} onFinished={onFinished} />
+        <ReviewBody
+          initial={model}
+          storyKey={storyKey}
+          plan={plan}
+          onBack={onBack}
+          onFinished={onFinished}
+          readOnly={readOnly}
+        />
       )}
     </LoadGate>
   );
@@ -56,9 +65,10 @@ interface ReviewBodyProps {
   plan: PlanBridge;
   onBack: () => void;
   onFinished: () => void;
+  readOnly: boolean;
 }
 
-function ReviewBody({ initial, storyKey, plan, onBack, onFinished }: ReviewBodyProps) {
+function ReviewBody({ initial, storyKey, plan, onBack, onFinished, readOnly }: ReviewBodyProps) {
   const [model, setModel] = useState(initial);
   const [view, setView] = useState<View>({ name: 'list' });
   const [selected, setSelected] = useState(0);
@@ -76,21 +86,23 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished }: ReviewBodyP
     }
   };
 
-  const current = model.tasks[selected];
+  const pending = useMemo(() => model.tasks.filter((t) => !t.jiraKey), [model.tasks]);
+  const current = pending[selected];
   const size = useTerminalSize();
   const available = (size.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS) - FRAME_HORIZONTAL_OVERHEAD;
-  const cells = useMemo(() => buildTaskCells(model.tasks, available), [model.tasks, available]);
+  const cells = useMemo(() => buildTaskCells(pending, available), [pending, available]);
 
   useInput(
     (input, key) => {
       if (key.escape) onBack();
       else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
-      else if (key.downArrow) setSelected((i) => Math.min(model.tasks.length - 1, i + 1));
+      else if (key.downArrow) setSelected((i) => Math.min(pending.length - 1, i + 1));
+      else if (input === KEYS.detail && current) setView({ name: 'detail', taskId: current.id });
+      else if (readOnly) return;
+      else if (input === KEYS.attachments) setView({ name: 'files' });
       else if (input === KEYS.toggle && current) {
         void save(plan.updateTask(storyKey, current.id, { include: !current.include }));
       } else if (input === KEYS.edit && current) setView({ name: 'edit', taskId: current.id });
-      else if (input === KEYS.detail && current) setView({ name: 'detail', taskId: current.id });
-      else if (input === KEYS.attachments) setView({ name: 'files' });
       else if (input === KEYS.create) {
         if (model.totals.taskCount === 0) setError(PLAN_TEXTS.noneIncluded);
         else setView({ name: 'create' });
@@ -151,6 +163,7 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished }: ReviewBodyP
   }
 
   const overloaded = overloadedDays(model);
+  const allCreated = model.tasks.length > 0 && pending.length === 0;
   const visibleRows = Math.max(
     REVIEW_MIN_VISIBLE_ROWS,
     (size.rows ?? CHAT_DEFAULT_TERMINAL_ROWS) - REVIEW_CHROME_ROWS - overloaded.length,
@@ -164,7 +177,7 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished }: ReviewBodyP
       </Text>
       {model.tasks.length === 0 && <Text>{PLAN_TEXTS.empty}</Text>}
       <Box flexDirection="column" flexShrink={1} overflow="hidden">
-        {model.tasks.slice(first, first + visibleRows).map((task, offset) => (
+        {pending.slice(first, first + visibleRows).map((task, offset) => (
           <TaskRow
             key={task.id}
             task={task}
@@ -190,9 +203,10 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished }: ReviewBodyP
             {PLAN_TEXTS.overload(date, formatDuration(seconds), formatDuration(model.dailyCapacitySeconds))}
           </Text>
         ))}
+        {model.createdCount > 0 && <Text color={COLORS.muted}>{PLAN_TEXTS.createdCount(model.createdCount)}</Text>}
         {error && <Text color={COLORS.error}>{error}</Text>}
-        <Text color={COLORS.muted}>{PLAN_TEXTS.nextStep}</Text>
-        <Text color={COLORS.muted}>{FOOTER_HINTS.review}</Text>
+        <Text color={COLORS.muted}>{allCreated ? PLAN_TEXTS.allCreated : PLAN_TEXTS.nextStep}</Text>
+        <Text color={COLORS.muted}>{readOnly ? FOOTER_HINTS.reviewReadOnly : FOOTER_HINTS.review}</Text>
       </Box>
     </Box>
   );

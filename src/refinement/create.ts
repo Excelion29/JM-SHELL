@@ -218,7 +218,7 @@ export async function buildPreview(
   const plan = await loadPlan(store);
   const state = await readState(store, storyKey);
   if (!state) throw new Error(`La historia ${storyKey} aún no tiene estado.`);
-  const included = plan.tasks.filter((t) => t.include);
+  const included = plan.tasks.filter((t) => t.include && !state.createdIssues[t.id]);
   const parent = await resolveParent(jira, storyKey);
   return {
     taskCount: included.length,

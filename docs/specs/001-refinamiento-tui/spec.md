@@ -301,6 +301,7 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Accept parte 3.5 (estado en la base, sin .jm en el repo) | Marcello Cano | 2026-11-05 | aprobado ("me queda claro y apruebo"); migración automática; antes de la 4 |
 | Accept plan técnico 3.5 | Marcello Cano | 2026-11-05 | aprobado ("okey sí genial"); recomendaciones 1-3, conexiones de notas sí, Graphify no; prueba en _jm-prueba autorizada |
 | Commit parte 3.5 | Marcello Cano | 2026-11-05 | aprobado ("sí apruebo, continuemos"); migración probada en real; review 2 dimensiones + re-review seguridad |
+| Commit parte 4 | Marcello Cano | 2026-11-06 | aprobado ("apruebo"); review combinada aplicada; la revisión del plan oculta las tareas ya creadas |
 | Accept "Mi día" en parte 4 | Marcello Cano | 2026-11-05 | aprobado: vista de tareas propias que vencen hoy o vencidas, de cualquier historia |
 | Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |
 | Commit 3.3 + 3.4 | Marcello Cano | 2026-11-05 | aprobado ("haz el reajuste, luego commiteamos"); review por partes aplicada |

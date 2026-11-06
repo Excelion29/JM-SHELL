@@ -15,6 +15,31 @@ import {
 const SAFE_SESSION = '123e4567-e89b-12d3-a456-426614174000';
 const BAD_ARGS = ['x" & calc & "', '%PATH%', 'a|b', 'a^b', 'a<b', 'a>b', 'not-a-uuid', 'refinar AQ-45 & dir'];
 
+test('assertSafeArgs acepta /ejecutar con historia y tarea, y rechaza otro texto', () => {
+  const args = buildNewSessionArgs('AQ-45', SAFE_SESSION, 'ejecutar', 'AQ-46');
+  assert.deepEqual(args.slice(-2), ['ejecutar AQ-46', '/ejecutar AQ-45 AQ-46']);
+  assert.doesNotThrow(() => assertSafeArgs(args));
+  assert.throws(() => assertSafeArgs(['/ejecutar AQ-45']), /no permitido/);
+  assert.throws(() => assertSafeArgs(['/ejecutar AQ-45 AQ-46 & calc']), /no permitido/);
+});
+
+test('retomar una tarea usa la sesión de esa tarea y una nueva lleva /ejecutar', async () => {
+  const calls: string[][] = [];
+  const runner: ClaudeRunner = async (a) => (calls.push(a), { code: 1, elapsedMs: 100 });
+  await launchClaude({
+    key: 'AQ-45',
+    issueKey: 'AQ-46',
+    command: 'ejecutar',
+    existingSessionId: SAFE_SESSION,
+    cwd: '.',
+    run: runner,
+    saveSessionId: async () => undefined,
+    newSessionId: () => SAFE_SESSION,
+  });
+  assert.deepEqual(calls[0], buildResumeArgs(SAFE_SESSION));
+  assert.equal(calls[1].at(-1), '/ejecutar AQ-45 AQ-46');
+});
+
 test('assertSafeArgs acepta los argumentos previstos', () => {
   assert.doesNotThrow(() => assertSafeArgs(buildNewSessionArgs('AQ-45', SAFE_SESSION)));
   assert.doesNotThrow(() => assertSafeArgs(buildResumeArgs(SAFE_SESSION)));

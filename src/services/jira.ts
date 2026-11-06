@@ -223,6 +223,10 @@ export class JiraService {
     await this.client.put(`/issue/${pathKey(issueKey)}`, { fields });
   }
 
+  async deleteIssue(issueKey: string): Promise<void> {
+    await this.client.delete(`/issue/${pathKey(issueKey)}`);
+  }
+
   async getTransitions(issueKey: string): Promise<JiraTransition[]> {
     const res = await this.client.get<{ transitions: JiraTransition[] }>(`/issue/${pathKey(issueKey)}/transitions`);
     return res.data.transitions;

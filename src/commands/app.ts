@@ -24,7 +24,10 @@ import {
 } from '../refinement/browse';
 import { BrowseItem, ProjectItem } from '../refinement/types';
 import { createChatBridge } from './chat-bridge';
+import type { TaskFinishTarget } from '../refinement/tasks-types';
+import { runTaskSession } from './execute';
 import { createPlanBridge } from './plan-bridge';
+import { createTasksBridge } from './tasks-bridge';
 import { runRefine } from './refine';
 import { closeStoryStores, listAllStories } from './story-resolver';
 
@@ -95,6 +98,22 @@ async function handoffAndReturn(key: string): Promise<string> {
   return notice;
 }
 
+// Ink ya está desmontado aquí; si Claude se abrió, al volver la app pregunta si la tarea se terminó
+async function runTaskAndReturn(
+  storyKey: string | null,
+  issueKey: string,
+): Promise<{ notice: string; finish: TaskFinishTarget | null }> {
+  let result: { notice: string; finish: TaskFinishTarget | null };
+  try {
+    await runTaskSession(sessionJira(), storyKey, issueKey);
+    result = { notice: BACK_NOTICE, finish: { storyKey, issueKey } };
+  } catch (err: unknown) {
+    result = { notice: (err as Error).message, finish: null };
+  }
+  reclaimStdin();
+  return result;
+}
+
 export interface AppOptions {
   chatKey?: string;
 }
@@ -112,6 +131,8 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
   let notice: string | null = null;
   const chat = createChatBridge(sessionJira);
   const plan = createPlanBridge(sessionJira);
+  const tasks = createTasksBridge(sessionJira);
+  let initialTaskFinish: TaskFinishTarget | null = null;
 
   try {
     for (;;) {
@@ -122,6 +143,8 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
         unlocked,
         chat,
         plan,
+        tasks,
+        initialTaskFinish,
         initialChatKey,
         notice,
         fetchEpics: async (): Promise<BrowseItem[]> =>
@@ -157,8 +180,16 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
       });
       if (!action) break;
       chat.closeNow();
-      initialChatKey = action.key;
-      notice = await handoffAndReturn(action.key);
+      initialTaskFinish = null;
+      if (action.type === 'runTask') {
+        initialChatKey = null;
+        const outcome = await runTaskAndReturn(action.storyKey, action.issueKey);
+        notice = outcome.notice;
+        initialTaskFinish = outcome.finish;
+      } else {
+        initialChatKey = action.key;
+        notice = await handoffAndReturn(action.key);
+      }
     }
   } finally {
     closeStoryStores();

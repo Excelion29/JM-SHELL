@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
-import { App } from './app.js';
+import { App, type AppAction } from './app.js';
 import { BASE_HEADER, createFakeChat, createFakePlan, FAKE_CODE_FOLDER, waitFor } from './test-support.js';
 import { CHAT_INPUT_MAX_ROWS, CHAT_TEXTS, HOME_TEXTS, STREAM_FLUSH_MS, TAB_WIDTH } from './texts.js';
 
@@ -27,7 +27,7 @@ const NO_ITEMS = async () => [];
 const STORY = { key: 'AQ-45', summary: 'Login', phase: 'debate', block: 'riesgos', nextStep: 'Retoma', updatedAt: 't' };
 
 function setup(fake = createFakeChat()) {
-  const actions: Array<{ type: string; key: string }> = [];
+  const actions: AppAction[] = [];
   const utils = render(
     <App
       projectKey="AQ"
