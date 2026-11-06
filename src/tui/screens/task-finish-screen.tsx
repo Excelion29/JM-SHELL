@@ -35,7 +35,7 @@ export function TaskFinishScreen({ target, tasks, onDone }: TaskFinishScreenProp
   if (step.name === 'choose') {
     return (
       <OptionSelector
-        title={FINISH_TEXTS.chooseTransition(issueKey)}
+        title={FINISH_TEXTS.chooseTransition}
         options={step.available}
         onSelect={(name) => void finish(name)}
         onCancel={() => onDone(FINISH_TEXTS.keptInProgress(issueKey))}

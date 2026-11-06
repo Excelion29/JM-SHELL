@@ -103,11 +103,20 @@ test('si Jira falla al iniciar se avisa y no se abre Claude', async () => {
 test('sin la transición esperada se muestra el selector y se aplica la elegida', async () => {
   const app = await openTasks({ start: [{ kind: 'choose', available: ['Backlog', 'Revisión'] }] });
   await app.press('i');
-  await app.has(TASKS_TEXTS.chooseTransition('AQ-101'));
+  await app.has(TASKS_TEXTS.chooseTransition);
   await app.press(DOWN);
   await app.press(ENTER);
   await waitFor(() => app.actions.length === 1, 'la acción');
   assert.equal(app.calls.started[1].options.transitionName, 'Revisión');
+});
+
+test('cancelar el selector de transición no abre Claude', async () => {
+  const app = await openTasks({ start: [{ kind: 'choose', available: ['Backlog', 'Revisión'] }] });
+  await app.press('i');
+  await app.has(TASKS_TEXTS.chooseTransition);
+  await app.press(ESC);
+  assert.equal(app.actions.length, 0);
+  assert.equal(app.calls.started.length, 1);
 });
 
 test('una tarea finalizada pregunta antes de reabrir: n cancela y s reabre', async () => {
@@ -211,6 +220,74 @@ test('al volver de Claude, n deja la tarea en curso sin tocar Jira', async () =>
   await app.press('n');
   await app.has(FINISH_TEXTS.keptInProgress('AQ-101'));
   assert.equal(app.calls.finished.length, 0);
+});
+
+test('f finaliza la tarea del cursor sin abrir Claude tras confirmar con s', async () => {
+  const app = await openTasks();
+  await app.press('f');
+  await app.has(FINISH_TEXTS.directQuestion);
+  assert.ok(app.frame().includes('AQ-101'));
+  await app.press('s');
+  await app.has(FINISH_TEXTS.directSummary(1, []));
+  assert.deepEqual(app.calls.finished, [{ key: 'AQ-101', options: { direct: true } }]);
+  assert.equal(app.actions.length, 0);
+});
+
+test('f con varias marcadas muestra la lista exacta, omite las finalizadas y sigue tras un error', async () => {
+  const app = await openTasks({
+    rows: [fakeRow('AQ-101'), fakeRow('AQ-104'), fakeRow('AQ-105')],
+    finish: [{ kind: 'failed', message: 'sin permiso' }],
+  });
+  await app.press(' ');
+  await app.press(DOWN);
+  await app.press(' ');
+  await app.press(DOWN);
+  await app.press(' ');
+  await app.press('f');
+  await app.has(FINISH_TEXTS.directQuestion);
+  assert.ok(['AQ-101', 'AQ-104', 'AQ-105'].every((k) => app.frame().includes(k)));
+  await app.press('s');
+  await app.has(FINISH_TEXTS.directSummary(2, ['AQ-101: sin permiso']));
+  assert.equal(app.calls.finished.length, 3);
+});
+
+test('f sobre una finalizada no hace nada en Jira y lo avisa', async () => {
+  const app = await openTasks({ rows: [DONE_ROW] });
+  await app.press('f');
+  await app.has(FINISH_TEXTS.directNothing);
+  assert.equal(app.calls.finished.length, 0);
+});
+
+test('f sin la transición esperada muestra el selector y reintenta con la elegida', async () => {
+  const app = await openTasks({ finish: [{ kind: 'choose', available: ['Backlog', 'Revisión'] }] });
+  await app.press('f');
+  await app.press('s');
+  await app.has(FINISH_TEXTS.chooseTransition);
+  await app.press(DOWN);
+  await app.press(ENTER);
+  await app.has(FINISH_TEXTS.directSummary(1, []));
+  assert.deepEqual(app.calls.finished[1].options, { direct: true, transitionName: 'Revisión' });
+});
+
+test('f en Mi día finaliza la tarea del cursor', async () => {
+  const row = {
+    key: 'ZZ-9',
+    title: 'Arreglar login',
+    parentKey: 'ZZ-1',
+    status: 'Por hacer',
+    category: 'new' as const,
+    estimateSeconds: 9000,
+    dueDate: '2026-11-04',
+    overdue: true,
+  };
+  const app = setup({ myDay: { rows: [row], totalSeconds: 9000, capacitySeconds: 28800 } });
+  await app.press('h');
+  await app.has('ZZ-9');
+  await app.press('f');
+  await app.has(FINISH_TEXTS.directQuestion);
+  await app.press('s');
+  await waitFor(() => app.calls.finished.length === 1, 'el cierre');
+  assert.deepEqual(app.calls.finished[0], { key: 'ZZ-9', options: { direct: true } });
 });
 
 test('Mi día lista lo asignado con el total contra las 8 h e inicia la tarea', async () => {

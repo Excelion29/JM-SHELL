@@ -106,7 +106,12 @@ export function createFakeChat(
       if (knowledge.openError) throw new Error(knowledge.openError);
       listener = onEvent;
       calls.opened.push(key);
-      return { header: { ...BASE_HEADER, ...header, key }, codeFolder: FAKE_CODE_FOLDER, history, idle: history.length > 0 };
+      return {
+        header: { ...BASE_HEADER, ...header, key },
+        codeFolder: FAKE_CODE_FOLDER,
+        history,
+        idle: history.length > 0,
+      };
     },
     send: (text) => void sent.push(text),
     toggleDeep: () => void (calls.toggle += 1),
@@ -395,6 +400,10 @@ export function createFakeTasks(options: FakeTasksOptions = {}) {
       calls.finished.push({ key: issueKey, options: opts });
       return finishOutcomes.shift() ?? { kind: 'ok', storyKey };
     },
+    finishMyDay: async (key, parentKey, opts) => {
+      calls.finished.push({ key, options: opts });
+      return finishOutcomes.shift() ?? { kind: 'ok', storyKey: parentKey };
+    },
     retryPending: async () => (calls.retried++, { finished: ['AQ-102'], failed: [] }),
     returnOptions: async () => options.returnOptions ?? ['Backlog', 'Por hacer'],
     returnTo: async (key, name) => {
@@ -408,8 +417,7 @@ export function createFakeTasks(options: FakeTasksOptions = {}) {
       rows = rows.filter((r) => !gone.has(r.key));
       return results;
     },
-    myDay: async () =>
-      options.myDay ?? { rows: [], totalSeconds: 0, capacitySeconds: 8 * SECONDS_PER_HOUR },
+    myDay: async () => options.myDay ?? { rows: [], totalSeconds: 0, capacitySeconds: 8 * SECONDS_PER_HOUR },
     openInBrowser: async () => undefined,
   };
   return { tasks, calls };

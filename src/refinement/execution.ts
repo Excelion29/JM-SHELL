@@ -16,7 +16,8 @@ import type {
   TransitionOptions,
   TransitionOutcome,
 } from './tasks-types';
-import type { PlannedTask, RefinementPlan, StoryState } from './types';
+import type { TransitionMemory, TransitionTarget } from './transition-memory';
+import type { PlannedTask, RefinementPlan, StoryState, TaskRun } from './types';
 
 export type ExecutionJira = Pick<
   JiraService,
@@ -28,6 +29,7 @@ export interface ExecutionContext {
   // null: tarea suelta de "Mi día", sin historia de jm donde guardar nada
   store: StoryStore | null;
   now?: () => Date;
+  transitionMemory?: TransitionMemory;
 }
 
 // En el proyecto el estado de trabajo se llama "En curso"; el de terminado, "Finalizada"
@@ -63,16 +65,32 @@ function findTransition(transitions: JiraTransition[], names: string[]): JiraTra
 
 type Applied = { ok: true } | { ok: false; available: string[] };
 
+const TARGET_NAMES: Record<TransitionTarget, string[]> = { start: START_STATUSES, done: DONE_STATUSES };
+const TARGET_CATEGORY: Record<TransitionTarget, StatusCategory> = { start: 'indeterminate', done: 'done' };
+const projectOf = (issueKey: string): string => issueKey.split('-')[0];
+
+// Orden: lo que el dev ya eligió en este proyecto, los nombres conocidos y, al final, la categoría del estado destino
 async function applyTransition(
-  jira: ExecutionJira,
+  ctx: Pick<ExecutionContext, 'jira' | 'transitionMemory'>,
   issueKey: string,
-  names: string[],
+  target: TransitionTarget,
   chosen?: string,
 ): Promise<Applied> {
-  const transitions = await jira.getTransitions(issueKey);
-  const match = chosen ? transitions.find((t) => t.name === chosen) : findTransition(transitions, names);
-  if (!match) return { ok: false, available: transitions.map((t) => t.name) };
-  await jira.doTransition(issueKey, match.id);
+  const transitions = await ctx.jira.getTransitions(issueKey);
+  const project = projectOf(issueKey);
+  const remembered = ctx.transitionMemory?.get(project, target);
+  const inCategory = transitions.filter((t) => t.to?.statusCategory?.key === TARGET_CATEGORY[target]);
+  const match = chosen
+    ? transitions.find((t) => t.name === chosen)
+    : (transitions.find((t) => t.name === remembered) ??
+      findTransition(transitions, TARGET_NAMES[target]) ??
+      (inCategory.length === 1 ? inCategory[0] : undefined));
+  if (!match) {
+    const candidates = inCategory.length > 0 ? inCategory : transitions;
+    return { ok: false, available: candidates.map((t) => t.name) };
+  }
+  await ctx.jira.doTransition(issueKey, match.id);
+  if (chosen) ctx.transitionMemory?.set(project, target, match.name);
   return { ok: true };
 }
 
@@ -110,7 +128,7 @@ export async function startTask(
     const category = categoryOf(await ctx.jira.getIssue(issueKey));
     if (category === 'done' && !options.reopen) return { kind: 'needs-reopen' };
     if (category !== 'indeterminate') {
-      const applied = await applyTransition(ctx.jira, issueKey, START_STATUSES, options.transitionName);
+      const applied = await applyTransition(ctx, issueKey, 'start', options.transitionName);
       if (!applied.ok) return unmatched(applied.available);
     }
     if (ctx.store && storyKey) await recordStart(ctx, storyKey, issueKey);
@@ -120,16 +138,22 @@ export async function startTask(
   }
 }
 
-async function markPendingDone(ctx: ExecutionContext, storyKey: string, issueKey: string): Promise<void> {
+async function markPendingDone(
+  ctx: ExecutionContext,
+  storyKey: string,
+  issueKey: string,
+  direct: boolean,
+): Promise<void> {
   const finishedAt = (ctx.now?.() ?? new Date()).toISOString();
   await updateState(ctx.store as StoryStore, storyKey, (state) => {
-    const run = state.taskRuns[issueKey] ?? {
+    const run: TaskRun = state.taskRuns[issueKey] ?? {
       issueKey,
       claudeSessionId: null,
-      startedAt: finishedAt,
+      startedAt: direct ? null : finishedAt,
       finishedAt: null,
       activeMs: 0,
       status: 'started' as const,
+      ...(direct ? { finishedDirect: true } : {}),
     };
     run.finishedAt = run.finishedAt ?? finishedAt;
     run.pendingDone = true;
@@ -141,6 +165,11 @@ async function clearPendingDone(ctx: ExecutionContext, storyKey: string, issueKe
   await updateState(ctx.store as StoryStore, storyKey, (state) => {
     const run = state.taskRuns[issueKey];
     if (!run) return;
+    // Un cierre directo sin transición no deja rastro: nunca hubo inicio
+    if (run.finishedDirect && run.status !== 'done') {
+      delete state.taskRuns[issueKey];
+      return;
+    }
     delete run.pendingDone;
     if (run.status !== 'done') run.finishedAt = null;
   });
@@ -167,8 +196,8 @@ export async function finishTask(
   const tracked = Boolean(ctx.store && storyKey);
   try {
     assertKey(issueKey);
-    if (tracked) await markPendingDone(ctx, storyKey as string, issueKey);
-    const applied = await applyTransition(ctx.jira, issueKey, DONE_STATUSES, options.transitionName);
+    if (tracked) await markPendingDone(ctx, storyKey as string, issueKey, options.direct === true);
+    const applied = await applyTransition(ctx, issueKey, 'done', options.transitionName);
     // Sin transición a Finalizada el dev decide en el selector: no queda un cierre pendiente que `r` aplique solo
     if (!applied.ok) {
       if (tracked) await clearPendingDone(ctx, storyKey as string, issueKey);
@@ -202,8 +231,9 @@ export async function returnOptions(jira: ExecutionJira, issueKey: string): Prom
 }
 
 export async function returnTo(jira: ExecutionJira, issueKey: string, transitionName: string): Promise<void> {
-  const applied = await applyTransition(jira, issueKey, [], transitionName);
-  if (!applied.ok) throw new Error(`Jira ya no ofrece la transición "${transitionName}" para ${issueKey}.`);
+  const match = (await jira.getTransitions(issueKey)).find((t) => t.name === transitionName);
+  if (!match) throw new Error(`Jira ya no ofrece la transición "${transitionName}" para ${issueKey}.`);
+  await jira.doTransition(issueKey, match.id);
 }
 
 const BLOCKED_BY_CATEGORY: Partial<Record<StatusCategory, string>> = {

@@ -1,4 +1,7 @@
 import { test } from 'node:test';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import assert from 'node:assert/strict';
 import type { JiraIssue, JiraTransition } from '../config/types';
 import {
@@ -16,6 +19,7 @@ import {
   taskContextName,
 } from './execution';
 import { readState, updateState } from './state';
+import { createFileTransitionMemory, type TransitionMemory } from './transition-memory';
 import { seedStory, storeAt, task, tempRoot } from './test-support';
 
 const STORY = 'AQ-45';
@@ -223,6 +227,41 @@ test('sin transición a Finalizada no queda un cierre pendiente que r aplique so
   assert.deepEqual(await retryPending(ctx, STORY), { finished: [], failed: [] });
 });
 
+test('finalizar directo registra finishedDirect sin inicio ni tiempo y no toca la estimación', async () => {
+  const { ctx, calls, store } = await setup({ issues: ISSUES, transitions: { [T1]: DONE_TRANSITIONS } });
+  const outcome = await finishTask(ctx, STORY, T1, { direct: true });
+  assert.equal(outcome.kind, 'ok');
+  assert.deepEqual(calls.transitions, [{ key: T1, id: '31' }]);
+  const run = (await readState(store, STORY))?.taskRuns[T1];
+  assert.equal(run?.status, 'done');
+  assert.equal(run?.startedAt, null);
+  assert.equal(run?.finishedAt, FIXED_NOW.toISOString());
+  assert.equal(run?.activeMs, 0);
+  assert.equal(run?.finishedDirect, true);
+  assert.equal(run?.pendingDone, undefined);
+});
+
+test('finalizar directo sin transición a Finalizada ofrece las disponibles y no deja rastro hasta elegir', async () => {
+  const { ctx, calls, store } = await setup({
+    issues: ISSUES,
+    transitions: { [T1]: [{ id: '12', name: 'Backlog', to: { name: 'Backlog' } }] },
+  });
+  assert.deepEqual(await finishTask(ctx, STORY, T1, { direct: true }), { kind: 'choose', available: ['Backlog'] });
+  assert.deepEqual((await readState(store, STORY))?.taskRuns, {});
+  assert.equal((await finishTask(ctx, STORY, T1, { direct: true, transitionName: 'Backlog' })).kind, 'ok');
+  assert.deepEqual(calls.transitions, [{ key: T1, id: '12' }]);
+  assert.equal((await readState(store, STORY))?.taskRuns[T1].finishedDirect, true);
+});
+
+test('finalizar directo una tarea ya iniciada en jm conserva su tiempo medido', async () => {
+  const { ctx, store } = await setup({ issues: ISSUES, transitions: { [T2]: DONE_TRANSITIONS } });
+  await startTask(ctx, STORY, T2);
+  await finishTask(ctx, STORY, T2, { direct: true });
+  const run = (await readState(store, STORY))?.taskRuns[T2];
+  assert.equal(run?.startedAt, FIXED_NOW.toISOString());
+  assert.equal(run?.finishedDirect, undefined);
+});
+
 test('borrar: finalizadas y en curso se bloquean, las demás se borran y el registro se limpia', async () => {
   const issues = { ...ISSUES, [T1]: { ...ISSUES[T1], status: 'Finalizada', category: 'done' as const } };
   const { ctx, calls, store } = await setup({ issues });
@@ -288,4 +327,51 @@ test('Mi día suma horas, marca las vencidas y consulta lo asignado al dev', asy
   );
   assert.match(calls.searches[0], /currentUser\(\)/);
   assert.equal(categoryOf(toIssue(T1, issues[T1])), 'new');
+});
+
+const CUSTOM_START: JiraTransition[] = [
+  { id: '21', name: 'Arrancar', to: { name: 'Desarrollo', statusCategory: { key: 'indeterminate' } } },
+  { id: '22', name: 'Backlog', to: { name: 'Backlog', statusCategory: { key: 'new' } } },
+];
+const TWO_ACTIVE: JiraTransition[] = [
+  { id: '21', name: 'Arrancar', to: { name: 'Desarrollo', statusCategory: { key: 'indeterminate' } } },
+  { id: '23', name: 'Revisar', to: { name: 'Revisión', statusCategory: { key: 'indeterminate' } } },
+  { id: '22', name: 'Backlog', to: { name: 'Backlog', statusCategory: { key: 'new' } } },
+];
+
+test('si ningún nombre coincide, una única transición de la categoría En curso se aplica sola', async () => {
+  const { ctx, calls } = await setup({ issues: ISSUES, transitions: { [T1]: CUSTOM_START } });
+  assert.deepEqual(await startTask(ctx, STORY, T1), { kind: 'ok', storyKey: STORY });
+  assert.deepEqual(calls.transitions, [{ key: T1, id: '21' }]);
+});
+
+test('con varias candidatas de la categoría se pregunta solo entre ellas', async () => {
+  const { ctx, calls } = await setup({ issues: ISSUES, transitions: { [T1]: TWO_ACTIVE } });
+  assert.deepEqual(await startTask(ctx, STORY, T1), { kind: 'choose', available: ['Arrancar', 'Revisar'] });
+  assert.equal(calls.transitions.length, 0);
+});
+
+test('sin categoría que coincida se ofrecen todas las transiciones', async () => {
+  const { ctx } = await setup({ issues: ISSUES, transitions: { [T1]: [{ id: '1', name: 'X' }, { id: '2', name: 'Y' }] } });
+  assert.deepEqual(await startTask(ctx, STORY, T1), { kind: 'choose', available: ['X', 'Y'] });
+});
+
+test('la elección del dev se recuerda por proyecto y se usa la próxima vez', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jm-trans-'));
+  const memory = createFileTransitionMemory(dir);
+  const { ctx, calls } = await setup({ issues: ISSUES, transitions: { [T1]: TWO_ACTIVE } });
+  const withMemory = { ...ctx, transitionMemory: memory };
+  assert.equal((await startTask(withMemory, STORY, T1, { transitionName: 'Revisar' })).kind, 'ok');
+  const stored = JSON.parse(fs.readFileSync(path.join(dir, 'transiciones.json'), 'utf8'));
+  assert.deepEqual(stored, { AQ: { start: 'Revisar' } });
+  assert.equal((await startTask({ ...withMemory, transitionMemory: createFileTransitionMemory(dir) }, STORY, T1)).kind, 'ok');
+  assert.deepEqual(calls.transitions, [{ key: T1, id: '23' }, { key: T1, id: '23' }]);
+});
+
+test('la memoria ignora entradas inválidas', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jm-trans-'));
+  fs.writeFileSync(path.join(dir, 'transiciones.json'), JSON.stringify({ 'bad key': { start: 'X' }, AQ: { start: 5, done: 'Cerrar' } }));
+  const memory: TransitionMemory = createFileTransitionMemory(dir);
+  assert.equal(memory.get('AQ', 'start'), undefined);
+  assert.equal(memory.get('AQ', 'done'), 'Cerrar');
 });

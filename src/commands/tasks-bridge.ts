@@ -10,6 +10,7 @@ import {
   returnTo,
   startTask,
 } from '../refinement/execution';
+import { createFileTransitionMemory } from '../refinement/transition-memory';
 import { isValidIssueKey, projectRoot } from '../refinement/state';
 import type { StoryStore } from '../refinement/story-store';
 import type { TasksBridge } from '../refinement/tasks-types';
@@ -28,9 +29,11 @@ async function localStoryOf(parentKey: string | null): Promise<string | null> {
 }
 
 export function createTasksBridge(getJira: () => JiraService): TasksBridge {
+  const transitionMemory = createFileTransitionMemory();
   const ctxOf = async (storyKey: string | null) => ({
     jira: getJira(),
     store: storyKey ? await storeOf(storyKey) : null,
+    transitionMemory,
   });
   return {
     load: async (storyKey) => loadTaskRows(await ctxOf(storyKey), storyKey),
@@ -40,6 +43,10 @@ export function createTasksBridge(getJira: () => JiraService): TasksBridge {
       return startTask(await ctxOf(storyKey), storyKey, issueKey, options);
     },
     finish: async ({ storyKey, issueKey }, options) => finishTask(await ctxOf(storyKey), storyKey, issueKey, options),
+    finishMyDay: async (issueKey, parentKey, options) => {
+      const storyKey = await localStoryOf(parentKey);
+      return finishTask(await ctxOf(storyKey), storyKey, issueKey, options);
+    },
     retryPending: async (storyKey) => retryPending(await ctxOf(storyKey), storyKey),
     returnOptions: (issueKey) => returnOptions(getJira(), issueKey),
     returnTo: (issueKey, name) => returnTo(getJira(), issueKey, name),

@@ -62,10 +62,13 @@ export type TaskRunStatus = 'started' | 'done';
 export interface TaskRun {
   issueKey: string;
   claudeSessionId: string | null;
-  startedAt: string;
+  // null solo en cierres directos: no hubo inicio medido
+  startedAt: string | null;
   finishedAt: string | null;
   activeMs: number;
   status: TaskRunStatus;
+  // Finalizada sin abrir Claude: la calibración estimado-vs-real la excluye
+  finishedDirect?: boolean;
   // Se terminó pero Jira no respondió: se reintenta con `r`
   pendingDone?: boolean;
 }

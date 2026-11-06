@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { MyDayModel, TasksBridge } from '../../refinement/tasks-types.js';
+import { DirectFinishFlow, type DirectFinishItem, type DirectFinishResult } from '../components/direct-finish.js';
 import { LoadGate } from '../components/load-gate.js';
 import { formatDuration } from '../components/duration.js';
 import { OptionSelector } from '../components/option-selector.js';
@@ -11,6 +12,7 @@ import { useLoad } from '../components/use-load.js';
 import {
   CHAT_DEFAULT_TERMINAL_COLUMNS,
   COLORS,
+  FINISH_TEXTS,
   FOOTER_HINTS,
   FRAME_HORIZONTAL_OVERHEAD,
   HOME_TEXTS,
@@ -37,6 +39,7 @@ export function MyDayScreen(props: MyDayScreenProps) {
 type Mode =
   | { name: 'list' }
   | { name: 'busy' }
+  | { name: 'finish'; item: DirectFinishItem }
   | { name: 'reopen'; key: string; parentKey: string | null }
   | { name: 'choose'; key: string; parentKey: string | null; available: string[] };
 
@@ -75,9 +78,27 @@ function MyDayBody({
     setMode({ name: 'list' });
   };
 
+  const openFinish = () => {
+    if (!current) return;
+    if (current.category === 'done') return setError(FINISH_TEXTS.directNothing);
+    setError(null);
+    setMode({
+      name: 'finish',
+      item: { storyKey: current.parentKey, issueKey: current.key, title: current.title, status: current.status },
+    });
+  };
+
+  const closeFinish = (result: DirectFinishResult | null) => {
+    setMode({ name: 'list' });
+    if (!result) return;
+    if (result.failed.length > 0) setError(FINISH_TEXTS.directSummary(result.done.length, result.failed));
+    onRefresh();
+  };
+
   useInput(
     (input, key) => {
       if (key.escape) onBack();
+      else if (input === KEYS.finishDirect) openFinish();
       else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
       else if (key.downArrow) setSelected((i) => Math.min(model.rows.length - 1, i + 1));
       else if (input === KEYS.retry) onRefresh();
@@ -92,6 +113,15 @@ function MyDayBody({
   );
 
   if (mode.name === 'busy') return <Text>{TASKS_TEXTS.starting(current?.key ?? '')}</Text>;
+  if (mode.name === 'finish') {
+    return (
+      <DirectFinishFlow
+        items={[mode.item]}
+        finish={({ issueKey }, options) => tasks.finishMyDay(issueKey, mode.item.storyKey, options)}
+        onClose={closeFinish}
+      />
+    );
+  }
   if (mode.name === 'reopen') {
     return (
       <YesNoPrompt
@@ -104,7 +134,7 @@ function MyDayBody({
   if (mode.name === 'choose') {
     return (
       <OptionSelector
-        title={TASKS_TEXTS.chooseTransition(mode.key)}
+        title={TASKS_TEXTS.chooseTransition}
         options={mode.available}
         onSelect={(name) => void start(mode.key, mode.parentKey, { reopen: true, transitionName: name })}
         onCancel={() => setMode({ name: 'list' })}

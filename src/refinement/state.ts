@@ -152,7 +152,8 @@ function readTaskRuns(value: unknown): Record<string, TaskRun> {
   const runs: Record<string, TaskRun> = {};
   for (const [issueKey, raw] of Object.entries(value)) {
     const startedAt = isRecord(raw) ? readTimestamp(raw.startedAt) : null;
-    if (!isRecord(raw) || !isValidIssueKey(issueKey) || startedAt === null) continue;
+    const direct = isRecord(raw) && raw.finishedDirect === true;
+    if (!isRecord(raw) || !isValidIssueKey(issueKey) || (startedAt === null && !direct)) continue;
     runs[issueKey] = {
       issueKey,
       claudeSessionId: readSessionId(raw.claudeSessionId),
@@ -161,6 +162,7 @@ function readTaskRuns(value: unknown): Record<string, TaskRun> {
       activeMs: readCount(raw.activeMs),
       status: raw.status === 'done' ? 'done' : 'started',
       ...(raw.pendingDone === true ? { pendingDone: true } : {}),
+      ...(direct ? { finishedDirect: true } : {}),
     };
   }
   return runs;

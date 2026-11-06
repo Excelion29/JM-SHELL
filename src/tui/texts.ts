@@ -29,6 +29,7 @@ export const KEYS = {
   giveBack: 'b',
   pendingFilter: 'p',
   viewPlan: 'v',
+  finishDirect: 'f',
 } as const;
 
 // Palabra que hay que escribir completa para borrar subtareas de Jira
@@ -184,8 +185,8 @@ export const FOOTER_HINTS = {
   knowledge: 'Esc cancelar',
   knowledgeBrowse: `↑↓ elegir · Enter abrir carpeta o nota · Backspace subir · ${KEYS.selectFolder} elegir esta carpeta · Esc cancelar`,
   reviewReadOnly: `↑↓ moverte · ${KEYS.detail} detalle · Esc volver`,
-  tasks: `↑↓ moverte · espacio marcar · ${KEYS.start} iniciar · ${KEYS.giveBack} devolver · ${KEYS.removeTasks} borrar · ${KEYS.pendingFilter} pendientes · ${KEYS.retry} actualizar · ${KEYS.open} abrir · ${KEYS.viewPlan} ver plan · Esc inicio`,
-  myDay: `↑↓ moverte · ${KEYS.start} iniciar · ${KEYS.retry} actualizar · ${KEYS.open} abrir · Esc inicio`,
+  tasks: `↑↓ moverte · espacio marcar · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar · ${KEYS.giveBack} devolver · ${KEYS.removeTasks} borrar · ${KEYS.pendingFilter} pendientes · ${KEYS.retry} actualizar · ${KEYS.open} abrir · ${KEYS.viewPlan} ver plan · Esc inicio`,
+  myDay: `↑↓ moverte · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar ·${KEYS.retry} actualizar · ${KEYS.open} abrir · Esc inicio`,
   options: '↑↓ elegir · Enter confirmar · Esc cancelar',
   yesNo: `${KEYS.confirmYes}/${KEYS.confirmNo}`,
   typeConfirm: 'Escribe la palabra y pulsa Enter · Esc cancelar',
@@ -390,16 +391,16 @@ export const TASKS_TEXTS = {
   noAssignee: 'sin asignar',
   noEstimate: '—',
   noDate: '—',
-  summary: (done: number, total: number, pending: string) =>
-    `${done} de ${total} finalizadas · ${pending} pendientes`,
+  summary: (done: number, total: number, pending: string) => `${done} de ${total} finalizadas · ${pending} pendientes`,
   filterOn: 'Filtro: solo pendientes',
   nextStep: `Siguiente paso: elige una tarea y pulsa ${KEYS.start} para iniciarla.`,
   doneBlocked: (key: string) => `${key} está finalizada: no se puede borrar ni editar.`,
   inProgressBlocked: (key: string) => `${key} está en curso: devuélvela con ${KEYS.giveBack} antes de borrarla.`,
   nothingSelected: 'Marca con espacio las tareas que quieres borrar.',
   starting: (key: string) => `Iniciando ${key} en Jira...`,
-  reopenQuestion: (key: string) => `${key} ya está finalizada. ¿La reabro y la inicio? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
-  chooseTransition: (key: string) => `Jira no ofrece el estado esperado para ${key}. Elige la transición:`,
+  reopenQuestion: (key: string) =>
+    `${key} ya está finalizada. ¿La reabro y la inicio? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  chooseTransition: "Tu proyecto no tiene un estado 'En curso' conocido. ¿Cuál usas para empezar? (lo recordaré)",
   chooseReturn: (key: string) => `¿A qué estado devuelves ${key}?`,
   returned: (key: string, name: string) => `${key} devuelta con «${name}». Ya puedes borrarla.`,
   actionError: (message: string) => `No pude completar la acción: ${message}`,
@@ -422,8 +423,19 @@ export const FINISH_TEXTS = {
   working: 'Pasando la tarea a Finalizada...',
   done: (key: string) => `${key} quedó Finalizada. La estimación original no se tocó.`,
   keptInProgress: (key: string) => `${key} sigue En curso.`,
-  chooseTransition: (key: string) => `Jira no ofrece «Finalizada» para ${key}. Elige la transición:`,
+  chooseTransition: "Tu proyecto no tiene un estado 'Finalizada' conocido. ¿Cuál usas para terminar? (lo recordaré)",
   failed: (message: string) => `No pude finalizarla: ${message}`,
+  directTitle: 'Se finalizarán en Jira estas tareas, sin iniciarlas ni abrir Claude:',
+  directLine: (key: string, title: string, status: string) => `  ${key} · ${title} · ${status}`,
+  directQuestion: `¿Finalizar sin abrir Claude? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  directWorking: (key: string) => `Finalizando ${key} en Jira...`,
+  directSkipped: (keys: string[]) => `Ya finalizadas, se omiten: ${keys.join(', ')}.`,
+  directNothing: 'No hay tareas por finalizar: las elegidas ya están finalizadas.',
+  directCancelled: 'sin elegir transición',
+  directSummary: (done: number, failed: string[]) =>
+    failed.length === 0
+      ? `${done} finalizadas.`
+      : `${done} finalizadas, ${failed.length} con error: ${failed.join('; ')}`,
 } as const;
 
 export const MY_DAY_TEXTS = {

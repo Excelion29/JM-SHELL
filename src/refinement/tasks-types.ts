@@ -26,6 +26,8 @@ export interface TransitionOptions {
   reopen?: boolean;
   // Transición elegida a mano de la lista que ofrece el proyecto
   transitionName?: string;
+  // Finalizar sin haber iniciado ni abierto Claude: el registro no mide tiempo
+  direct?: boolean;
 }
 
 export type TransitionOutcome =
@@ -73,6 +75,7 @@ export interface TasksBridge {
   start: (storyKey: string, issueKey: string, options: TransitionOptions) => Promise<TransitionOutcome>;
   startMyDay: (issueKey: string, parentKey: string | null, options: TransitionOptions) => Promise<TransitionOutcome>;
   finish: (target: TaskFinishTarget, options: TransitionOptions) => Promise<TransitionOutcome>;
+  finishMyDay: (issueKey: string, parentKey: string | null, options: TransitionOptions) => Promise<TransitionOutcome>;
   retryPending: (storyKey: string) => Promise<PendingRetry>;
   returnOptions: (issueKey: string) => Promise<string[]>;
   returnTo: (issueKey: string, transitionName: string) => Promise<void>;

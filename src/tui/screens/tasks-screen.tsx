@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { PlanBridge } from '../../refinement/review-types.js';
 import type { DeleteResult, TaskRow, TasksBridge, TasksModel } from '../../refinement/tasks-types.js';
+import { DirectFinishFlow, type DirectFinishItem, type DirectFinishResult } from '../components/direct-finish.js';
 import { LoadGate } from '../components/load-gate.js';
 import { OptionSelector } from '../components/option-selector.js';
 import { TypedConfirm, YesNoPrompt } from '../components/task-prompts.js';
@@ -12,6 +13,7 @@ import {
   CHAT_DEFAULT_TERMINAL_COLUMNS,
   CHAT_DEFAULT_TERMINAL_ROWS,
   COLORS,
+  FINISH_TEXTS,
   FOOTER_HINTS,
   FRAME_HORIZONTAL_OVERHEAD,
   HOME_TEXTS,
@@ -48,6 +50,7 @@ type Mode =
   | { name: 'giveBack'; key: string; options: string[] }
   | { name: 'delete'; keys: string[] }
   | { name: 'deleted'; results: DeleteResult[] }
+  | { name: 'finish'; items: DirectFinishItem[]; skipped: string[] }
   | { name: 'plan' };
 
 interface Message {
@@ -123,7 +126,9 @@ function TasksBody({ initial, storyKey, tasks, plan, onBack, onRunTask }: TasksS
     run(TASKS_TEXTS.loading, async () => {
       const retried = model.rows.some((row) => row.pendingDone) ? await tasks.retryPending(storyKey) : null;
       await reload();
-      return retried ? { message: infoMessage(TASKS_TEXTS.retryDone(retried.finished.length, retried.failed.length)) } : {};
+      return retried
+        ? { message: infoMessage(TASKS_TEXTS.retryDone(retried.finished.length, retried.failed.length)) }
+        : {};
     });
 
   const confirmDelete = (keys: string[]) =>
@@ -134,9 +139,33 @@ function TasksBody({ initial, storyKey, tasks, plan, onBack, onRunTask }: TasksS
       return { mode: { name: 'deleted', results } };
     });
 
+  const openFinish = () => {
+    const chosen = marked.length > 0 ? model.rows.filter((row) => marked.includes(row.key)) : current ? [current] : [];
+    const pending = chosen.filter((row) => row.category !== 'done');
+    const skipped = chosen.filter((row) => row.category === 'done').map((row) => row.key);
+    if (pending.length === 0) return setMessage(infoMessage(FINISH_TEXTS.directNothing));
+    setMessage(null);
+    setMode({
+      name: 'finish',
+      skipped,
+      items: pending.map((row) => ({ storyKey, issueKey: row.key, title: row.title, status: row.status })),
+    });
+  };
+
+  const closeFinish = (result: DirectFinishResult | null, skipped: string[]) =>
+    run(TASKS_TEXTS.loading, async () => {
+      if (!result) return {};
+      setMarked([]);
+      await reload();
+      const summary = FINISH_TEXTS.directSummary(result.done.length, result.failed);
+      const note = skipped.length > 0 ? ` ${FINISH_TEXTS.directSkipped(skipped)}` : '';
+      return { message: result.failed.length > 0 ? errorMessage(summary + note) : infoMessage(summary + note) };
+    });
+
   useInput(
     (input, key) => {
       if (key.escape) onBack();
+      else if (input === KEYS.finishDirect) openFinish();
       else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
       else if (key.downArrow) setSelected((i) => Math.min(rows.length - 1, i + 1));
       else if (input === KEYS.toggle && current) toggleMark(current);
@@ -169,6 +198,15 @@ function TasksBody({ initial, storyKey, tasks, plan, onBack, onRunTask }: TasksS
       />
     );
   }
+  if (mode.name === 'finish') {
+    return (
+      <DirectFinishFlow
+        items={mode.items}
+        finish={tasks.finish}
+        onClose={(result) => void closeFinish(result, mode.skipped)}
+      />
+    );
+  }
   if (mode.name === 'reopen') {
     return (
       <YesNoPrompt
@@ -181,7 +219,7 @@ function TasksBody({ initial, storyKey, tasks, plan, onBack, onRunTask }: TasksS
   if (mode.name === 'choose') {
     return (
       <OptionSelector
-        title={TASKS_TEXTS.chooseTransition(mode.key)}
+        title={TASKS_TEXTS.chooseTransition}
         options={mode.available}
         onSelect={(name) => void start(mode.key, { reopen: true, transitionName: name })}
         onCancel={() => backToList()}
