@@ -6,7 +6,7 @@ import { PROJECT_CONFIG_NAME } from '../config/loader';
 import { getSessionPin } from '../utils/session';
 import type { ChatKnowledge } from '../refinement/chat-types';
 import { writeKnowledgeContext, writeMcpConfig } from '../refinement/chat-store';
-import { assertSafeArgs } from '../refinement/claude';
+import { isSafeAddDirPath, resetTrustedAddDirs, trustAddDir, workFilesOf } from '../refinement/claude';
 import { startKbProxy } from '../refinement/kb-proxy';
 import {
   adrNotePath,
@@ -21,7 +21,9 @@ import {
 } from '../refinement/knowledge';
 import { verifyMcpEndpoint } from '../refinement/knowledge-rest';
 import { createLocalSource, createRestSource, KnowledgeSource } from '../refinement/knowledge-source';
-import { hasLogProgress } from '../refinement/state';
+import { assertLocalRootAllowed } from '../refinement/local-root';
+import { safeEnsureDirIn } from '../refinement/safe-fs';
+import { workDirFor } from '../refinement/workdir';
 
 // Reglas de permisos de Claude: estos caracteres rompen la sintaxis de Write(<ruta>/**)
 const RULE_UNSAFE_CHARS = /[()*?[\]{}]/;
@@ -39,6 +41,8 @@ export interface OpenKnowledgeInput {
   root: string;
   key: string;
   hasSession: boolean;
+  // La bitácora de la historia ya tiene avance (se lee del almacén de la historia)
+  hasLocalLog: boolean;
   // Solo cambia en las pruebas: por defecto es ~/.jira-tool
   secretsDir?: string;
 }
@@ -76,28 +80,44 @@ async function listEntries(source: KnowledgeSource, dir: string, target: string)
 const folderNames = (entries: Array<{ name: string; isFolder: boolean }>) =>
   entries.filter((entry) => entry.isFolder).map((entry) => entry.name);
 
-async function openMcp(
+export interface McpAccess {
+  host: string;
+  origin: string;
+  apiKey: string;
+  ca?: string;
+}
+
+// La API key y el certificado fijado viven cifrados en ~/.jira-tool: se abren con el PIN de la sesión
+export async function resolveMcpAccess(
   config: Extract<KnowledgeConfig, { type: 'mcp' }>,
-  input: OpenKnowledgeInput,
-): Promise<KnowledgeRuntime> {
+  secretsDir?: string,
+): Promise<McpAccess> {
   const { host, origin } = new URL(config.url);
   const pin = getSessionPin();
-  const apiKey = pin ? await loadKnowledgeKey(config.url, pin, input.secretsDir) : null;
+  const apiKey = pin ? await loadKnowledgeKey(config.url, pin, secretsDir) : null;
   if (!apiKey)
     throw new Error(
       `No encuentro la API key de ${host}. Borra el campo "knowledge" del .jira.json para configurarla de nuevo.`,
     );
   // Un certificado fijado para este host manda sobre lo que diga el .jira.json de la carpeta
-  const ca = (await loadKnowledgeCert(config.url, input.secretsDir)) ?? undefined;
+  const ca = (await loadKnowledgeCert(config.url, secretsDir)) ?? undefined;
   if (config.tls === 'pinned' && !ca)
     throw new Error(`No encuentro el certificado guardado de ${host}. Configura la base de nuevo.`);
+  return { host, origin, apiKey, ca };
+}
 
+async function openMcp(
+  config: Extract<KnowledgeConfig, { type: 'mcp' }>,
+  input: OpenKnowledgeInput,
+): Promise<KnowledgeRuntime> {
+  const { host, origin, apiKey, ca } = await resolveMcpAccess(config, input.secretsDir);
   const source = createRestSource({ origin, apiKey, ca });
   let notePath: string;
+  let adrFolder: string;
   let noteExists: boolean;
   try {
     const folders = folderNames(await listEntries(source, config.baseFolder, host));
-    const adrFolder = resolveAdrFolder(folders);
+    adrFolder = resolveAdrFolder(folders);
     notePath = adrNotePath(config.baseFolder, adrFolder, input.key);
     // Se mira el listado de la carpeta JM-ADR en vez de descargar la nota
     noteExists =
@@ -114,7 +134,7 @@ async function openMcp(
     throw unreachable(host, err);
   });
   // Antes de abrir el intermediario: si esto falla no queda un servidor local huérfano
-  const startMessage = await startMessageFor(input, noteExists);
+  const startMessage = startMessageFor(input, noteExists);
   const proxy = await startKbProxy({
     upstreamUrl: mcpUrl,
     apiKey,
@@ -126,24 +146,24 @@ async function openMcp(
   return {
     kb: { type: 'mcp' },
     proxyUrl: proxy.url,
-    context: knowledgeContextLine(config, notePath),
+    context: knowledgeContextLine(
+      config,
+      notePath,
+      joinKnowledgePath(config.baseFolder, adrFolder, input.key),
+      workFilesOf(workDirFor(input.root), input.key).attachments,
+    ),
     startMessage,
     close: proxy.close,
   };
 }
 
-async function startMessageFor(input: OpenKnowledgeInput, noteExists: boolean): Promise<StartMessage> {
-  return chooseStartMessage({
-    hasSession: input.hasSession,
-    hasLocalLog: await hasLogProgress(input.root, input.key),
-    noteExists,
-  });
+function startMessageFor(input: OpenKnowledgeInput, noteExists: boolean): StartMessage {
+  return chooseStartMessage({ hasSession: input.hasSession, hasLocalLog: input.hasLocalLog, noteExists });
 }
 
 function assertLocalRootUsable(root: string): void {
-  try {
-    assertSafeArgs(['--add-dir', root]);
-  } catch {
+  assertLocalRootAllowed(root);
+  if (!isSafeAddDirPath(root)) {
     throw new Error(
       `La carpeta "${root}" tiene caracteres que Claude no admite en la línea de comandos (% " ! ^ & | < >) o termina en barra.`,
     );
@@ -155,6 +175,7 @@ async function openLocal(
   input: OpenKnowledgeInput,
 ): Promise<KnowledgeRuntime> {
   assertLocalRootUsable(config.root);
+  trustAddDir(config.root);
   const source = createLocalSource(config.root);
   const folders = folderNames(await listEntries(source, config.baseFolder, config.root));
   const adrFolder = resolveAdrFolder(folders);
@@ -170,23 +191,26 @@ async function openLocal(
   return {
     kb: { type: 'local', root: config.root, adrDir: ruleDir },
     proxyUrl: null,
-    context: knowledgeContextLine(config, notePath),
-    startMessage: await startMessageFor(input, noteExists),
+    context: knowledgeContextLine(config, notePath, `${ruleDir}/${input.key}`),
+    startMessage: startMessageFor(input, noteExists),
     close: async () => undefined,
   };
 }
 
 // Bloquea (lanza) si la base configurada no responde: el chat no debe abrirse a ciegas
 export async function openKnowledge(input: OpenKnowledgeInput): Promise<KnowledgeRuntime> {
+  resetTrustedAddDirs();
   const config = await readKnowledgeConfig(input.root);
-  if (!config || config.type === 'none') return { ...NO_KNOWLEDGE, startMessage: await startMessageFor(input, false) };
+  if (!config || config.type === 'none') return { ...NO_KNOWLEDGE, startMessage: startMessageFor(input, false) };
   if (!(await isKnowledgeTrusted(input.root, config, input.secretsDir)))
     throw new Error('La base de conocimiento de este .jira.json aún no está confirmada. Vuelve a entrar a la historia.');
   return config.type === 'mcp' ? openMcp(config, input) : openLocal(config, input);
 }
 
-// Archivos que Claude lee al arrancar; el de contexto se borra cuando ya no hay base conectada
-export function applyKnowledgeFiles(root: string, runtime: KnowledgeRuntime): void {
-  if (runtime.proxyUrl) writeMcpConfig(root, runtime.proxyUrl);
-  writeKnowledgeContext(root, runtime.context);
+// Archivos que Claude lee al arrancar, en la carpeta de trabajo de jm; el de contexto se borra cuando ya no hay base
+export function applyKnowledgeFiles(workDir: string, runtime: KnowledgeRuntime, key: string): void {
+  if (runtime.proxyUrl) writeMcpConfig(workDir, runtime.proxyUrl);
+  // --add-dir exige que la carpeta exista aunque la historia aún no tenga adjuntos
+  if (runtime.kb?.type === 'mcp') safeEnsureDirIn(workDir, workFilesOf(workDir, key).attachments);
+  writeKnowledgeContext(workDir, runtime.context);
 }

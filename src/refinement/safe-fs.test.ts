@@ -5,7 +5,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { assertNoLinks, safeEnsureDir, safeWriteFile } from './safe-fs';
 import { stripControlChars } from './text';
-import { ensureStory, listStories, attachmentsDir, readState, statePath, storyDir } from './state';
+import { legacyStoryDir } from './migrate';
+import { ensureStory, listStoriesFrom, readState } from './state';
+import { attachmentsPathOf, statePathOf, storeAt } from './test-support';
 import { streamToFileWithCap } from './attachments';
 import { Readable } from 'stream';
 
@@ -32,8 +34,8 @@ test('rechaza un directorio de historia que es junction hacia fuera', async (t) 
   const root = await tempRoot();
   const outside = await tempRoot();
   await fs.ensureDir(path.join(root, '.jm', 'historias'));
-  if (!link(t, outside, storyDir(root, 'AQ-1'), 'junction')) return;
-  await assert.rejects(ensureStory(root, 'AQ-1', 'x', null), /seguridad/);
+  if (!link(t, outside, legacyStoryDir(root, 'AQ-1'), 'junction')) return;
+  await assert.rejects(ensureStory(storeAt(root, 'AQ-1'), 'AQ-1', 'x', null), /seguridad/);
   assert.deepEqual(await fs.readdir(outside), []);
 });
 
@@ -41,8 +43,9 @@ test('rechaza escribir sobre un archivo enlazado dentro de adjuntos', async (t) 
   const root = await tempRoot();
   const outside = path.join(await tempRoot(), 'secreto.txt');
   await fs.writeFile(outside, 'original');
-  await ensureStory(root, 'AQ-1', 'x', null);
-  const dest = path.join(attachmentsDir(root, 'AQ-1'), 'a.png');
+  await ensureStory(storeAt(root, 'AQ-1'), 'AQ-1', 'x', null);
+  await fs.ensureDir(attachmentsPathOf(root, 'AQ-1'));
+  const dest = path.join(attachmentsPathOf(root, 'AQ-1'), 'a.png');
   if (!link(t, outside, dest, 'file')) return;
   assert.throws(() => assertNoLinks(root, dest), /seguridad/);
   assert.throws(() => safeWriteFile(root, dest, 'pisado'), /seguridad/);
@@ -51,9 +54,10 @@ test('rechaza escribir sobre un archivo enlazado dentro de adjuntos', async (t) 
 
 test('rechaza un enlace colgante (destino inexistente)', async (t) => {
   const root = await tempRoot();
-  await ensureStory(root, 'AQ-1', 'x', null);
+  await ensureStory(storeAt(root, 'AQ-1'), 'AQ-1', 'x', null);
+  await fs.ensureDir(attachmentsPathOf(root, 'AQ-1'));
   const missing = path.join(await tempRoot(), 'no-existe.txt');
-  const dest = path.join(attachmentsDir(root, 'AQ-1'), 'b.png');
+  const dest = path.join(attachmentsPathOf(root, 'AQ-1'), 'b.png');
   if (!link(t, missing, dest, 'file')) return;
   assert.throws(() => safeWriteFile(root, dest, 'x'), /seguridad/);
   assert.equal(fs.existsSync(missing), false);
@@ -61,13 +65,13 @@ test('rechaza un enlace colgante (destino inexistente)', async (t) => {
 
 test('estado.json enlazado: la historia aparece como ilegible y no se lee', async (t) => {
   const root = await tempRoot();
-  await ensureStory(root, 'AQ-1', 'x', null);
+  await ensureStory(storeAt(root, 'AQ-1'), 'AQ-1', 'x', null);
   const outside = path.join(await tempRoot(), 'otro.json');
   await fs.writeJson(outside, { summary: 'fuga' });
-  await fs.remove(statePath(root, 'AQ-1'));
-  if (!link(t, outside, statePath(root, 'AQ-1'), 'file')) return;
-  await assert.rejects(readState(root, 'AQ-1'), /seguridad/);
-  assert.match((await listStories(root))[0].summary, /estado ilegible/);
+  await fs.remove(statePathOf(root, 'AQ-1'));
+  if (!link(t, outside, statePathOf(root, 'AQ-1'), 'file')) return;
+  await assert.rejects(readState(storeAt(root, 'AQ-1'), 'AQ-1'), /seguridad/);
+  assert.match((await listStoriesFrom([{ key: 'AQ-1', store: storeAt(root, 'AQ-1') }]))[0].summary, /estado ilegible/);
 });
 
 test('rechaza rutas fuera de .jm', async () => {

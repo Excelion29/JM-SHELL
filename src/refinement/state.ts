@@ -4,6 +4,7 @@ import { findFileUpward } from '../config/loader';
 import { warn } from '../utils/format';
 import { sanitizeFilename } from './attachments';
 import { assertNoLinks, JM_DIR, lexists, safeEnsureDir, safeWriteFile } from './safe-fs';
+import type { StoryStore } from './story-store';
 import { stripControlChars } from './text';
 import { SESSION_ID_PATTERN } from './claude';
 import {
@@ -20,31 +21,30 @@ import {
 } from './types';
 
 const PROJECT_CONFIG_NAME = '.jira.json';
-const STORIES_DIR = 'historias';
-const ATTACHMENTS_DIR = 'adjuntos';
-const STATE_FILE = 'estado.json';
-const PLAN_FILE = 'plan.json';
-const STORY_FILE = 'historia.md';
-const LOG_FILE = 'bitacora.md';
+export const STORIES_DIR = 'historias';
+export const ATTACHMENTS_DIR = 'adjuntos';
+export const STATE_FILE = 'estado.json';
+export const PLAN_FILE = 'plan.json';
+export const STORY_FILE = 'historia.md';
+export const LOG_FILE = 'bitacora.md';
 const DASHBOARD_FILE = 'INICIO.md';
 const GITIGNORE_FILE = '.gitignore';
-export const CHAT_FILE = '.chat.jsonl';
-export const AGENTS_FILE = 'agents.json';
-export const CLAUDE_SETTINGS_FILE = 'claude-settings.json';
-export const MCP_FILE = 'mcp.json';
-export const KNOWLEDGE_CONTEXT_FILE = 'knowledge-context.md';
-// Adjuntos temporales, copia local del chat y definición de subagentes: nada de esto va al repositorio
+export const CHAT_FILE = 'conversacion.jsonl';
+// Nombre anterior: el proxy y Obsidian rechazan los archivos con punto inicial
+export const LEGACY_CHAT_FILE = '.chat.jsonl';
+// Adjuntos temporales y copia local del chat: nada de esto va al repositorio
 const GITIGNORE_LINES = [
   `${STORIES_DIR}/*/${ATTACHMENTS_DIR}/`,
   `${STORIES_DIR}/*/${CHAT_FILE}`,
-  AGENTS_FILE,
-  CLAUDE_SETTINGS_FILE,
-  MCP_FILE,
-  KNOWLEDGE_CONTEXT_FILE,
+  `${STORIES_DIR}/*/${LEGACY_CHAT_FILE}`,
 ];
 // Mismo formato que ISSUE_KEY_PATTERN en src/tui/texts.ts
 const ISSUE_KEY_STRICT = /^[A-Z][A-Z0-9_]+-\d+$/;
 const NO_BLOCK_LABEL = '—';
+const MAX_CELL_LENGTH = 200;
+const ELLIPSIS = '…';
+// Obsidian interpreta enlaces, incrustaciones y HTML dentro de las celdas: se neutralizan todos
+const MARKDOWN_SPECIALS = /[\\|[\]!<>`]/g;
 
 export const PHASE_LABELS: Record<Phase, string> = {
   spec: 'especificación',
@@ -74,17 +74,6 @@ export function projectRoot(): string {
   return config ? path.dirname(config) : process.cwd();
 }
 
-export const storyDir = (root: string, key: string) => path.join(root, JM_DIR, STORIES_DIR, key);
-export const statePath = (root: string, key: string) => path.join(storyDir(root, key), STATE_FILE);
-export const planPath = (root: string, key: string) => path.join(storyDir(root, key), PLAN_FILE);
-export const storyDocPath = (root: string, key: string) => path.join(storyDir(root, key), STORY_FILE);
-export const logPath = (root: string, key: string) => path.join(storyDir(root, key), LOG_FILE);
-export const attachmentsDir = (root: string, key: string) => path.join(storyDir(root, key), ATTACHMENTS_DIR);
-export const chatPath = (root: string, key: string) => path.join(storyDir(root, key), CHAT_FILE);
-export const agentsPath = (root: string) => path.join(root, JM_DIR, AGENTS_FILE);
-export const claudeSettingsPath = (root: string) => path.join(root, JM_DIR, CLAUDE_SETTINGS_FILE);
-export const mcpConfigPath = (root: string) => path.join(root, JM_DIR, MCP_FILE);
-export const knowledgeContextPath = (root: string) => path.join(root, JM_DIR, KNOWLEDGE_CONTEXT_FILE);
 export const dashboardPath = (root: string) => path.join(root, JM_DIR, DASHBOARD_FILE);
 
 export function assertKey(key: string): void {
@@ -154,7 +143,13 @@ const readSessionId = (value: unknown): string | null =>
 const readCount = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
 
-export const emptyUsage = (): StoryUsage => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, turns: 0 });
+export const emptyUsage = (): StoryUsage => ({
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  costUsd: 0,
+  turns: 0,
+});
 
 function readUsage(value: unknown): StoryUsage {
   if (!isRecord(value)) return emptyUsage();
@@ -185,41 +180,54 @@ function normalize(raw: unknown, key: string, file: string, progressed: boolean)
   };
 }
 
-export async function hasLogProgress(root: string, key: string): Promise<boolean> {
-  const file = logPath(root, key);
-  if (!lexists(file)) return false;
-  assertNoLinks(root, file);
-  return (await fs.readFile(file, 'utf8')).trim() !== `# Bitácora ${key}`;
+export async function hasLogProgress(store: StoryStore, key: string): Promise<boolean> {
+  const log = await store.readText(LOG_FILE);
+  return log !== null && log.trim() !== `# Bitácora ${key}`;
 }
 
-export async function readState(root: string, key: string): Promise<StoryState | null> {
+export async function readState(store: StoryStore, key: string): Promise<StoryState | null> {
   assertKey(key);
-  const file = statePath(root, key);
-  if (!lexists(file)) return null;
+  const file = `${store.label}/${STATE_FILE}`;
   try {
-    assertNoLinks(root, file);
-    return normalize(await fs.readJson(file), key, file, await hasLogProgress(root, key));
+    const text = await store.readText(STATE_FILE);
+    if (text === null) return null;
+    const raw: unknown = JSON.parse(text);
+    // La bitácora solo hace falta para deducir la fase de un estado.json que no la trae
+    const phaseKnown = isRecord(raw) && PHASES.includes(raw.phase as Phase);
+    return normalize(raw, key, file, !phaseKnown && (await hasLogProgress(store, key)));
   } catch (err: unknown) {
     throw new Error(`No pude leer ${file}: ${(err as Error).message}`);
   }
 }
 
-async function writeState(root: string, state: StoryState): Promise<void> {
+// El índice de la base solo se rehace cuando cambia algo que muestra
+const indexSignature = (state: StoryState) =>
+  `${state.phase}|${state.summary}|${Object.keys(state.createdIssues).length}`;
+
+async function writeState(store: StoryStore, state: StoryState, previous: StoryState | null): Promise<void> {
   state.updatedAt = new Date().toISOString();
-  safeWriteFile(
-    root,
-    statePath(root, state.key),
-    `${JSON.stringify(state, null, 2)}
-`,
-  );
+  await store.writeText(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
+  if (previous && indexSignature(previous) === indexSignature(state)) return;
+  try {
+    await store.onStoryChanged?.(state);
+  } catch (err: unknown) {
+    warn(`No pude actualizar el índice de la base: ${(err as Error).message}`);
+  }
 }
 
-// Lee de disco justo antes de escribir: la skill también edita estado.json (fase/bloque)
-export async function updateState(root: string, key: string, mutate: (state: StoryState) => void): Promise<StoryState> {
-  const current = await readState(root, key);
+// Lee justo antes de escribir: la skill también edita estado.json (fase/bloque)
+export async function updateState(
+  store: StoryStore,
+  key: string,
+  mutate: (state: StoryState) => void,
+): Promise<StoryState> {
+  const current = await readState(store, key);
   if (!current) throw new Error(`La historia ${key} aún no tiene estado. Ejecuta \`jm refinar ${key}\`.`);
+  const previous = structuredClone(current);
   mutate(current);
-  await writeState(root, current);
+  // Sin cambios no se reescribe: ahorra una escritura (y una ida a la bóveda) por cada guardado repetido
+  if (JSON.stringify(current) === JSON.stringify(previous)) return current;
+  await writeState(store, current, previous);
   return current;
 }
 
@@ -228,8 +236,8 @@ export function ensureJmGitignore(root: string): void {
   const jmDir = path.join(root, JM_DIR);
   safeEnsureDir(root, jmDir);
   const file = path.join(jmDir, GITIGNORE_FILE);
+  if (lexists(file)) assertNoLinks(root, file);
   const current = lexists(file) ? fs.readFileSync(file, 'utf8') : '';
-  if (current) assertNoLinks(root, file);
   const present = new Set(current.split(/\r?\n/).map((line) => line.trim()));
   const missing = GITIGNORE_LINES.filter((line) => !present.has(line));
   if (!missing.length) return;
@@ -238,36 +246,33 @@ export function ensureJmGitignore(root: string): void {
 }
 
 export async function ensureStory(
-  root: string,
+  store: StoryStore,
   key: string,
   summary: string,
   parentKey: string | null,
 ): Promise<StoryState> {
   assertKey(key);
-  ensureJmGitignore(root);
-  safeEnsureDir(root, attachmentsDir(root, key));
-  if (!lexists(logPath(root, key))) {
-    safeWriteFile(root, logPath(root, key), `# Bitácora ${key}\n\n`);
-  }
-  const existing = await readState(root, key);
+  await store.ensureReady();
+  if (!(await store.exists(LOG_FILE))) await store.writeText(LOG_FILE, `# Bitácora ${key}\n\n`);
+  const existing = await readState(store, key);
   if (existing) {
-    return updateState(root, key, (s) => {
+    return updateState(store, key, (s) => {
       s.summary = summary;
       s.parentKey = parentKey;
     });
   }
-  const state = normalize({ summary, parentKey }, key, statePath(root, key), false);
-  await writeState(root, state);
+  const state = normalize({ summary, parentKey }, key, STATE_FILE, false);
+  await writeState(store, state, null);
   return state;
 }
 
 export async function transitionPhase(
-  root: string,
+  store: StoryStore,
   key: string,
   to: Phase,
   options: { reopen?: boolean } = {},
 ): Promise<StoryState> {
-  return updateState(root, key, (s) => {
+  return updateState(store, key, (s) => {
     if (PHASES.indexOf(to) < PHASES.indexOf(s.phase) && !options.reopen) {
       throw new Error(`No se puede pasar de "${s.phase}" a "${to}" sin reabrir la historia.`);
     }
@@ -276,18 +281,18 @@ export async function transitionPhase(
 }
 
 // Avanza solo si el destino está por delante: nunca pisa un avance que hizo la skill
-export async function advancePhase(root: string, key: string, to: Phase): Promise<StoryState> {
-  return updateState(root, key, (s) => {
+export async function advancePhase(store: StoryStore, key: string, to: Phase): Promise<StoryState> {
+  return updateState(store, key, (s) => {
     if (PHASES.indexOf(to) > PHASES.indexOf(s.phase)) s.phase = to;
   });
 }
 
 const UNREADABLE_STATE_EPOCH = new Date(0).toISOString();
 
-function unreadableStory(key: string): StoryState {
+function unreadableStory(key: string, location: string): StoryState {
   return {
     key,
-    summary: `estado ilegible, revisa .jm/${STORIES_DIR}/${key}/${STATE_FILE}`,
+    summary: `estado ilegible, revisa ${location}/${STATE_FILE}`,
     phase: 'spec',
     block: null,
     claudeSessionId: null,
@@ -300,19 +305,16 @@ function unreadableStory(key: string): StoryState {
 }
 
 // Un estado.json roto no debe tumbar el inicio: aparece como historia con aviso
-async function readStateOrPlaceholder(root: string, key: string): Promise<StoryState | null> {
+async function readStateOrPlaceholder(store: StoryStore, key: string): Promise<StoryState | null> {
   try {
-    return await readState(root, key);
+    return await readState(store, key);
   } catch {
-    return unreadableStory(key);
+    return unreadableStory(key, store.label);
   }
 }
 
-export async function listStories(root: string): Promise<StoryState[]> {
-  const base = path.join(root, JM_DIR, STORIES_DIR);
-  if (!(await fs.pathExists(base))) return [];
-  const keys = (await fs.readdir(base)).filter(isValidIssueKey);
-  const states = await Promise.all(keys.map((key) => readStateOrPlaceholder(root, key)));
+export async function listStoriesFrom(stores: Array<{ key: string; store: StoryStore }>): Promise<StoryState[]> {
+  const states = await Promise.all(stores.map(({ key, store }) => readStateOrPlaceholder(store, key)));
   return states.filter((s): s is StoryState => s !== null).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
@@ -345,7 +347,12 @@ export function toSummary(state: StoryState): StorySummary {
   };
 }
 
-const escapeCell = (text: string) => text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+// Texto de una celda de tabla Markdown: una sola línea, acotada y sin sintaxis activa
+export const escapeCell = (text: string): string => {
+  const flat = text.replace(/\r?\n/g, ' ');
+  const capped = flat.length > MAX_CELL_LENGTH ? `${flat.slice(0, MAX_CELL_LENGTH)}${ELLIPSIS}` : flat;
+  return capped.replace(MARKDOWN_SPECIALS, '\\$&');
+};
 
 export function renderDashboardMarkdown(stories: StoryState[]): string {
   const lines = ['# Donde te quedaste', ''];
@@ -361,9 +368,4 @@ export function renderDashboardMarkdown(stories: StoryState[]): string {
   }
   lines.push('');
   return lines.join('\n');
-}
-
-export async function renderDashboard(root: string): Promise<void> {
-  safeEnsureDir(root, path.join(root, JM_DIR));
-  safeWriteFile(root, dashboardPath(root), renderDashboardMarkdown(await listStories(root)));
 }

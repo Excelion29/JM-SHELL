@@ -8,6 +8,9 @@ const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const HTTP_UNAUTHORIZED = 401;
 const BODY_MAX_BYTES = 5 * 1024 * 1024;
+const HTTP_NO_CONTENT = 204;
+const TEXT_CONTENT_TYPE = 'text/markdown';
+const BINARY_CONTENT_TYPE = 'application/octet-stream';
 const DEFAULT_HTTPS_PORT = 443;
 const UNTRUSTED_CERT_CODES = new Set([
   'DEPTH_ZERO_SELF_SIGNED_CERT',
@@ -35,6 +38,13 @@ export interface RestClient {
   listDir: (dir: string) => Promise<RestEntry[]>;
   // null si la nota no existe; con maxBytes se corta la descarga y se devuelve lo leído
   readFile: (file: string, maxBytes?: number) => Promise<string | null>;
+  // Contenido binario exacto; null si no existe y error si pasa de maxBytes
+  readBuffer: (file: string, maxBytes: number) => Promise<Buffer | null>;
+  // Crea o reemplaza (y crea las carpetas que falten); el servidor rechaza application/json en notas
+  writeFile: (file: string, data: string | Buffer, binary?: boolean) => Promise<void>;
+  // Agrega al final; si el archivo no existe lo crea
+  appendFile: (file: string, text: string) => Promise<void>;
+  deleteFile: (file: string) => Promise<void>;
   close: () => void;
 }
 
@@ -42,14 +52,26 @@ export type TlsInspection = { tls: 'system' } | { tls: 'untrusted'; pem: string;
 
 interface RawResponse {
   status: number;
+  bytes: Buffer;
   body: string;
+}
+
+// Un 404 al listar una carpeta significa "aún no existe", no un fallo del servidor
+export class RestStatusError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 function request(
   url: URL,
   options: https.RequestOptions,
   truncateAt?: number,
-  payload?: string,
+  payload?: string | Buffer,
+  bodyLimit: number = BODY_MAX_BYTES,
 ): Promise<RawResponse> {
   return new Promise((resolve, reject) => {
     let done = false;
@@ -58,7 +80,8 @@ function request(
       let size = 0;
       const finish = () => {
         done = true;
-        resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') });
+        const bytes = Buffer.concat(chunks);
+        resolve({ status: res.statusCode ?? 0, bytes, body: bytes.toString('utf8') });
       };
       res.on('data', (chunk: Buffer) => {
         size += chunk.length;
@@ -66,10 +89,17 @@ function request(
           chunks.push(chunk.subarray(0, chunk.length - (size - truncateAt)));
           finish();
           res.destroy();
-        } else if (size > BODY_MAX_BYTES) req.destroy(new Error('La respuesta es demasiado grande.'));
-        else chunks.push(chunk);
+        } else if (size > bodyLimit) {
+          // Sin error en destroy: un error en el socket fijado no tiene quien lo escuche y tumbaría el proceso
+          done = true;
+          reject(new Error('La respuesta es demasiado grande.'));
+          req.destroy();
+        } else chunks.push(chunk);
       });
       res.on('end', finish);
+      res.on('error', (err) => {
+        if (!done) reject(err);
+      });
     });
     req.on('timeout', () => req.destroy(new Error('El servidor no respondió a tiempo.')));
     req.on('error', (err) => {
@@ -97,9 +127,22 @@ function parseListing(body: string): RestEntry[] {
 }
 
 function failure(status: number, what: string): Error {
-  if (status === HTTP_UNAUTHORIZED) return new Error('La API key no es válida para este servidor.');
-  return new Error(`El servidor respondió ${status} al ${what}.`);
+  if (status === HTTP_UNAUTHORIZED) return new RestStatusError(status, 'La API key no es válida para este servidor.');
+  return new RestStatusError(status, `El servidor respondió ${status} al ${what}.`);
 }
+
+function writeOptions(
+  base: https.RequestOptions,
+  method: string,
+  contentType: string,
+  data: string | Buffer,
+): https.RequestOptions {
+  const length = typeof data === 'string' ? Buffer.byteLength(data) : data.length;
+  const headers = { ...base.headers, 'Content-Type': contentType, 'Content-Length': length };
+  return { ...base, method, headers };
+}
+
+const isWriteOk = (status: number) => status === HTTP_NO_CONTENT || status === HTTP_OK;
 
 export function createRestClient({ origin, apiKey, ca }: RestOptions): RestClient {
   const agent = createKnowledgeAgent(ca);
@@ -115,6 +158,30 @@ export function createRestClient({ origin, apiKey, ca }: RestOptions): RestClien
       if (res.status === HTTP_NOT_FOUND) return null;
       if (res.status !== HTTP_OK) throw failure(res.status, `leer "${file}"`);
       return res.body;
+    },
+    async readBuffer(file, maxBytes) {
+      const res = await request(vaultUrl(origin, file, false), options, undefined, undefined, maxBytes);
+      if (res.status === HTTP_NOT_FOUND) return null;
+      if (res.status !== HTTP_OK) throw failure(res.status, `leer "${file}"`);
+      return res.bytes;
+    },
+    async writeFile(file, data, binary = false) {
+      const params = writeOptions(options, 'PUT', binary ? BINARY_CONTENT_TYPE : TEXT_CONTENT_TYPE, data);
+      const res = await request(vaultUrl(origin, file, false), params, undefined, data);
+      if (!isWriteOk(res.status)) throw failure(res.status, `escribir "${file}"`);
+    },
+    async appendFile(file, text) {
+      const res = await request(
+        vaultUrl(origin, file, false),
+        writeOptions(options, 'POST', TEXT_CONTENT_TYPE, text),
+        undefined,
+        text,
+      );
+      if (!isWriteOk(res.status)) throw failure(res.status, `agregar a "${file}"`);
+    },
+    async deleteFile(file) {
+      const res = await request(vaultUrl(origin, file, false), { ...options, method: 'DELETE' });
+      if (!isWriteOk(res.status) && res.status !== HTTP_NOT_FOUND) throw failure(res.status, `borrar "${file}"`);
     },
     close: () => agent.destroy(),
   };
@@ -167,7 +234,11 @@ const INITIALIZE_REQUEST = JSON.stringify({
   jsonrpc: '2.0',
   id: 1,
   method: 'initialize',
-  params: { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: MCP_CLIENT_NAME, version: '1' } },
+  params: {
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    capabilities: {},
+    clientInfo: { name: MCP_CLIENT_NAME, version: '1' },
+  },
 });
 
 function hasInitializeResult(body: string): boolean {

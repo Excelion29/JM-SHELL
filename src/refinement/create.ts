@@ -1,4 +1,3 @@
-import * as fs from 'fs';
 import type { JiraService } from '../services/jira';
 import { IssueNotFoundError } from '../services/jira';
 import type { JiraIssue } from '../config/types';
@@ -9,7 +8,7 @@ import { MAX_ATTACHMENT_BYTES } from './attachments';
 import { loadPlan } from './plan';
 import { effectiveSeconds, taskExpectedSeconds } from './pert';
 import { scheduleOf, todayIso } from './schedule';
-import { attachmentFilePath } from './review';
+import { listLocalEntries, readAttachment } from './review';
 import type {
   AssigneeView,
   CreateOutcome,
@@ -23,19 +22,17 @@ import type {
   PlannedUpload,
   TargetResult,
 } from './review-types';
-import { advancePhase, assertKey, planPath, readState, renderDashboard, updateState } from './state';
+import { advancePhase, assertKey, readState, updateState } from './state';
+import type { StoryStore } from './story-store';
 import { projectKeyOfStory } from './repos';
 import { PlannedTask, RefinementPlan, Risk, StoryState } from './types';
 
 export { ESTIMATE_ROUND_SECONDS, estimateForJira } from './pert';
-const BYTES_PER_MB = 1024 * 1024;
 const DONE_CATEGORY = 'done';
 const SUBTASK_TYPE_PREFERENCE = /sub-?tarea|sub-?task/i;
 const STANDARD_TYPE_PREFERENCE = /^(tarea|task)$/i;
 const CHILDREN_FIELDS = ['summary'];
 const NEWLINES = /\s*[\r\n]+\s*/g;
-// O_NOFOLLOW no existe en Windows; allí quedan assertNoLinks y la comprobación del descriptor
-const OPEN_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
 
 export type CreateJira = Pick<
   JiraService,
@@ -187,12 +184,12 @@ async function childrenOf(jira: CreateJira, target: CreationTarget): Promise<Arr
 // Tareas marcadas cuyo título ya existe bajo el padre (y que esta historia aún no registró): se proponen, no se adoptan solas
 export async function findExistingMatches(
   jira: CreateJira,
-  root: string,
+  store: StoryStore,
   storyKey: string,
   target: CreationTarget,
 ): Promise<ExistingMatch[]> {
-  const tasks = (await loadPlan(planPath(root, storyKey))).tasks.filter((t) => t.include);
-  const state = await readState(root, storyKey);
+  const tasks = (await loadPlan(store)).tasks.filter((t) => t.include);
+  const state = await readState(store, storyKey);
   const known = new Set(Object.values(state?.createdIssues ?? {}));
   const pending = tasks.filter((t) => !state?.createdIssues[t.id]);
   if (!pending.length) return [];
@@ -214,12 +211,12 @@ export async function findExistingMatches(
 
 export async function buildPreview(
   jira: CreateJira,
-  root: string,
+  store: StoryStore,
   storyKey: string,
   assignee: CreatePreview['assignee'],
 ): Promise<CreatePreview> {
-  const plan = await loadPlan(planPath(root, storyKey));
-  const state = await readState(root, storyKey);
+  const plan = await loadPlan(store);
+  const state = await readState(store, storyKey);
   if (!state) throw new Error(`La historia ${storyKey} aún no tiene estado.`);
   const included = plan.tasks.filter((t) => t.include);
   const parent = await resolveParent(jira, storyKey);
@@ -229,36 +226,24 @@ export async function buildPreview(
     parent,
     assignee,
     uploads: plannedUploads(state, plan),
-    existing: parent.kind === 'ready' ? await findExistingMatches(jira, root, storyKey, parent.target) : [],
+    existing: parent.kind === 'ready' ? await findExistingMatches(jira, store, storyKey, parent.target) : [],
   };
 }
 
-// Se abre sin seguir enlaces y se valida el descriptor: entre comprobar y leer nadie puede cambiar el archivo
-function withUploadFile<T>(file: string, label: string, maxBytes: number, use: (fd: number, size: number) => T): T {
-  const fd = fs.openSync(file, OPEN_FLAGS);
+// El tope de tamaño lo aplica el almacén al leer; aquí solo se aclara que no se sube
+async function readUpload(store: StoryStore, file: string, maxBytes: number): Promise<Buffer> {
   try {
-    const stat = fs.fstatSync(fd);
-    if (!stat.isFile()) throw new Error(`${label} no es un archivo regular; no lo subo.`);
-    if (stat.size > maxBytes) {
-      throw new Error(`${label} pesa más de ${Math.round(maxBytes / BYTES_PER_MB)} MB; no lo subo.`);
-    }
-    return use(fd, stat.size);
-  } finally {
-    fs.closeSync(fd);
+    return await readAttachment(store, file, maxBytes);
+  } catch (err: unknown) {
+    throw new Error(`${(err as Error).message} No lo subo.`);
   }
 }
-
-const uploadFileSize = (file: string, label: string, maxBytes: number): number =>
-  withUploadFile(file, label, maxBytes, (_fd, size) => size);
-
-const readUploadFile = (file: string, label: string, maxBytes: number): Buffer =>
-  withUploadFile(file, label, maxBytes, (fd) => fs.readFileSync(fd));
 
 type RemoteFiles = Map<string, Array<{ id: string; filename: string; size: number }>>;
 
 async function uploadTaskAttachments(
   jira: CreateJira,
-  root: string,
+  store: StoryStore,
   storyKey: string,
   task: PlannedTask,
   issueKey: string,
@@ -266,17 +251,23 @@ async function uploadTaskAttachments(
   remote: RemoteFiles,
   report: (step: 'uploading' | 'uploaded', detail: string) => void,
 ): Promise<void> {
-  const state = await readState(root, storyKey);
+  const state = await readState(store, storyKey);
   const entries = (state?.attachments ?? []).filter((e) => hasUploadPurpose(e) && isAssigned(e, task));
+  // Con almacén local el tamaño llega en el listado: si ya está en Jira no hace falta leer el archivo
+  const sizes = new Map((entries.length > 0 ? await listLocalEntries(store) : []).map((e) => [e.name, e.size]));
   const record = (file: string, id: string) =>
-    updateState(root, storyKey, (s) => {
+    updateState(store, storyKey, (s) => {
       const target = s.attachments.find((a) => a.file === file);
       if (target) target.uploaded[issueKey] = id;
     });
   for (const entry of entries) {
     if (entry.uploaded[issueKey]) continue;
-    const filePath = attachmentFilePath(root, storyKey, entry.file);
-    const size = uploadFileSize(filePath, entry.file, maxBytes);
+    let data: Buffer | null = null;
+    let size = sizes.get(entry.file);
+    if (size === undefined) {
+      data = await readUpload(store, entry.file, maxBytes);
+      size = data.length;
+    }
     // Si un corte dejó el archivo en Jira sin anotarlo, se anota en vez de subirlo otra vez
     if (!remote.has(issueKey)) remote.set(issueKey, await jira.getAttachments(issueKey));
     const already = remote.get(issueKey)?.find((r) => r.filename === entry.file && r.size === size);
@@ -284,8 +275,8 @@ async function uploadTaskAttachments(
       await record(entry.file, already.id);
       continue;
     }
-    const data = readUploadFile(filePath, entry.file, maxBytes);
     report('uploading', entry.file);
+    data ??= await readUpload(store, entry.file, maxBytes);
     const id = await jira.uploadAttachment(issueKey, entry.file, data, maxBytes);
     await record(entry.file, id);
     report('uploaded', entry.file);
@@ -294,7 +285,7 @@ async function uploadTaskAttachments(
 
 export interface CreationDeps {
   jira: CreateJira;
-  root: string;
+  store: StoryStore;
   maxUploadBytes?: number;
   // Hoy (AAAA-MM-DD) para recomendar fechas; inyectable en pruebas
   today?: string;
@@ -307,7 +298,7 @@ export async function runCreation(
   request: CreateRequest,
   onProgress: (progress: CreateProgress) => void = () => undefined,
 ): Promise<CreateOutcome> {
-  const { jira, root, maxUploadBytes = MAX_ATTACHMENT_BYTES } = deps;
+  const { jira, store, maxUploadBytes = MAX_ATTACHMENT_BYTES } = deps;
   const { target, assigneeId, adopt } = request;
   const created: CreatedTask[] = [];
   const remote: RemoteFiles = new Map();
@@ -316,7 +307,7 @@ export async function runCreation(
     assertKey(storyKey);
     assertKey(target.parentKey);
     for (const key of Object.values(adopt)) assertKey(key);
-    const plan = await loadPlan(planPath(root, storyKey));
+    const plan = await loadPlan(store);
     const tasks = plan.tasks.filter((t) => t.include);
     const schedule = scheduleOf(plan, deps.today ?? todayIso());
     if (!tasks.length)
@@ -325,7 +316,7 @@ export async function runCreation(
         message: 'No hay tareas marcadas para crear.',
         created,
       };
-    await advancePhase(root, storyKey, 'reviewed');
+    await advancePhase(store, storyKey, 'reviewed');
 
     for (const [position, task] of tasks.entries()) {
       const report = (step: CreateProgress['step'], detail?: string) =>
@@ -336,7 +327,7 @@ export async function runCreation(
           step,
           detail,
         });
-      let key = (await readState(root, storyKey))?.createdIssues[task.id] ?? adopt[task.id];
+      let key = (await readState(store, storyKey))?.createdIssues[task.id] ?? adopt[task.id];
       const existing = Boolean(key);
       if (!key) {
         report('creating');
@@ -355,7 +346,7 @@ export async function runCreation(
         estimateSkipped ||= Boolean(result.estimateSkipped);
       }
       const issueKey = key;
-      await updateState(root, storyKey, (s) => {
+      await updateState(store, storyKey, (s) => {
         s.createdIssues[task.id] = issueKey;
       });
       created.push({
@@ -365,11 +356,10 @@ export async function runCreation(
         existing,
       });
       report(existing ? 'existing' : 'created', issueKey);
-      await uploadTaskAttachments(jira, root, storyKey, task, issueKey, maxUploadBytes, remote, report);
+      await uploadTaskAttachments(jira, store, storyKey, task, issueKey, maxUploadBytes, remote, report);
     }
 
-    await advancePhase(root, storyKey, 'created');
-    await renderDashboard(root);
+    await advancePhase(store, storyKey, 'created');
     return { ok: true, created, parentKey: target.parentKey, estimateSkipped };
   } catch (err: unknown) {
     return { ok: false, message: (err as Error).message, created };

@@ -10,7 +10,6 @@ import { trustKnowledge } from '../config/knowledge-trust';
 import { TEST_CERT_A, TEST_KEY_A } from '../refinement/test-certs';
 import { parseKnowledgeConfig } from '../refinement/knowledge';
 import { clearSession, setSessionPin } from '../utils/session';
-import { ensureStory } from '../refinement/state';
 import { openKnowledge } from './knowledge-runtime';
 
 const PIN = '1234';
@@ -27,14 +26,13 @@ before(async () => {
 async function rootWith(knowledge: unknown, trusted = true) {
   const root = await tempDir('jm-rt-root-');
   await fs.writeJson(path.join(root, '.jira.json'), { projectKey: 'AQ', defaultAssignee: 'x', knowledge });
-  await ensureStory(root, 'AQ-45', 'Login', null);
   const config = parseKnowledgeConfig(knowledge);
   if (trusted && config) await trustKnowledge(root, config, secrets);
   return root;
 }
 
-const open = (root: string, hasSession = false) =>
-  openKnowledge({ root, key: 'AQ-45', hasSession, secretsDir: secrets });
+const open = (root: string, hasSession = false, hasLocalLog = false) =>
+  openKnowledge({ root, key: 'AQ-45', hasSession, hasLocalLog, secretsDir: secrets });
 
 test('sin base o con "ninguna": no hay herramientas ni contexto', async () => {
   for (const knowledge of [undefined, { type: 'none' }]) {
@@ -168,7 +166,7 @@ test('MCP: sin certificado fijado, un servidor autofirmado no se acepta y no que
     const root = await rootWith({ type: 'mcp', url: serverUrl, baseFolder: 'PROY', tls: 'system' });
     await trustKnowledge(root, { type: 'mcp', url: serverUrl, baseFolder: 'PROY', tls: 'system' }, otherSecrets);
     await assert.rejects(
-      openKnowledge({ root, key: 'AQ-45', hasSession: false, secretsDir: otherSecrets }),
+      openKnowledge({ root, key: 'AQ-45', hasSession: false, hasLocalLog: false, secretsDir: otherSecrets }),
       /No pude conectar con la base de conocimiento/,
     );
   } finally {

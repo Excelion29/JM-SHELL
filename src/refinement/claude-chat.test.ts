@@ -16,6 +16,7 @@ import {
 } from './claude-chat';
 import {
   appendTranscript,
+  openTranscript,
   readTranscript,
   recordTurnUsage,
   TRANSCRIPT_MAX_BYTES,
@@ -24,16 +25,19 @@ import {
   writeClaudeSettings,
   writeSkillCopy,
 } from './chat-store';
-import { assertSafeArgs, CHAT_FILES } from './claude';
+import { assertSafeArgs, assertWorkDirUsable, CHAT_FILES, chatAllowedTools } from './claude';
 import { stripTerminalControls } from './text';
-import { ensureStory, readState } from './state';
+import { CHAT_FILE, ensureStory, readState } from './state';
+import { storeAt } from './test-support';
+import { workBase, workDirFor } from './workdir';
 import { addTurnUsage, contextTokensOf, exceedsSoftLimit, SESSION_TOKEN_SOFT_LIMIT } from './usage';
 
 const SESSION = '123e4567-e89b-12d3-a456-426614174000';
 const OTHER_SESSION = '223e4567-e89b-12d3-a456-426614174000';
-const SKILL = CHAT_FILES.skill;
-const AGENTS = CHAT_FILES.agents;
-const SETTINGS = CHAT_FILES.settings;
+const WORK_DIR = workDirFor(path.join(os.tmpdir(), 'jm-proyecto-de-prueba'));
+const SKILL = path.join(WORK_DIR, CHAT_FILES.skill);
+const AGENTS = path.join(WORK_DIR, CHAT_FILES.agents);
+const SETTINGS = path.join(WORK_DIR, CHAT_FILES.settings);
 
 const line = (value: unknown) => `${JSON.stringify(value)}\n`;
 const RESULT = {
@@ -448,11 +452,11 @@ async function tempRoot(): Promise<string> {
 
 test('recordTurnUsage suma en estado.json', async () => {
   const root = await tempRoot();
-  await ensureStory(root, 'AQ-45', 'Login', null);
+  await ensureStory(storeAt(root, 'AQ-45'), 'AQ-45', 'Login', null);
   const turn = { inputTokens: 3, outputTokens: 40, cacheReadTokens: 1000, cacheCreationTokens: 200 };
-  await recordTurnUsage(root, 'AQ-45', turn, 0.25);
-  await recordTurnUsage(root, 'AQ-45', turn, 0.25);
-  assert.deepEqual((await readState(root, 'AQ-45'))?.usage, {
+  await recordTurnUsage(storeAt(root, 'AQ-45'), 'AQ-45', turn, 0.25);
+  await recordTurnUsage(storeAt(root, 'AQ-45'), 'AQ-45', turn, 0.25);
+  assert.deepEqual((await readState(storeAt(root, 'AQ-45'), 'AQ-45'))?.usage, {
     inputTokens: 406,
     outputTokens: 80,
     cacheReadTokens: 2000,
@@ -463,29 +467,30 @@ test('recordTurnUsage suma en estado.json', async () => {
 
 test('la copia local guarda los turnos, devuelve los últimos N y tolera líneas rotas', async () => {
   const root = await tempRoot();
-  await ensureStory(root, 'AQ-45', 'Login', null);
+  await ensureStory(storeAt(root, 'AQ-45'), 'AQ-45', 'Login', null);
   for (let i = 0; i < 5; i += 1) {
-    await appendTranscript(root, 'AQ-45', { role: i % 2 ? 'assistant' : 'user', text: `m${i}`, at: `t${i}` });
+    await appendTranscript(storeAt(root, 'AQ-45'), { role: i % 2 ? 'assistant' : 'user', text: `m${i}`, at: `t${i}` });
   }
   assert.deepEqual(
-    (await readTranscript(root, 'AQ-45', 2)).map((l) => l.text),
+    (await readTranscript(storeAt(root, 'AQ-45'), 2)).map((l) => l.text),
     ['m3', 'm4'],
   );
-  const file = path.join(root, '.jm', 'historias', 'AQ-45', '.chat.jsonl');
+  const file = path.join(root, '.jm', 'historias', 'AQ-45', CHAT_FILE);
   await fs.appendFile(file, '{cortada');
-  assert.equal((await readTranscript(root, 'AQ-45', 10)).length, 5);
+  assert.equal((await readTranscript(storeAt(root, 'AQ-45'), 10)).length, 5);
 });
 
-test('la copia local se acota a las últimas entradas', async () => {
+test('la copia local se acota a las últimas entradas solo al abrir', async () => {
   const root = await tempRoot();
-  await ensureStory(root, 'AQ-45', 'Login', null);
-  const file = path.join(root, '.jm', 'historias', 'AQ-45', '.chat.jsonl');
+  await ensureStory(storeAt(root, 'AQ-45'), 'AQ-45', 'Login', null);
+  const file = path.join(root, '.jm', 'historias', 'AQ-45', CHAT_FILE);
   const old = Array.from({ length: TRANSCRIPT_MAX_ENTRIES }, (_, i) =>
     JSON.stringify({ role: 'user', text: `v${i}`, at: 't' }),
   );
   await fs.writeFile(file, `${old.join('\n')}\n`);
-  await appendTranscript(root, 'AQ-45', { role: 'assistant', text: 'nuevo', at: 't' });
-  const all = await readTranscript(root, 'AQ-45', TRANSCRIPT_MAX_ENTRIES + 10);
+  await appendTranscript(storeAt(root, 'AQ-45'), { role: 'assistant', text: 'nuevo', at: 't' });
+  assert.equal((await readTranscript(storeAt(root, 'AQ-45'), TRANSCRIPT_MAX_ENTRIES + 10)).length, TRANSCRIPT_MAX_ENTRIES + 1);
+  const all = await openTranscript(storeAt(root, 'AQ-45'), TRANSCRIPT_MAX_ENTRIES + 10);
   assert.equal(all.length, TRANSCRIPT_MAX_ENTRIES);
   assert.equal(all[0].text, 'v1');
   assert.equal(all.at(-1)?.text, 'nuevo');
@@ -574,13 +579,13 @@ test('una línea sin salto de línea gigante se descarta con un error y el parse
 
 test('readTranscript lee solo la cola de un archivo enorme', async () => {
   const root = await tempRoot();
-  await ensureStory(root, 'AQ-45', 'Login', null);
-  const file = path.join(root, '.jm', 'historias', 'AQ-45', '.chat.jsonl');
+  await ensureStory(storeAt(root, 'AQ-45'), 'AQ-45', 'Login', null);
+  const file = path.join(root, '.jm', 'historias', 'AQ-45', CHAT_FILE);
   const filler = JSON.stringify({ role: 'user', text: 'x'.repeat(1000), at: 't' });
   const lines = Array.from({ length: TRANSCRIPT_MAX_BYTES / 1000 + 200 }, () => filler);
   lines.push(JSON.stringify({ role: 'assistant', text: 'final', at: 't' }));
   await fs.writeFile(file, `${lines.join(String.fromCharCode(10))}${String.fromCharCode(10)}`);
-  const result = await readTranscript(root, 'AQ-45', 3);
+  const result = await readTranscript(storeAt(root, 'AQ-45'), 3);
   assert.equal(result.at(-1)?.text, 'final');
   assert.equal(result.length, 3);
 });
@@ -612,37 +617,56 @@ test('el texto del asistente (completo y en deltas) llega a la app sin secuencia
 
 test('el historial leído de disco conserva los saltos de línea y no trae escapes', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jm-hist-'));
-  await ensureStory(root, 'AQ-45', 'Login', null);
-  await appendTranscript(root, 'AQ-45', { role: 'assistant', text: `uno\ndos${ESC}[2J`, at: 't' });
-  assert.equal((await readTranscript(root, 'AQ-45', 5))[0].text, 'uno\ndos');
+  await ensureStory(storeAt(root, 'AQ-45'), 'AQ-45', 'Login', null);
+  await appendTranscript(storeAt(root, 'AQ-45'), { role: 'assistant', text: `uno\ndos${ESC}[2J`, at: 't' });
+  assert.equal((await readTranscript(storeAt(root, 'AQ-45'), 5))[0].text, 'uno\ndos');
 });
 
-test('una raíz con tildes y paréntesis funciona: los archivos de jm viajan relativos al cwd', async () => {
-  const root = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'jm-root-')), 'José (v2)');
-  await fs.ensureDir(root);
-  const skill = path.join(root, 'origen.md');
+test('una carpeta de usuario con tildes y paréntesis funciona: los archivos de jm viajan con ruta absoluta', async () => {
+  const home = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'jm-home-')), 'José (v2)');
+  const workDir = workDirFor(path.join(os.tmpdir(), 'proyecto'), home);
+  const skill = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'jm-src-')), 'origen.md');
   await fs.writeFile(skill, '# skill');
-  writeAgentsFile(root);
-  writeClaudeSettings(root, 'AQ-45');
-  writeSkillCopy(root, skill);
-  for (const file of Object.values(CHAT_FILES)) assert.ok(await fs.pathExists(path.join(root, file)), file);
-  const args = buildChatArgs({
+  const files = {
+    agentsFile: writeAgentsFile(workDir),
+    settingsFile: writeClaudeSettings(workDir, 'AQ-45'),
+    skillFile: writeSkillCopy(workDir, skill),
+  };
+  for (const file of Object.values(files)) assert.ok(await fs.pathExists(file), file);
+  const args = buildChatArgs({ key: 'AQ-45', model: 'sonnet', sessionId: SESSION, resume: false, ...files });
+  assert.doesNotThrow(() => assertSafeArgs(args, workBase(home)));
+});
+
+test('solo se aceptan archivos de la carpeta de trabajo de jm como valor de --settings', () => {
+  assert.doesNotThrow(() => assertSafeArgs(['--settings', SETTINGS]));
+  assert.throws(() => assertSafeArgs(['--settings', path.join(os.tmpdir(), 'claude-settings.json')]), /no permitido/);
+  assert.throws(() => assertSafeArgs(['--settings', path.join(WORK_DIR, 'otro.json')]), /no permitido/);
+  assert.throws(() => assertSafeArgs(['--settings', path.join(WORK_DIR, '..', 'x', CHAT_FILES.settings)]), /no permitido/);
+  assert.throws(() => assertSafeArgs(['--settings', '.jm/claude-settings.json']), /no permitido/);
+  assert.throws(() => assertSafeArgs(['--settings', '.jm/../x.json']), /no permitido/);
+});
+
+test('una carpeta de usuario con % ! ^ & no se puede citar para el shim .cmd: el error es claro', () => {
+  assert.throws(() => assertWorkDirUsable(path.join('C:', 'Users', 'a%b', '.jira-tool', 'trabajo', 'abc')), /caracteres/);
+  assert.doesNotThrow(() => assertWorkDirUsable(WORK_DIR));
+});
+
+test('con base conectada los permisos de escritura sobre .jm desaparecen', () => {
+  assert.ok(!chatAllowedTools('AQ-45', { type: 'mcp' }).includes('.jm'));
+  assert.ok(!chatAllowedTools('AQ-45', { type: 'local', root: 'C:/b', adrDir: 'C:/b/x' }).includes('.jm'));
+  assert.ok(chatAllowedTools('AQ-45', null).includes('Write(.jm/historias/AQ-45/**)'));
+  const mcpArgs = buildChatArgs({
     key: 'AQ-45',
     model: 'sonnet',
     sessionId: SESSION,
     resume: false,
-    skillFile: CHAT_FILES.skill,
-    agentsFile: CHAT_FILES.agents,
-    settingsFile: CHAT_FILES.settings,
+    skillFile: SKILL,
+    agentsFile: AGENTS,
+    settingsFile: SETTINGS,
+    kb: { type: 'mcp' },
+    mcpFile: path.join(WORK_DIR, CHAT_FILES.mcp),
+    attachmentsDir: path.join(WORK_DIR, 'adjuntos', 'AQ-45'),
   });
-  assert.doesNotThrow(() => assertSafeArgs(args));
-  assert.ok(args.every((arg) => !arg.includes('José') && !arg.includes('(v2)')));
-});
-
-test('una ruta absoluta de archivo ya no pasa el filtro de argumentos', () => {
-  assert.throws(
-    () => assertSafeArgs(['--settings', path.join('C:', 'José (v2)', '.jm', 'claude-settings.json')]),
-    /no permitido/,
-  );
-  assert.throws(() => assertSafeArgs(['--settings', '.jm/../x.json']), /no permitido/);
+  assert.doesNotThrow(() => assertSafeArgs(mcpArgs));
+  assert.ok(!mcpArgs.some((arg) => arg.includes('.jm/')));
 });

@@ -95,8 +95,11 @@ export function App({
     setPinError(null);
     try {
       const result = await unlock(pin);
-      if (result.ok) setStage(chatKey ? 'routing' : 'home');
-      else setPinError(result.message ?? PIN_TEXTS.wrongPinFallback);
+      if (result.ok) {
+        // Con el PIN ya se puede leer la base de conocimiento: el listado previo solo traía lo local
+        setStories(await loadStories(projectKey));
+        setStage(chatKey ? 'routing' : 'home');
+      } else setPinError(result.message ?? PIN_TEXTS.wrongPinFallback);
     } catch {
       setPinError(PIN_TEXTS.wrongPinFallback);
     } finally {

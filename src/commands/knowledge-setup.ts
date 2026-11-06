@@ -14,6 +14,7 @@ import type {
   ServerInspection,
 } from '../refinement/chat-types';
 import { isNormalizedAbsolutePath } from '../refinement/claude';
+import { assertLocalRootAllowed } from '../refinement/local-root';
 import { isHttpsUrl, isValidBaseFolder, KnowledgeConfig, normalizeMcpUrl, resolveAdrFolder } from '../refinement/knowledge';
 import { inspectServerTls, McpEndpoint, verifyMcpEndpoint } from '../refinement/knowledge-rest';
 import {
@@ -51,6 +52,7 @@ async function configToConfirm(root: string): Promise<Exclude<KnowledgeConfig, {
   const config = await readKnowledgeConfig(root);
   if (!config || config.type === 'none')
     throw new Error('Esta carpeta no tiene una base de conocimiento por confirmar.');
+  if (config.type === 'local') assertLocalRootAllowed(config.root);
   return config;
 }
 
@@ -97,6 +99,7 @@ function assertSafeUrl(url: string): void {
 function assertSafeRoot(root: string): void {
   if (!isNormalizedAbsolutePath(root))
     throw new Error(`La carpeta "${root}" debe ser una ruta absoluta completa, sin ".." ni rutas de red (UNC).`);
+  assertLocalRootAllowed(root);
 }
 
 export async function inspectServer(url: string): Promise<ServerInspection> {

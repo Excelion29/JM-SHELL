@@ -1,8 +1,8 @@
-import * as fs from 'fs-extra';
 import type { JiraService } from '../services/jira';
 import type { CloseFileView, ClosePreview, CloseResult } from './review-types';
-import { attachmentFilePath, listLocalFiles } from './review';
-import { readState, renderDashboard, transitionPhase } from './state';
+import { attachmentStoreName, listLocalEntries, readAttachment } from './review';
+import { readState, transitionPhase } from './state';
+import type { StoryStore } from './story-store';
 import { StoryAttachment } from './types';
 
 const CLOSABLE_PHASES: readonly string[] = ['created', 'in-progress'];
@@ -39,8 +39,30 @@ async function verifiedIn(
   return { failure: failures[0] ?? CLOSE_REASONS.neverUploaded };
 }
 
-export async function prepareClose(jira: CloseJira, root: string, key: string): Promise<ClosePreview> {
-  const state = await readState(root, key);
+// La bóveda no da tamaños en el listado: se leen una vez y se recuerdan entre la vista previa y el borrado
+const SIZE_CACHE_TTL_MS = 10 * 60 * 1000;
+const vaultSizes = new WeakMap<StoryStore, { at: number; sizes: Map<string, number> }>();
+
+function vaultSizeCache(store: StoryStore): Map<string, number> {
+  const cached = vaultSizes.get(store);
+  if (cached && Date.now() - cached.at < SIZE_CACHE_TTL_MS) return cached.sizes;
+  const fresh = { at: Date.now(), sizes: new Map<string, number>() };
+  vaultSizes.set(store, fresh);
+  return fresh.sizes;
+}
+
+async function sizeOf(store: StoryStore, file: string, listed: number | undefined): Promise<number> {
+  if (listed !== undefined) return listed;
+  const cache = vaultSizeCache(store);
+  const known = cache.get(file);
+  if (known !== undefined) return known;
+  const size = (await readAttachment(store, file)).length;
+  cache.set(file, size);
+  return size;
+}
+
+export async function prepareClose(jira: CloseJira, store: StoryStore, key: string): Promise<ClosePreview> {
+  const state = await readState(store, key);
   if (!state) throw new Error(`La historia ${key} aún no tiene estado.`);
   if (!CLOSABLE_PHASES.includes(state.phase)) {
     throw new Error(`${key} está en fase "${state.phase}": solo se cierran historias con tareas creadas.`);
@@ -49,14 +71,14 @@ export async function prepareClose(jira: CloseJira, root: string, key: string): 
   const kept: CloseFileView[] = [];
   const cache = new Map<string, Promise<Array<{ filename: string; size: number }>>>();
 
-  for (const file of listLocalFiles(root, key)) {
+  for (const { name: file, size: listedSize } of await listLocalEntries(store)) {
     const entry = state.attachments.find((a) => a.file === file);
     if (!entry) {
       kept.push({ file, reason: CLOSE_REASONS.untracked });
     } else if (entry.purpose === 'analysis') {
       deletable.push({ file, reason: CLOSE_REASONS.analysis });
     } else {
-      const verdict = await verifiedIn(jira, entry, fs.statSync(attachmentFilePath(root, key, file)).size, cache);
+      const verdict = await verifiedIn(jira, entry, await sizeOf(store, file, listedSize), cache);
       if ('issueKey' in verdict) deletable.push({ file, reason: CLOSE_REASONS.verified(verdict.issueKey) });
       else kept.push({ file, reason: verdict.failure });
     }
@@ -67,24 +89,22 @@ export async function prepareClose(jira: CloseJira, root: string, key: string): 
 // Se vuelve a verificar al borrar: solo se elimina lo que sigue siendo borrable y el dev confirmó
 export async function executeClose(
   jira: CloseJira,
-  root: string,
+  store: StoryStore,
   key: string,
   confirmed: string[],
 ): Promise<CloseResult> {
-  const preview = await prepareClose(jira, root, key);
+  const preview = await prepareClose(jira, store, key);
   const allowed = new Set(preview.deletable.map((d) => d.file));
   const deleted: string[] = [];
   for (const file of confirmed.filter((f) => allowed.has(f))) {
-    const target = attachmentFilePath(root, key, file);
     try {
-      await fs.remove(target);
+      await store.remove(attachmentStoreName(file));
     } catch (err: unknown) {
       throw new Error(`No pude borrar ${file}: ${(err as Error).message}`);
     }
     deleted.push(file);
   }
-  await transitionPhase(root, key, 'closed');
-  await renderDashboard(root);
+  await transitionPhase(store, key, 'closed');
   const notDeleted = preview.kept.concat(
     preview.deletable
       .filter((d) => !deleted.includes(d.file))

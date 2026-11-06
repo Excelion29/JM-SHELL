@@ -1,16 +1,14 @@
 import * as fs from 'fs-extra';
-import { promises as nodeFs } from 'fs';
-import * as path from 'path';
 import type { ChatKnowledge, ChatLine } from './chat-types';
 import { buildChatSettings, EXPLORER_AGENTS } from './claude-chat';
-import { CHAT_FILES } from './claude';
-import { assertNoLinks, JM_DIR, lexists, safeEnsureDir, safeWriteFile } from './safe-fs';
+import { CHAT_FILE, updateState } from './state';
+import type { StoryStore } from './story-store';
 import { KB_SERVER_NAME } from './kb-proxy';
-import { agentsPath, chatPath, claudeSettingsPath, knowledgeContextPath, mcpConfigPath, updateState } from './state';
 import { stripTerminalControls } from './text';
 import { addTurnUsage, TurnUsage } from './usage';
+import { CHAT_FILES, removeWorkFile, writeWorkFile } from './workdir';
 
-// La copia local no crece sin tope: se queda con lo más reciente
+// La copia de la conversación no crece sin tope: al abrir se queda con lo más reciente
 export const TRANSCRIPT_MAX_ENTRIES = 500;
 // Tope de lectura: un archivo más grande se lee solo por la cola
 export const TRANSCRIPT_MAX_BYTES = 5 * 1024 * 1024;
@@ -33,77 +31,61 @@ function parseLines(content: string): ChatLine[] {
   });
 }
 
-async function readTail(file: string): Promise<string> {
-  const { size } = await fs.stat(file);
-  if (size <= TRANSCRIPT_MAX_BYTES) return fs.readFile(file, 'utf8');
-  const handle = await nodeFs.open(file, 'r');
-  try {
-    const buffer = Buffer.alloc(TRANSCRIPT_MAX_BYTES);
-    await handle.read(buffer, 0, TRANSCRIPT_MAX_BYTES, size - TRANSCRIPT_MAX_BYTES);
-    const text = buffer.toString('utf8');
-    // la primera línea queda cortada: se descarta
-    return text.slice(text.indexOf('\n') + 1);
-  } finally {
-    await handle.close();
+function tailOf(text: string): string {
+  if (Buffer.byteLength(text) <= TRANSCRIPT_MAX_BYTES) return text;
+  const tail = Buffer.from(text).subarray(-TRANSCRIPT_MAX_BYTES).toString('utf8');
+  // la primera línea queda cortada: se descarta
+  return tail.slice(tail.indexOf('\n') + 1);
+}
+
+export async function readTranscript(store: StoryStore, limit: number): Promise<ChatLine[]> {
+  const text = await store.readText(CHAT_FILE);
+  return text === null ? [] : parseLines(tailOf(text)).slice(-limit);
+}
+
+// Solo al abrir: si el archivo pasó el tope se reescribe con lo más reciente (agregar nunca relee ni reescribe)
+export async function openTranscript(store: StoryStore, limit: number): Promise<ChatLine[]> {
+  const entries = await readTranscript(store, TRANSCRIPT_MAX_ENTRIES + 1);
+  if (entries.length > TRANSCRIPT_MAX_ENTRIES) {
+    const kept = entries.slice(-TRANSCRIPT_MAX_ENTRIES);
+    await store.writeText(CHAT_FILE, `${kept.map((e) => JSON.stringify(e)).join('\n')}\n`);
+    return kept.slice(-limit);
   }
+  return entries.slice(-limit);
 }
 
-export async function readTranscript(root: string, key: string, limit: number): Promise<ChatLine[]> {
-  const file = chatPath(root, key);
-  if (!lexists(file)) return [];
-  assertNoLinks(root, file);
-  return parseLines(await readTail(file)).slice(-limit);
-}
+export const appendTranscript = (store: StoryStore, entry: ChatLine): Promise<void> =>
+  store.append(CHAT_FILE, `${JSON.stringify(entry)}\n`);
 
-// safe-fs solo ofrece escritura atómica: se relee y se reescribe el archivo completo
-export async function appendTranscript(root: string, key: string, entry: ChatLine): Promise<void> {
-  const entries = [...(await readTranscript(root, key, TRANSCRIPT_MAX_ENTRIES)), entry].slice(-TRANSCRIPT_MAX_ENTRIES);
-  safeWriteFile(root, chatPath(root, key), `${entries.map((e) => JSON.stringify(e)).join('\n')}\n`);
-}
-
-export async function recordTurnUsage(root: string, key: string, turn: TurnUsage, costUsd: number): Promise<void> {
-  await updateState(root, key, (state) => {
+export async function recordTurnUsage(store: StoryStore, key: string, turn: TurnUsage, costUsd: number): Promise<void> {
+  await updateState(store, key, (state) => {
     state.usage = addTurnUsage(state.usage, turn, costUsd);
   });
 }
 
 // Se escribe siempre: es contenido fijo de jm y así `--agents` recibe una ruta, no JSON por argv
-export function writeAgentsFile(root: string): string {
-  const file = agentsPath(root);
-  safeEnsureDir(root, path.join(root, JM_DIR));
-  safeWriteFile(root, file, `${JSON.stringify(EXPLORER_AGENTS, null, 2)}\n`);
-  return file;
+export function writeAgentsFile(workDir: string): string {
+  return writeWorkFile(workDir, CHAT_FILES.agents, `${JSON.stringify(EXPLORER_AGENTS, null, 2)}\n`);
 }
 
-// La skill viaja relativa a la raíz: su ruta de instalación puede tener tildes o paréntesis que argv no admite
-export function writeSkillCopy(root: string, skillSource: string): void {
-  const file = path.join(root, CHAT_FILES.skill);
-  safeEnsureDir(root, path.join(root, JM_DIR));
-  safeWriteFile(root, file, fs.readFileSync(skillSource, 'utf8'));
+// La skill viaja desde la carpeta de trabajo: su ruta de instalación puede tener tildes o paréntesis que argv no admite
+export function writeSkillCopy(workDir: string, skillSource: string): string {
+  return writeWorkFile(workDir, CHAT_FILES.skill, fs.readFileSync(skillSource, 'utf8'));
 }
 
 // Se regenera en cada arranque: refleja la clave de la historia y no depende de lo que haya en disco
-export function writeClaudeSettings(root: string, key: string, kb: ChatKnowledge | null = null): string {
-  const file = claudeSettingsPath(root);
-  safeEnsureDir(root, path.join(root, JM_DIR));
-  safeWriteFile(root, file, `${JSON.stringify(buildChatSettings(key, kb), null, 2)}\n`);
-  return file;
+export function writeClaudeSettings(workDir: string, key: string, kb: ChatKnowledge | null = null): string {
+  return writeWorkFile(workDir, CHAT_FILES.settings, `${JSON.stringify(buildChatSettings(key, kb), null, 2)}\n`);
 }
 
 // Apunta al intermediario local: ni la API key ni el certificado viajan en este archivo (el puerto cambia en cada arranque)
-export function writeMcpConfig(root: string, proxyUrl: string): void {
+export function writeMcpConfig(workDir: string, proxyUrl: string): string {
   const config = { mcpServers: { [KB_SERVER_NAME]: { type: 'http', url: proxyUrl } } };
-  safeEnsureDir(root, path.join(root, JM_DIR));
-  safeWriteFile(root, mcpConfigPath(root), `${JSON.stringify(config, null, 2)}\n`);
+  return writeWorkFile(workDir, CHAT_FILES.mcp, `${JSON.stringify(config, null, 2)}\n`);
 }
 
-// Al abrir Claude completo el prompt es solo "/refinar KEY": la skill lee de aquí dónde está la base y su nota
-export function writeKnowledgeContext(root: string, context: string | null): void {
-  const file = knowledgeContextPath(root);
-  if (context === null) {
-    if (lexists(file)) fs.removeSync(file);
-    return;
-  }
-  safeEnsureDir(root, path.join(root, JM_DIR));
-  safeWriteFile(root, file, `${context}\n`);
+// Al abrir Claude completo viaja como prompt de sistema; se borra cuando ya no hay base conectada
+export function writeKnowledgeContext(workDir: string, context: string | null): void {
+  if (context === null) removeWorkFile(workDir, CHAT_FILES.context);
+  else writeWorkFile(workDir, CHAT_FILES.context, `${context}\n`);
 }

@@ -1,4 +1,6 @@
-import * as fs from 'fs-extra';
+import { createHash } from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { isTimeoutError, JiraService } from '../services/jira';
 import { JiraAttachment, JiraIssue } from '../config/types';
 import { requireAuth } from '../utils/auth';
@@ -7,26 +9,37 @@ import { adfToMarkdown } from '../utils/adf';
 import { formatSeconds } from '../utils/time';
 import { releaseStdin } from '../utils/terminal';
 import { error, info, success, warn } from '../utils/format';
-import { attachmentFileName, MAX_ATTACHMENT_BYTES, resolveInside } from '../refinement/attachments';
-import { handoffKnowledgeArgs, isClaudeAvailable, launchClaude, runClaude } from '../refinement/claude';
+import { attachmentFileName, MAX_ATTACHMENT_BYTES } from '../refinement/attachments';
+import {
+  assertWorkDirUsable,
+  handoffKnowledgeArgs,
+  isClaudeAvailable,
+  launchClaude,
+  runClaude,
+  workFilesOf,
+} from '../refinement/claude';
 import { loadPlan } from '../refinement/plan';
+import { attachmentStoreName } from '../refinement/review';
 import { planTotals } from '../refinement/pert';
 import { installSkill } from '../refinement/skill';
-import { assertNoLinks, lexists, safeWriteFile } from '../refinement/safe-fs';
-import { applyKnowledgeFiles, openKnowledge } from './knowledge-runtime';
 import {
   advancePhase,
   assertKey,
-  attachmentsDir,
+  ATTACHMENTS_DIR,
   ensureStory,
+  hasLogProgress,
   isValidIssueKey,
-  planPath,
+  PLAN_FILE,
   projectRoot,
   readState,
-  renderDashboard,
-  storyDocPath,
+  STORY_FILE,
   updateState,
 } from '../refinement/state';
+import type { StoryStore } from '../refinement/story-store';
+import { workDirFor, WORK_ATTACHMENTS_DIR, writeReadOnlyCopy } from '../refinement/workdir';
+import { refreshDashboard } from './dashboard';
+import { applyKnowledgeFiles, KnowledgeRuntime, openKnowledge } from './knowledge-runtime';
+import { openStory } from './story-resolver';
 
 const BYTES_PER_MB = 1024 * 1024;
 const CLAUDE_INSTALL_HINT = 'Instálalo con `npm install -g @anthropic-ai/claude-code` y vuelve a intentar.';
@@ -77,24 +90,24 @@ function failureSummary(failures: Error[]): string {
 // El resumen sale por `report`: con la app (Ink) en pantalla un console.warn rompería el dibujo
 async function downloadAttachments(
   jira: JiraService,
-  root: string,
+  store: StoryStore,
   key: string,
   attachments: JiraAttachment[],
   report: DownloadReport,
 ): Promise<void> {
-  const dir = attachmentsDir(root, key);
   let oversize = 0;
-  const pending: Array<{ attachment: JiraAttachment; file: string; dest: string }> = [];
+  // Un solo listado de adjuntos: preguntar archivo por archivo sería una ida a la bóveda por cada uno
+  const present = new Set((await store.list(ATTACHMENTS_DIR)).map((entry) => entry.name));
+  const pending: Array<{ attachment: JiraAttachment; file: string; name: string }> = [];
   for (const attachment of attachments) {
     const file = attachmentFileName(attachment.id, attachment.filename);
-    const dest = resolveInside(dir, file);
-    assertNoLinks(root, dest);
-    if (lexists(dest)) continue;
+    const name = `${ATTACHMENTS_DIR}/${file}`;
+    if (present.has(file)) continue;
     if (attachment.size > MAX_ATTACHMENT_BYTES) {
       oversize += 1;
       continue;
     }
-    pending.push({ attachment, file, dest });
+    pending.push({ attachment, file, name });
   }
 
   if (oversize > 0) report(oversizeSummary(oversize));
@@ -103,9 +116,9 @@ async function downloadAttachments(
   let next = 0;
   const worker = async () => {
     while (next < pending.length) {
-      const { attachment, file, dest } = pending[next++];
+      const { attachment, file, name } = pending[next++];
       try {
-        await jira.downloadAttachment(attachment.content, dest, MAX_ATTACHMENT_BYTES);
+        await store.writeBinary(name, await jira.downloadAttachmentBuffer(attachment.content, MAX_ATTACHMENT_BYTES));
         results.push({ file });
       } catch (err: unknown) {
         results.push({ file, error: err as Error });
@@ -114,30 +127,56 @@ async function downloadAttachments(
   };
   await Promise.all(Array.from({ length: Math.min(DOWNLOAD_CONCURRENCY, pending.length) }, worker));
 
-  // El estado se escribe en serie: updateState relee y reescribe el mismo archivo
-  for (const { file, error } of results) {
-    if (error) continue;
-    await updateState(root, key, (s) => {
-      if (s.attachments.some((a) => a.file === file)) return;
-      s.attachments.push({ file, purpose: 'analysis', origin: 'jira', taskIds: [], uploaded: {} });
+  const downloaded = results.flatMap((result) => (result.error ? [] : [result.file]));
+  if (downloaded.length > 0) {
+    await updateState(store, key, (s) => {
+      for (const file of downloaded) {
+        if (s.attachments.some((a) => a.file === file)) continue;
+        s.attachments.push({ file, purpose: 'analysis', origin: 'jira', taskIds: [], uploaded: {} });
+      }
     });
   }
   const failures = results.flatMap((result) => (result.error ? [result.error] : []));
   if (failures.length > 0) report(failureSummary(failures));
 }
 
+// Un nombre raro en la bóveda (puesto por otra persona) se omite: no debe impedir abrir la historia
+function storeNameOrNull(file: string): string | null {
+  try {
+    return attachmentStoreName(file);
+  } catch {
+    return null;
+  }
+}
+
+// Claude no abre binarios por el MCP: con la bóveda se deja una copia de solo lectura en la carpeta de trabajo
+async function ensureReadOnlyCopies(store: StoryStore, workDir: string, key: string): Promise<void> {
+  if (store.kind !== 'vault') return;
+  const folder = path.join(WORK_ATTACHMENTS_DIR, key);
+  const present = new Set(fs.existsSync(path.join(workDir, folder)) ? fs.readdirSync(path.join(workDir, folder)) : []);
+  for (const entry of await store.list(ATTACHMENTS_DIR)) {
+    if (!entry.isFile || present.has(entry.name)) continue;
+    const name = storeNameOrNull(entry.name);
+    if (name === null) continue;
+    const data = await store.readBinary(name, MAX_ATTACHMENT_BYTES);
+    if (data) writeReadOnlyCopy(workDir, folder, entry.name, data);
+  }
+}
+
 export async function prepareStory(
   jira: JiraService,
-  root: string,
+  store: StoryStore,
   key: string,
-  report: DownloadReport = warn,
+  report: DownloadReport,
+  workDir: string | null,
 ): Promise<void> {
   const issue = await jira.getIssueWithDescription(key);
   const attachments = await jira.getAttachments(key);
-  await ensureStory(root, key, issue.fields.summary, issue.fields.parent?.key ?? null);
-  safeWriteFile(root, storyDocPath(root, key), renderStoryDoc(issue, attachments));
-  await downloadAttachments(jira, root, key, attachments, report);
-  await advancePhase(root, key, 'debate');
+  await ensureStory(store, key, issue.fields.summary, issue.fields.parent?.key ?? null);
+  await store.writeText(STORY_FILE, renderStoryDoc(issue, attachments));
+  await downloadAttachments(jira, store, key, attachments, report);
+  if (workDir !== null) await ensureReadOnlyCopies(store, workDir, key);
+  await advancePhase(store, key, 'debate');
 }
 
 export async function ensureSkill(): Promise<void> {
@@ -149,10 +188,10 @@ export async function ensureSkill(): Promise<void> {
   }
 }
 
-// Un plan.json anterior a esta sesión (debate reabierto) no cuenta como plan nuevo
-async function hasFreshPlan(planFile: string, sessionStartMs: number): Promise<boolean> {
-  if (!(await fs.pathExists(planFile))) return false;
-  return (await fs.stat(planFile)).mtimeMs >= sessionStartMs;
+// El almacén de la bóveda no tiene fecha de modificación: un plan nuevo es uno cuyo contenido cambió en la sesión
+async function planFingerprint(store: StoryStore): Promise<string | null> {
+  const text = await store.readText(PLAN_FILE);
+  return text === null ? null : createHash('sha256').update(text).digest('hex');
 }
 
 // `notice` va a la app; `printCli` es la salida por consola de `jm refinar --claude`, con su pista de comando
@@ -161,17 +200,21 @@ interface ClaudeOutcome {
   printCli: () => void;
 }
 
-async function summarizeAfterClaude(root: string, key: string, sessionStartMs: number): Promise<ClaudeOutcome> {
-  const planFile = planPath(root, key);
-  if (!(await hasFreshPlan(planFile, sessionStartMs))) {
+async function summarizeAfterClaude(
+  store: StoryStore,
+  key: string,
+  planBefore: string | null,
+): Promise<ClaudeOutcome> {
+  const planAfter = await planFingerprint(store);
+  if (planAfter === null || planAfter === planBefore) {
     return {
       notice: 'Quedaste en el debate.',
       printCli: () => info(`Quedaste en el debate. Siguiente paso: vuelve con \`jm refinar ${key}\` para continuar.`),
     };
   }
   try {
-    const totals = planTotals(await loadPlan(planFile));
-    await advancePhase(root, key, 'plan');
+    const totals = planTotals(await loadPlan(store));
+    await advancePhase(store, key, 'plan');
     const ready = `Plan listo: ${totals.taskCount} tarea(s), esperado ${formatSeconds(totals.expectedSeconds)}.`;
     return {
       notice: `${ready} Revisa el plan y decide qué tareas crear.`,
@@ -192,33 +235,33 @@ async function summarizeAfterClaude(root: string, key: string, sessionStartMs: n
   }
 }
 
-async function runClaudeSession(root: string, key: string): Promise<ClaudeOutcome> {
-  const state = await readState(root, key);
-  const knowledge = await openKnowledge({ root, key, hasSession: Boolean(state?.claudeSessionId) });
-  const sessionStartMs = Date.now();
-  let outcome: ClaudeOutcome;
+interface SessionInput {
+  root: string;
+  key: string;
+  store: StoryStore;
+  workDir: string;
+  knowledge: KnowledgeRuntime;
+  sessionId: string | null;
+}
+
+async function runClaudeSession({ root, key, store, workDir, knowledge, sessionId }: SessionInput): Promise<ClaudeOutcome> {
+  const planBefore = await planFingerprint(store);
   info('Abriendo Claude Code. Para volver a JM-SHELL escribe /exit o pulsa Ctrl+C dos veces.');
   releaseStdin();
-  try {
-    applyKnowledgeFiles(root, knowledge);
-    await launchClaude({
-      key,
-      existingSessionId: state?.claudeSessionId ?? null,
-      cwd: root,
-      run: runClaude,
-      extraArgs: handoffKnowledgeArgs(knowledge.kb),
-      saveSessionId: async (id) => {
-        await updateState(root, key, (s) => {
-          s.claudeSessionId = id;
-        });
-      },
-    });
-    outcome = await summarizeAfterClaude(root, key, sessionStartMs);
-  } finally {
-    await knowledge.close();
-    await renderDashboard(root);
-  }
-  return outcome;
+  applyKnowledgeFiles(workDir, knowledge, key);
+  await launchClaude({
+    key,
+    existingSessionId: sessionId,
+    cwd: root,
+    run: runClaude,
+    extraArgs: handoffKnowledgeArgs(knowledge.kb, workFilesOf(workDir, key)),
+    saveSessionId: async (id) => {
+      await updateState(store, key, (s) => {
+        s.claudeSessionId = id;
+      });
+    },
+  });
+  return summarizeAfterClaude(store, key, planBefore);
 }
 
 export interface RunRefineOptions {
@@ -233,14 +276,35 @@ export async function runRefine(key: string, options: RunRefineOptions = {}): Pr
   }
   const root = projectRoot();
   const jira = new JiraService(await requireAuth());
+  const workDir = workDirFor(root);
+  assertWorkDirUsable(workDir);
 
   info(`Preparando ${key}...`);
-  await prepareStory(jira, root, key);
-  await renderDashboard(root);
-  await ensureSkill();
-  const outcome = await runClaudeSession(root, key);
-  if (!options.inApp) outcome.printCli();
-  return outcome.notice;
+  const { store, notice: migrationNotice } = await openStory(root, key);
+  if (migrationNotice && !options.inApp) info(migrationNotice);
+  const state = await readState(store, key);
+  // Antes de escribir nada: si la base no responde, no se toca la historia
+  const knowledge = await openKnowledge({
+    root,
+    key,
+    hasSession: Boolean(state?.claudeSessionId),
+    hasLocalLog: await hasLogProgress(store, key),
+  });
+  try {
+    await prepareStory(jira, store, key, warn, workDir);
+    await ensureSkill();
+    const sessionId = (await readState(store, key))?.claudeSessionId ?? null;
+    const outcome = await runClaudeSession({ root, key, store, workDir, knowledge, sessionId });
+    if (!options.inApp) outcome.printCli();
+    return migrationNotice && options.inApp ? `${migrationNotice} ${outcome.notice}` : outcome.notice;
+  } finally {
+    await knowledge.close();
+    try {
+      await refreshDashboard(root);
+    } catch (err: unknown) {
+      warn(`No pude actualizar el inicio: ${(err as Error).message}`);
+    }
+  }
 }
 
 export interface RefineOptions {

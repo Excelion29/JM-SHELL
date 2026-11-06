@@ -1,4 +1,7 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { pathKey, pathProject } from '../refinement/issue-key';
 import { assertSameOrigin, MAX_ATTACHMENT_BYTES, streamToFileWithCap } from '../refinement/attachments';
 import { GlobalConfig, JiraAttachment, JiraIssue, JiraTransition, JiraUser } from '../config/types';
@@ -16,6 +19,8 @@ const SEARCH_PAGE_SIZE = 100;
 const MAX_SEARCH_PAGES = 20;
 const SECONDS_PER_HOUR = 3600;
 const SECONDS_PER_MINUTE = 60;
+const DOWNLOAD_TEMP_PREFIX = 'jm-adjunto-';
+const DOWNLOAD_TEMP_FILE = 'descarga';
 
 // Conserva el `code` original para clasificar el fallo sin depender del texto del mensaje
 export async function atStep<T>(step: string, task: () => Promise<T>): Promise<T> {
@@ -136,6 +141,18 @@ export class JiraService {
       }),
     );
     await atStep(DOWNLOAD_STEPS.body, () => streamToFileWithCap(signed.data, destPath, maxBytes));
+  }
+
+  // El destino final puede ser la bóveda: se descarga a un temporal (con el mismo tope) y se devuelven los bytes
+  async downloadAttachmentBuffer(url: string, maxBytes: number = MAX_ATTACHMENT_BYTES): Promise<Buffer> {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), DOWNLOAD_TEMP_PREFIX));
+    try {
+      const temp = path.join(dir, DOWNLOAD_TEMP_FILE);
+      await this.downloadAttachment(url, temp, maxBytes);
+      return await fs.promises.readFile(temp);
+    } finally {
+      await fs.promises.rm(dir, { recursive: true, force: true });
+    }
   }
 
   async createIssue(params: {

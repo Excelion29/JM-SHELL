@@ -82,15 +82,26 @@ test('isValidBaseFolder rechaza .., segmentos vacíos y caracteres de control', 
 
 test('knowledgeContextLine nombra la base y la nota; sin base no dice nada', () => {
   const mcp = { type: 'mcp', url: 'https://h/mcp', baseFolder: 'P/X', tls: 'system' } as const;
-  const line = knowledgeContextLine(mcp, 'P/X/00-JM-ADR/AQ-45.md');
+  const line = knowledgeContextLine(mcp, 'P/X/00-JM-ADR/AQ-45.md', 'P/X/00-JM-ADR/AQ-45', 'C:/w/adjuntos/AQ-45');
   assert.match(line, /jm_kb/);
   assert.match(line, /P\/X\/00-JM-ADR\/AQ-45\.md/);
-  assert.equal(knowledgeContextLine({ type: 'none' }, 'x'), '');
-  const local = knowledgeContextLine({ type: 'local', root: 'C:\\n', baseFolder: 'PROY' }, 'C:/n/00-JM-ADR/AQ-1.md');
+  assert.match(line, /carpeta `P\/X\/00-JM-ADR\/AQ-45` de la base \(no en el repositorio\)/);
+  assert.match(line, /copia de solo lectura `C:\/w\/adjuntos\/AQ-45`/);
+  assert.equal(knowledgeContextLine({ type: 'none' }, 'x', 'y'), '');
+  const local = knowledgeContextLine(
+    { type: 'local', root: 'C:\\n', baseFolder: 'PROY' },
+    'C:/n/00-JM-ADR/AQ-1.md',
+    'C:/n/00-JM-ADR/AQ-1',
+  );
   assert.match(local, /C:\\n/);
+  assert.ok(!local.includes('copia de solo lectura'));
 });
 
 test('parseKnowledgeConfig rechaza una carpeta base vacía (la raíz de la bóveda)', () => {
   assert.equal(parseKnowledgeConfig({ type: 'mcp', url: 'https://h/mcp', baseFolder: '', tls: 'system' }), null);
   assert.equal(parseKnowledgeConfig({ type: 'local', root: 'C:\notas', baseFolder: '' }), null);
+});
+
+test('resolveAdrFolder ignora nombres con separadores de ruta', () => {
+  assert.equal(resolveAdrFolder(['../x/06-JM-ADR', 'a/b-JM-ADR']), '00-JM-ADR');
 });

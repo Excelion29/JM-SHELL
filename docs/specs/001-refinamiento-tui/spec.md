@@ -171,6 +171,13 @@ Pedido del dev: no crear `.jm/` dentro del repositorio cuando hay una base conec
 - Sin base: `.jm/` en el proyecto como hoy, agregada a `.git/info/exclude` (no toca el `.gitignore` del equipo).
 - Lo existente en `.jm/historias/<KEY>` se mueve automáticamente a la base la primera vez que se abre la historia.
 - Va antes de la parte 4 (que depende de dónde vive el estado).
+- Decisiones del dev (2026-11-05): si la historia ya está en la base y hay `.jm` local, gana la base y lo local se
+  renombra como respaldo con aviso; imágenes/PDF: copia oficial en la bóveda y copia de solo lectura en la carpeta de
+  trabajo para que Claude las abra; si la bóveda no guarda bien binarios, los adjuntos viven en la carpeta de trabajo.
+- Conexiones entre notas: la nota `<KEY>.md` lleva frontmatter (historia, épica, proyecto, fase, tareas, módulos,
+  etiquetas) y enlaces `[[...]]`; `jm` mantiene un índice `00-indice.md` en JM-ADR sin pasar por Claude. Graphify no
+  entra en `jm`: el entendimiento del código lo aporta el entorno de Claude Code del dev al ejecutar tareas.
+- Prueba técnica autorizada contra Obsidian real en `PROYECTOS/PACASMAYO_MEZCLAS/_jm-prueba/` (se crea y se borra).
 
 ### Parte 4 — Ejecución tarea por tarea (idea registrada 2026-11-05, por diseñar)
 
@@ -191,6 +198,21 @@ Diseño aprobado (2026-11-05, "todo del plan me agrada"):
   decisiones y pendientes. Así se puede retomar a medias, otro día o desde otra carpeta.
 - Al volver con `/exit`: "¿Terminaste la tarea?" → sí: "Finalizada" (sin tocar la estimación original) y tiempo real
   guardado localmente; no: queda "En curso".
+
+Agregado por el dev (2026-11-05), todo sin IA (lectura directa de Jira, 0 tokens):
+- La pantalla "Tareas" lee el estado real de Jira al entrar y con `r`; filtro de pendientes ("Por hacer"/"En curso")
+  con resumen ("3 de 7 finalizadas · 4h30m pendientes").
+- Muestra todas las subtareas de la historia, incluidas las no creadas por `jm` (marcadas "no es del plan"), con
+  estado y persona asignada, para que el dev decida.
+- Borrado masivo a criterio del dev: marcar varias y `d`; muestra la lista exacta y pide escribir `borrar`. Se quitan
+  del registro de la historia. Si Jira no da permiso, se avisa.
+- Finalizadas: bloqueadas para borrar y editar.
+- En curso: no se borran directo; se pueden devolver a un estado anterior (las transiciones disponibles del proyecto,
+  p. ej. Backlog / Por hacer) y después borrar.
+
+- "Mi día" (tecla `h` en el inicio): tareas de Jira asignadas al dev que vencen hoy o están vencidas, de cualquier
+  historia, con total de horas contra 8 h; se pueden iniciar desde ahí. Solo lectura de Jira, sin IA.
+- En la pantalla de Tareas, el plan se puede ver en solo lectura.
 
 Ajuste previo (en 3.4): al reabrir una conversación existente, `jm` no le manda nada a Claude; muestra el historial y
 espera al dev. El primer mensaje del dev retoma la sesión (o la reconstruye desde la bitácora si ya no existe).
@@ -277,6 +299,9 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Commit parte 3.2 | Marcello Cano | 2026-11-05 | aprobado ("okey genial apruebo"); review 3 dimensiones + re-review seguridad (0 bloqueantes); prueba real con Obsidian pendiente |
 | Commit fix teclado + /mcp + adjuntos | Marcello Cano | 2026-11-05 | aprobado ("okey genial si"); probado escribiendo en el chat real |
 | Accept parte 3.5 (estado en la base, sin .jm en el repo) | Marcello Cano | 2026-11-05 | aprobado ("me queda claro y apruebo"); migración automática; antes de la 4 |
+| Accept plan técnico 3.5 | Marcello Cano | 2026-11-05 | aprobado ("okey sí genial"); recomendaciones 1-3, conexiones de notas sí, Graphify no; prueba en _jm-prueba autorizada |
+| Commit parte 3.5 | Marcello Cano | 2026-11-05 | aprobado ("sí apruebo, continuemos"); migración probada en real; review 2 dimensiones + re-review seguridad |
+| Accept "Mi día" en parte 4 | Marcello Cano | 2026-11-05 | aprobado: vista de tareas propias que vencen hoy o vencidas, de cualquier historia |
 | Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |
 | Commit 3.3 + 3.4 | Marcello Cano | 2026-11-05 | aprobado ("haz el reajuste, luego commiteamos"); review por partes aplicada |
 | Accept parte 3.4 (interfaz pulida) | Marcello Cano | 2026-11-05 | aprobado ("sí, primero pruebas y luego de corrido") |

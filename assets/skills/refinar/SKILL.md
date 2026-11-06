@@ -9,9 +9,22 @@ Ayudas al dev a pasar de una historia de Jira a un plan de tareas estimadas, en 
 es quien hará el trabajo: tu trabajo es sacarle su criterio, contrastarlo con el código real y dejarlo por escrito. Jira
 lo toca `jm`, no tú.
 
+## Dónde vive la historia
+
+El código lo lees en el repositorio donde corres; los archivos de la historia viven en una carpeta que depende de cómo
+abrió `jm` la sesión (el mensaje inicial o tu contexto lo dice; si no dice nada, es la primera):
+
+- **Sin base de conocimiento:** `.jm/historias/<KEY>/`, relativa a la raíz del proyecto (donde está `.jira.json`).
+- **Base por MCP (`jm_kb`):** `<carpeta base>/<JM-ADR>/<KEY>/` dentro de la bóveda. Lees con `vault_read` / `vault_list` y
+  escribes con `vault_write` / `vault_append`; la ruta exacta viene en el mensaje inicial. Las imágenes y PDF no se leen
+  por MCP: ábrelos con Read desde la copia de solo lectura que indica el mensaje inicial.
+- **Base en carpeta local:** la misma estructura, con ruta absoluta (viene en el mensaje inicial); escribes con Write/Edit.
+
+En ningún caso se crea `.jm` dentro del repositorio cuando hay base conectada.
+
 ## Archivos
 
-Todo vive en `.jm/historias/<KEY>/`, en la raíz del proyecto (donde está `.jira.json`):
+Dentro de la carpeta de la historia:
 
 | Archivo | Uso |
 |---|---|
@@ -21,7 +34,7 @@ Todo vive en `.jm/historias/<KEY>/`, en la raíz del proyecto (donde está `.jir
 | `bitacora.md` | Tus notas por bloque. La escribes tú. |
 | `plan.json` | El resultado. Lo escribes tú al final. |
 
-Nunca escribas fuera de esa carpeta, salvo lo que permite la sección «Base de conocimiento». No modifiques código del proyecto. No uses herramientas de Jira/Atlassian ni leas
+Nunca escribas fuera de la carpeta de la historia, salvo lo que permite la sección «Base de conocimiento». No modifiques código del proyecto. No uses herramientas de Jira/Atlassian ni leas
 credenciales (`~/.jira-tool/`, `.env*`).
 
 ## Al empezar
@@ -42,14 +55,33 @@ credenciales (`~/.jira-tool/`, `.env*`).
 
 ## Base de conocimiento
 
-Solo aplica si el mensaje inicial menciona una base de conocimiento, o si existe `.jm/knowledge-context.md` (léelo
-entonces: dice dónde está la base y cuál es tu nota). La base llega por el MCP `jm_kb` (herramientas `mcp__jm_kb__*`)
+Solo aplica si el mensaje inicial o tu contexto mencionan una base de conocimiento (dicen dónde está la base, dónde vive
+la historia y cuál es tu nota). La base llega por el MCP `jm_kb` (herramientas `mcp__jm_kb__*`)
 o como una carpeta local; la carpeta indicada es el foco y el punto de partida, no un límite.
 
 - **Antes del primer mensaje al dev:** lee el contexto y las convenciones de la carpeta base (README, índice, notas de
   convenciones). Puedes leer y buscar en toda la base (otras carpetas, notas relacionadas) cuando el debate lo pida.
-- **Dónde escribes por tu cuenta:** solo en tu nota de esta historia (la ruta exacta viene en el mensaje inicial,
-  `<carpeta JM-ADR>/<KEY>.md`). Nunca escribas en otra nota por iniciativa propia.
+- **Dónde escribes por tu cuenta:** en la carpeta de la historia (`bitacora.md`, `estado.json`, `plan.json`) y en tu
+  nota de esta historia (la ruta exacta viene en el mensaje inicial, `<carpeta JM-ADR>/<KEY>.md`). Nunca escribas en otra
+  nota por iniciativa propia.
+- **Estructura de tu nota `<KEY>.md`:** empieza con frontmatter y enlaza con `[[...]]` lo que leíste:
+
+  ```yaml
+  ---
+  historia: AQ-45
+  epica: AQ-10
+  proyecto: AQ
+  fase: debate
+  tareas: [AQ-101, AQ-102]
+  modulos: [mortalidad]
+  repos: [api-core]
+  tags: [modulo/mortalidad, tipo/decision]
+  ---
+  ```
+
+  `tareas` lleva las claves de Jira solo cuando existen; `fase` sigue a `estado.json`. En el cuerpo enlaza con
+  `[[Nombre de la nota]]` el contexto y las convenciones que usaste, las historias relacionadas (`[[AQ-12]]`) y las notas de los
+  módulos que toca. `00-indice.md` lo mantiene `jm`: no lo edites.
 - **Cuándo escribes:** al cerrar cada bloque (junto con `bitacora.md`) y cuando el plan esté listo. Usa el estado, las
   decisiones y los porqués; no pegues la conversación. Después dile al dev en el chat qué guardaste y dónde.
 - **Fuera de tu nota:** escribe en otra parte de la base solo si el dev te lo pide de forma explícita, diciendo qué y

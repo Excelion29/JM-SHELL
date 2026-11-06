@@ -4,6 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ChatKnowledge, ChatModel } from './chat-types';
 import { KB_ALLOWED_TOOLS, kbToolRule } from './kb-proxy';
+import { CHAT_FILES, isWorkHashSegment, workBase, WORK_ATTACHMENTS_DIR } from './workdir';
+
+export { CHAT_FILES };
 
 const CLAUDE_BIN = 'claude';
 const IS_WINDOWS = process.platform === 'win32';
@@ -21,8 +24,11 @@ export const CHAT_ALLOWED_TOOLS_BASE = 'Read,Grep,Glob,Task,Agent';
 // Herramientas que siempre se niegan: la negación gana sobre cualquier allow
 export const CHAT_DISALLOWED_TOOLS = 'Bash,WebFetch,WebSearch,NotebookEdit';
 export const KB_MCP_RULES = KB_ALLOWED_TOOLS.map(kbToolRule).join(',');
-export const chatAllowedTools = (key: string, kb?: ChatKnowledge | null) =>
-  `${CHAT_ALLOWED_TOOLS_BASE},Write(.jm/historias/${key}/**),Edit(.jm/historias/${key}/**)${kb?.type === 'mcp' ? `,${KB_MCP_RULES}` : ''}`;
+// Con base conectada la historia vive en ella: nada se escribe en .jm del repositorio
+export const chatAllowedTools = (key: string, kb?: ChatKnowledge | null) => {
+  const local = kb ? '' : `,Write(.jm/historias/${key}/**),Edit(.jm/historias/${key}/**)`;
+  return `${CHAT_ALLOWED_TOOLS_BASE}${local}${kb?.type === 'mcp' ? `,${KB_MCP_RULES}` : ''}`;
+};
 const RULE_DRIVE = /^([A-Za-z]):\//;
 // Forma que Claude Code acepta para una ruta absoluta en Windows: //c/Users/... (con "C:/..." o barras invertidas no casa)
 export const toRulePath = (absolutePath: string): string => {
@@ -31,14 +37,12 @@ export const toRulePath = (absolutePath: string): string => {
   return drive ? `//${drive[1].toLowerCase()}/${slashed.slice(drive[0].length)}` : `/${slashed}`;
 };
 // Las reglas con ruta absoluta solo funcionan desde --settings (no desde --allowedTools)
-export const scopedKnowledgeRules = (kb?: ChatKnowledge | null): string[] =>
-  kb?.type === 'local' ? [`Write(${toRulePath(kb.adrDir)}/**)`, `Edit(${toRulePath(kb.adrDir)}/**)`] : [];
-export const CHAT_MCP_FILE = '.jm/mcp.json';
-export const CHAT_FILES = {
-  settings: '.jm/claude-settings.json',
-  agents: '.jm/agents.json',
-  skill: '.jm/refinar-skill.md',
-} as const;
+// Solo la carpeta y la nota de la historia: el índice (00-indice.md) y las demás historias las escribe jm o nadie
+export const scopedKnowledgeRules = (kb: ChatKnowledge | null | undefined, key: string): string[] => {
+  if (kb?.type !== 'local') return [];
+  const base = toRulePath(kb.adrDir);
+  return ['Write', 'Edit'].flatMap((tool) => [`${tool}(${base}/${key}/**)`, `${tool}(${base}/${key}.md)`]);
+};
 const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const ALLOWED_ARGS: RegExp[] = [
   /^(--session-id|--resume|-n)$/,
@@ -56,10 +60,10 @@ const ALLOWED_ARGS: RegExp[] = [
   new RegExp(
     `^${escapeRegex(chatAllowedTools('KEY')).split('KEY').join(CHAT_KEY_SOURCE)}(,${escapeRegex(KB_MCP_RULES)})?$`,
   ),
+  // Con base conectada la lista no incluye permisos sobre .jm
+  new RegExp(`^${escapeRegex(CHAT_ALLOWED_TOOLS_BASE)}(,${escapeRegex(KB_MCP_RULES)})?$`),
   // Solo las herramientas MCP de la base: así se pasan al abrir Claude completo
   new RegExp(`^${escapeRegex(KB_MCP_RULES)}$`),
-  // Archivos de jm relativos a la raíz (el cwd de claude): una ruta absoluta con tildes o paréntesis no pasaría
-  new RegExp(`^(${[...Object.values(CHAT_FILES), CHAT_MCP_FILE].map(escapeRegex).join('|')})$`),
 ];
 
 const WINDOWS_DRIVE_PATH = /^[A-Za-z]:[\\/]/;
@@ -78,6 +82,62 @@ export function isNormalizedAbsolutePath(candidate: string, windows: boolean = I
 export const isSafeAddDirPath = (candidate: string, windows: boolean = IS_WINDOWS): boolean =>
   isNormalizedAbsolutePath(candidate, windows) && !SHELL_UNSAFE_PATH.test(candidate);
 const ADD_DIR_FLAG = '--add-dir';
+const CONFIG_FILE_FLAGS = new Set(['--settings', '--mcp-config', '--agents', '--append-system-prompt-file']);
+const CHAT_FILE_NAMES: ReadonlySet<string> = new Set(Object.values(CHAT_FILES));
+const WORK_FILE_DEPTH = 2;
+const WORK_ATTACHMENTS_DEPTH = 3;
+const CHAT_KEY_STRICT = new RegExp(`^${CHAT_KEY_SOURCE}$`);
+// Base local confirmada por el dev para el proyecto abierto; openKnowledge la reinicia en cada apertura
+const trustedAddDirs = new Set<string>();
+export const trustAddDir = (root: string): void => {
+  trustedAddDirs.clear();
+  trustedAddDirs.add(root);
+};
+export const resetTrustedAddDirs = (): void => trustedAddDirs.clear();
+
+// Archivo técnico de jm: <~/.jira-tool/trabajo>/<hash>/<archivo conocido>, nada más
+export function isWorkFilePath(
+  candidate: string,
+  windows: boolean = IS_WINDOWS,
+  base: string = workBase(),
+): boolean {
+  if (!isSafeAddDirPath(candidate, windows)) return false;
+  const pathApi = windows ? path.win32 : path.posix;
+  const parts = pathApi.relative(base, candidate).split(pathApi.sep);
+  return parts.length === WORK_FILE_DEPTH && isWorkHashSegment(parts[0]) && CHAT_FILE_NAMES.has(parts[1]);
+}
+
+// Copias de adjuntos de la bóveda: <~/.jira-tool/trabajo>/<hash>/adjuntos/<CLAVE>, nada más
+export function isAttachmentsDirPath(
+  candidate: string,
+  windows: boolean = IS_WINDOWS,
+  base: string = workBase(),
+): boolean {
+  if (!isSafeAddDirPath(candidate, windows)) return false;
+  const pathApi = windows ? path.win32 : path.posix;
+  const parts = pathApi.relative(base, candidate).split(pathApi.sep);
+  return (
+    parts.length === WORK_ATTACHMENTS_DEPTH &&
+    isWorkHashSegment(parts[0]) &&
+    parts[1] === WORK_ATTACHMENTS_DIR &&
+    CHAT_KEY_STRICT.test(parts[2])
+  );
+}
+
+// Los valores de estas banderas son rutas: cada una se valida por su tipo, nunca contra la lista general
+function isAllowedArg(flag: string | undefined, arg: string, workRoot: string): boolean {
+  if (flag === ADD_DIR_FLAG) return trustedAddDirs.has(arg) || isAttachmentsDirPath(arg, IS_WINDOWS, workRoot);
+  if (flag !== undefined && CONFIG_FILE_FLAGS.has(flag)) return isWorkFilePath(arg, IS_WINDOWS, workRoot);
+  return ALLOWED_ARGS.some((pattern) => pattern.test(arg));
+}
+
+// La carpeta de trabajo va por argv a un shim con shell: sin % " ! ^ & | < > no hay cómo citarla
+export function assertWorkDirUsable(workDir: string): void {
+  if (!isSafeAddDirPath(workDir))
+    throw new Error(
+      `Tu carpeta de usuario tiene caracteres que Claude no admite en la línea de comandos (% " ! ^ & | < >): "${workDir}".`,
+    );
+}
 
 export interface ClaudeRunResult {
   code: number | null;
@@ -87,10 +147,9 @@ export interface ClaudeRunResult {
 export type ClaudeRunner = (args: string[], cwd: string) => Promise<ClaudeRunResult>;
 
 // Última barrera antes de spawn: ningún texto fuera de esta lista llega a un proceso
-export function assertSafeArgs(args: string[]): void {
+export function assertSafeArgs(args: string[], workRoot: string = workBase()): void {
   for (const [index, arg] of args.entries()) {
-    const allowed =
-      args[index - 1] === ADD_DIR_FLAG ? isSafeAddDirPath(arg) : ALLOWED_ARGS.some((pattern) => pattern.test(arg));
+    const allowed = isAllowedArg(args[index - 1], arg, workRoot);
     if (!allowed) {
       throw new Error(`Argumento no permitido para claude: "${arg}".`);
     }
@@ -168,10 +227,26 @@ export const buildNewSessionArgs = (key: string, sessionId: string): string[] =>
 
 export const buildResumeArgs = (sessionId: string): string[] => ['--resume', sessionId];
 
-// Van antes del resto: --mcp-config y --allowedTools son variádicas y se tragarían el prompt final
-export const handoffKnowledgeArgs = (kb: ChatKnowledge | null): string[] => {
-  if (kb?.type === 'mcp') return ['--mcp-config', CHAT_MCP_FILE, '--allowedTools', KB_MCP_RULES];
-  return kb?.type === 'local' ? [ADD_DIR_FLAG, kb.root] : [];
+export interface WorkFiles {
+  mcp: string;
+  context: string;
+  // Copias de solo lectura de los adjuntos de la bóveda (solo con MCP)
+  attachments: string;
+}
+
+export const workFilesOf = (workDir: string, key: string): WorkFiles => ({
+  mcp: path.join(workDir, CHAT_FILES.mcp),
+  context: path.join(workDir, CHAT_FILES.context),
+  attachments: path.join(workDir, WORK_ATTACHMENTS_DIR, key),
+});
+
+// Van antes del resto: --mcp-config, --add-dir y --allowedTools son variádicas y se tragarían el prompt final;
+// el --append-system-prompt-file de cierre las corta
+export const handoffKnowledgeArgs = (kb: ChatKnowledge | null, files: WorkFiles): string[] => {
+  const context = ['--append-system-prompt-file', files.context];
+  if (kb?.type === 'mcp')
+    return [ADD_DIR_FLAG, files.attachments, '--mcp-config', files.mcp, '--allowedTools', KB_MCP_RULES, ...context];
+  return kb?.type === 'local' ? [ADD_DIR_FLAG, kb.root, ...context] : [];
 };
 
 export interface LaunchOptions {

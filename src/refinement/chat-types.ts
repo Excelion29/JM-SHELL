@@ -42,6 +42,8 @@ export interface ChatOpenResult {
   // La conversación ya existía: Claude no está trabajando y espera el primer mensaje del dev
   idle: boolean;
   history: ChatLine[];
+  // Aviso al abrir (p. ej. la historia se movió a la base de conocimiento)
+  notice?: string;
 }
 
 // Base de conocimiento: se pregunta una vez por carpeta que ya tiene proyecto

@@ -38,9 +38,39 @@ test('muestra el inicio cuando el PIN es correcto', async () => {
   assert.ok((lastFrame() ?? '').includes('AQ'));
 });
 
+test('al ingresar el PIN recarga las historias (las de la base solo se leen con PIN)', async () => {
+  const vaultStory = {
+    key: 'PM-136',
+    summary: 'Lista de insumos',
+    phase: 'plan',
+    block: '—',
+    nextStep: 'Revisa el plan',
+    updatedAt: '2026-11-05T10:00:00.000Z',
+  };
+  const { stdin, lastFrame } = render(
+    <App projectKey="PM" stories={[]} {...noopProps} loadStories={async () => [vaultStory]} />,
+  );
+  await typePin(stdin, VALID_PIN);
+  await waitFor(() => (lastFrame() ?? '').includes('PM-136'));
+});
+
 const STORIES = [
-  { key: 'AQ-45', summary: 'Login social', phase: 'debate', block: 'riesgos', nextStep: 'Retoma el debate', updatedAt: '2026-11-04T10:00:00.000Z' },
-  { key: 'AQ-46', summary: 'Reporte mensual', phase: 'plan', block: '—', nextStep: 'Revisa el plan', updatedAt: '2026-11-03T10:00:00.000Z' },
+  {
+    key: 'AQ-45',
+    summary: 'Login social',
+    phase: 'debate',
+    block: 'riesgos',
+    nextStep: 'Retoma el debate',
+    updatedAt: '2026-11-04T10:00:00.000Z',
+  },
+  {
+    key: 'AQ-46',
+    summary: 'Reporte mensual',
+    phase: 'plan',
+    block: '—',
+    nextStep: 'Revisa el plan',
+    updatedAt: '2026-11-03T10:00:00.000Z',
+  },
 ];
 const DOWN = '[B';
 
@@ -89,7 +119,9 @@ test('n y luego k abre la entrada de clave y acepta una válida en minúsculas',
 
 test('muestra el error y permite reintentar cuando el PIN es incorrecto', async () => {
   const message = 'PIN incorrecto';
-  const { stdin, lastFrame } = render(<App projectKey="AQ" stories={[]} {...noopProps} unlock={async () => ({ ok: false, message })} />);
+  const { stdin, lastFrame } = render(
+    <App projectKey="AQ" stories={[]} {...noopProps} unlock={async () => ({ ok: false, message })} />,
+  );
   await typePin(stdin, VALID_PIN);
   await waitFor(() => (lastFrame() ?? '').includes(message));
   assert.ok(!(lastFrame() ?? '').includes(HOME_TEXTS.title));

@@ -5,7 +5,6 @@ import {
   assertSafeArgs,
   CHAT_DISALLOWED_TOOLS,
   CHAT_KEY_SOURCE,
-  CHAT_MCP_FILE,
   CHAT_MODEL_NAMES,
   chatAllowedTools,
   scopedKnowledgeRules,
@@ -186,7 +185,7 @@ export function buildChatSettings(key: string, kb: ChatKnowledge | null = null):
   return {
     disableAllHooks: true,
     permissions: {
-      allow: [...chatAllowedTools(key, kb).split(','), ...scopedKnowledgeRules(kb)],
+      allow: [...chatAllowedTools(key, kb).split(','), ...scopedKnowledgeRules(kb, key)],
       deny: CHAT_DISALLOWED_TOOLS.split(','),
     },
   };
@@ -201,10 +200,16 @@ export interface ChatArgsInput {
   agentsFile: string;
   settingsFile: string;
   kb?: ChatKnowledge | null;
+  // Solo con MCP: el mcp.json de la carpeta de trabajo y las copias de solo lectura de los adjuntos
+  mcpFile?: string;
+  attachmentsDir?: string;
 }
 
-function knowledgeArgs(kb: ChatKnowledge | null): string[] {
-  if (kb?.type === 'mcp') return ['--mcp-config', CHAT_MCP_FILE];
+function knowledgeArgs(kb: ChatKnowledge | null, mcpFile?: string, attachmentsDir?: string): string[] {
+  if (kb?.type === 'mcp') {
+    if (!mcpFile || !attachmentsDir) throw new Error('Falta la carpeta de trabajo para la base de conocimiento.');
+    return ['--mcp-config', mcpFile, '--add-dir', attachmentsDir];
+  }
   return kb?.type === 'local' ? ['--add-dir', kb.root] : [];
 }
 
@@ -218,6 +223,8 @@ export function buildChatArgs({
   agentsFile,
   settingsFile,
   kb = null,
+  mcpFile,
+  attachmentsDir,
 }: ChatArgsInput): string[] {
   if (!KEY_PATTERN.test(key)) throw new Error(`Clave de historia inválida para el chat: "${key}".`);
   if (!CHAT_MODEL_NAMES.includes(model)) throw new Error(`Modelo no permitido para el chat: "${model}".`);
@@ -233,7 +240,7 @@ export function buildChatArgs({
     '--setting-sources',
     '',
     '--strict-mcp-config',
-    ...knowledgeArgs(kb),
+    ...knowledgeArgs(kb, mcpFile, attachmentsDir),
     '--settings',
     settingsFile,
     '--permission-mode',
@@ -295,6 +302,8 @@ export interface ChatSessionOptions {
   settingsFile: string;
   saveSessionId: (sessionId: string) => Promise<void> | void;
   kb?: ChatKnowledge | null;
+  mcpFile?: string;
+  attachmentsDir?: string;
   // Línea de contexto de la base de conocimiento que acompaña a los mensajes iniciales
   kbContext?: string | null;
   spawner?: ChatSpawner;
@@ -475,6 +484,8 @@ export class ChatSession {
       agentsFile: this.options.agentsFile,
       settingsFile: this.options.settingsFile,
       kb: this.options.kb,
+      mcpFile: this.options.mcpFile,
+      attachmentsDir: this.options.attachmentsDir,
     });
     assertSafeArgs(args);
     let sawOutput = false;

@@ -8,9 +8,10 @@ import { formatSeconds } from '../utils/time';
 import { buildPreview, defaultAssignee, findExistingMatches, resolveTarget, runCreation } from '../refinement/create';
 import { projectKeyOfStory } from '../refinement/repos';
 import type { AskReason, CreationTarget, ParentOutcome } from '../refinement/review-types';
-import { assertKey, isValidIssueKey, readState } from '../refinement/state';
-import { storyRootFor } from '../refinement/story-root';
+import { assertKey, isValidIssueKey, projectRoot, readState } from '../refinement/state';
+import { refreshDashboard } from './dashboard';
 import { configuredAssignee } from './plan-bridge';
+import { openStory } from './story-resolver';
 
 const ASK_REASONS: Record<AskReason, string> = {
   epic: 'es una épica',
@@ -59,12 +60,13 @@ export async function importCommand(issueKeyArg?: string): Promise<void> {
     const key = await resolveIssueKey(issueKeyArg);
     assertKey(key);
     const jira = new JiraService(await requireAuth());
-    const root = storyRootFor(key);
-    if (!(await readState(root, key)))
+    const root = projectRoot();
+    const { store } = await openStory(root, key);
+    if (!(await readState(store, key)))
       throw new Error(`La historia ${key} aún no tiene plan. Ejecuta \`jm refinar ${key}\`.`);
 
     const assignee = await defaultAssignee(jira, projectKeyOfStory(key), await configuredAssignee());
-    const preview = await buildPreview(jira, root, key, assignee);
+    const preview = await buildPreview(jira, store, key, assignee);
     if (!preview.taskCount) throw new Error('No hay tareas marcadas en el plan. Revísalo en `jm` (tecla r).');
     const target = preview.parent.kind === 'ready' ? preview.parent.target : await askTarget(jira, key, preview.parent);
     if (!target) {
@@ -73,7 +75,7 @@ export async function importCommand(issueKeyArg?: string): Promise<void> {
     }
 
     const existing =
-      preview.parent.kind === 'ready' ? preview.existing : await findExistingMatches(jira, root, key, target);
+      preview.parent.kind === 'ready' ? preview.existing : await findExistingMatches(jira, store, key, target);
     console.log(
       chalk.bold(`\n  Se crearán ${preview.taskCount} tarea(s) · estimado ${formatSeconds(preview.estimateSeconds)}`),
     );
@@ -95,7 +97,7 @@ export async function importCommand(issueKeyArg?: string): Promise<void> {
     }
 
     const outcome = await runCreation(
-      { jira, root },
+      { jira, store },
       key,
       { target, assigneeId: assignee.accountId, adopt: Object.fromEntries(existing.map((m) => [m.taskId, m.key])) },
       (progress) =>
@@ -106,6 +108,7 @@ export async function importCommand(issueKeyArg?: string): Promise<void> {
       info(`Siguiente paso: vuelve a ejecutar \`jm import ${key}\`; continúa donde se cortó.`);
       process.exit(1);
     }
+    await refreshDashboard(root);
     if (outcome.estimateSkipped) warn('Jira no acepta estimación en este proyecto: se crearon sin ella.');
     for (const created of outcome.created) success(`${chalk.bold(created.key)} — ${created.summary}`);
     info(`Siguiente paso: abre el padre con \`jm open ${outcome.parentKey}\`.`);

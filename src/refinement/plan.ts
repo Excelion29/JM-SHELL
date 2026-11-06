@@ -1,4 +1,5 @@
-import * as fs from 'fs-extra';
+import { PLAN_FILE } from './state';
+import type { StoryStore } from './story-store';
 import { parseEstimate, parseFinalEstimate } from './pert';
 import { isValidIsoDate } from './schedule';
 import { PlannedTask, RefinementPlan, RISKS, Risk } from './types';
@@ -114,12 +115,24 @@ export function validatePlan(raw: unknown): RefinementPlan {
   return { storyKey, tasks };
 }
 
-export async function loadPlan(planFile: string): Promise<RefinementPlan> {
+export function parsePlan(text: string, where: string): RefinementPlan {
   let raw: unknown;
   try {
-    raw = await fs.readJson(planFile);
+    raw = JSON.parse(text);
   } catch (err: unknown) {
-    fail(`No pude leer ${planFile}: ${(err as Error).message}`);
+    fail(`No pude leer ${where}: ${(err as Error).message}`);
   }
   return validatePlan(raw);
+}
+
+export async function loadPlan(store: StoryStore): Promise<RefinementPlan> {
+  const where = `${store.label}/${PLAN_FILE}`;
+  let text: string | null;
+  try {
+    text = await store.readText(PLAN_FILE);
+    if (text === null) throw new Error('el archivo no existe');
+  } catch (err: unknown) {
+    fail(`No pude leer ${where}: ${(err as Error).message}`);
+  }
+  return parsePlan(text, where);
 }

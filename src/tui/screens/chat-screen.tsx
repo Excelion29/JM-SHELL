@@ -167,6 +167,7 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
         setHeader(opened.header);
         setCodeFolder(opened.codeFolder);
         if (opened.idle) setBusy(false);
+        if (opened.notice) setMessage(opened.notice);
         setLines(capLines(opened.history));
       })
       .catch((err: unknown) => setOpenError((err as Error).message));

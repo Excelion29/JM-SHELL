@@ -100,7 +100,7 @@ export interface KbProxyOptions {
 }
 
 export interface KbProxy {
-  // Lleva un token aleatorio en la ruta: solo quien lee .jm/mcp.json puede usar el intermediario
+  // Lleva un token aleatorio en la ruta: solo quien lee el mcp.json de la carpeta de trabajo puede usar el intermediario
   url: string;
   close: () => Promise<void>;
 }

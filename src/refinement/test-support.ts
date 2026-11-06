@@ -5,13 +5,20 @@ import type { JiraIssue } from '../config/types';
 import { IssueNotFoundError } from '../services/jira';
 import type { CloseJira } from './close';
 import type { CreateJira } from './create';
-import { safeWriteFile } from './safe-fs';
-import { attachmentsDir, ensureStory, planPath, updateState } from './state';
+import { createProjectStore } from './project-store';
+import { JM_DIR } from './safe-fs';
+import { ATTACHMENTS_DIR, ensureStory, PLAN_FILE, STORIES_DIR, updateState } from './state';
+import type { StoryStore } from './story-store';
 import type { Phase, PlannedTask, StoryAttachment } from './types';
 
 export async function tempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'jm-flow-'));
 }
+
+export const DEFAULT_TEST_KEY = 'AQ-45';
+
+// Almacén de proyecto (.jm/historias/<KEY>) sobre una carpeta temporal
+export const storeAt = (root: string, key: string = DEFAULT_TEST_KEY): StoryStore => createProjectStore(root, key);
 
 export const task = (id: string, patch: Partial<PlannedTask> = {}): PlannedTask => ({
   id,
@@ -33,17 +40,17 @@ export interface SeedOptions {
 }
 
 export async function seedStory(
-  root: string,
+  store: StoryStore,
   key: string,
   tasks: PlannedTask[],
   options: SeedOptions = {},
 ): Promise<void> {
-  await ensureStory(root, key, 'Historia de prueba', null);
-  safeWriteFile(root, planPath(root, key), `${JSON.stringify({ storyKey: key, tasks }, null, 2)}\n`);
+  await ensureStory(store, key, 'Historia de prueba', null);
+  await store.writeText(PLAN_FILE, `${JSON.stringify({ storyKey: key, tasks }, null, 2)}\n`);
   for (const [name, content] of Object.entries(options.files ?? {})) {
-    await fs.writeFile(path.join(attachmentsDir(root, key), name), content);
+    await store.writeBinary(`${ATTACHMENTS_DIR}/${name}`, Buffer.from(content));
   }
-  await updateState(root, key, (s) => {
+  await updateState(store, key, (s) => {
     s.phase = options.phase ?? 'plan';
     s.attachments = options.attachments ?? [];
   });
@@ -140,3 +147,8 @@ export function createFakeJira(options: FakeJiraOptions = {}) {
   };
   return { jira, calls };
 }
+
+export const storyDirOf = (root: string, key: string): string => path.join(root, JM_DIR, STORIES_DIR, key);
+export const statePathOf = (root: string, key: string): string => path.join(storyDirOf(root, key), 'estado.json');
+export const attachmentsPathOf = (root: string, key: string): string =>
+  path.join(storyDirOf(root, key), ATTACHMENTS_DIR);

@@ -13,7 +13,7 @@ import { setSession, setSessionPin, getSession, clearSession } from '../utils/se
 import { writeFileAtomicNoLinks } from '../utils/safe-write';
 import { error } from '../utils/format';
 import { reclaimStdin } from '../utils/terminal';
-import { listStories, projectRoot, toSummary } from '../refinement/state';
+import { projectRoot, toSummary } from '../refinement/state';
 import {
   BROWSE_LIMIT,
   buildEpicsJql,
@@ -26,6 +26,7 @@ import { BrowseItem, ProjectItem } from '../refinement/types';
 import { createChatBridge } from './chat-bridge';
 import { createPlanBridge } from './plan-bridge';
 import { runRefine } from './refine';
+import { closeStoryStores, listAllStories } from './story-resolver';
 
 const BACK_NOTICE = 'Volviste de Claude Code.';
 
@@ -40,13 +41,13 @@ async function readProjectKey(): Promise<string | null> {
   }
 }
 
-// Las historias viven en la carpeta donde se abrió jm
+// Las historias viven en la base conectada o, sin base, en la carpeta donde se abrió jm
 async function loadSummaries(projectKey: string | null) {
   try {
-    const stories = await listStories(projectRoot());
+    const stories = await listAllStories(projectRoot());
     return filterByProject(stories.map(toSummary), projectKey).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   } catch (err: unknown) {
-    error(`No pude leer tus historias de .jm: ${(err as Error).message}`);
+    error(`No pude leer tus historias: ${(err as Error).message}`);
     return [];
   }
 }
@@ -160,6 +161,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
       notice = await handoffAndReturn(action.key);
     }
   } finally {
+    closeStoryStores();
     clearSession();
   }
 }

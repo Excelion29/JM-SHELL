@@ -68,8 +68,11 @@ export function parseKnowledgeConfig(value: unknown): KnowledgeConfig | null {
 const pad = (n: number) => String(n).padStart(ADR_NUMBER_DIGITS, '0');
 
 // Reusa la carpeta *JM-ADR existente; si no, NN-JM-ADR con el número siguiente al mayor (00 sin numeración)
+// Un nombre con separadores saldría de la carpeta base al armar rutas
+const PATH_SEPARATORS = /[\\/]/;
+
 export function resolveAdrFolder(childNames: string[]): string {
-  const existing = childNames.find((name) => name.endsWith(ADR_SUFFIX));
+  const existing = childNames.find((name) => name.endsWith(ADR_SUFFIX) && !PATH_SEPARATORS.test(name));
   if (existing) return existing;
   const numbers = childNames.flatMap((name) => {
     const match = NUMBER_PREFIX.exec(name);
@@ -98,15 +101,25 @@ export function chooseStartMessage({ hasSession, hasLocalLog, noteExists }: Star
   return noteExists ? 'fromNote' : 'first';
 }
 
-// Texto que viaja por stdin al arrancar: ubica la base y la única nota donde Claude escribe por su cuenta
-export function knowledgeContextLine(config: KnowledgeConfig, notePath: string): string {
+// Texto que viaja por stdin al arrancar: ubica la base, la carpeta de la historia y la nota de la historia
+export function knowledgeContextLine(
+  config: KnowledgeConfig,
+  notePath: string,
+  storyFolder: string,
+  attachmentsCopy?: string,
+): string {
   if (config.type === 'none') return '';
   const where =
     config.type === 'mcp'
       ? `por el MCP ${KB_SERVER_NAME} (carpeta base \`${config.baseFolder || '/'}\`)`
       : `en la carpeta local \`${config.root}\` (carpeta base \`${config.baseFolder || '/'}\`)`;
+  const copy = attachmentsCopy
+    ? ` Los adjuntos binarios (imágenes, PDF) los abres desde la copia de solo lectura \`${attachmentsCopy}\`.`
+    : '';
   return (
     `Tienes una base de conocimiento ${where}. Sigue la sección "Base de conocimiento" de la skill. ` +
-    `Tu nota de esta historia es \`${notePath}\`: es el único lugar donde escribes por tu cuenta.`
+    `La historia vive en la carpeta \`${storyFolder}\` de la base (no en el repositorio): ahí lees y escribes ` +
+    `historia.md, bitacora.md, estado.json, plan.json y adjuntos/.${copy} ` +
+    `Tu nota de esta historia es \`${notePath}\`.`
   );
 }

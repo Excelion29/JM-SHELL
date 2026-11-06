@@ -233,7 +233,7 @@ const SECTIONS: Section[] = [
         args: '[CLAVE]',
         description: 'Debate una historia con Claude Code y deja un plan con estimación PERT.',
         detail: [
-          'Descarga la historia y sus adjuntos a .jm/historias/<CLAVE>/ en la raíz del proyecto.',
+          'Descarga la historia y sus adjuntos en la base conectada o, sin base, en `.jm/historias/<CLAVE>/`.',
           'Abre Claude con /refinar; si ya había una sesión, la retoma.',
           'Requiere tener `claude` instalado. Sin CLAVE usa el contexto activo o el branch.',
         ],

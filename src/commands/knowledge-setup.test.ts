@@ -260,3 +260,12 @@ test('saveKnowledge MCP: si la URL no responde como MCP se rechaza con el /mcp s
   assert.equal((await readConfig(root)).knowledge, undefined);
   assert.equal(await loadKnowledgeKey(`${mcpOrigin}/mcp`, PIN, secrets), null);
 });
+
+test('una base local que es la raíz del disco o la carpeta del usuario no se puede confirmar', async () => {
+  const secrets = await tempDir('jm-kb-secrets-');
+  for (const wide of [path.parse(os.tmpdir()).root, os.homedir()]) {
+    const root = await projectRoot({ projectKey: 'AQ', knowledge: { type: 'local', root: wide, baseFolder: 'PROY' } });
+    await assert.rejects(describeKnowledge(root), /demasiado amplia/);
+    await assert.rejects(confirmKnowledge(root, secrets), /demasiado amplia/);
+  }
+});
