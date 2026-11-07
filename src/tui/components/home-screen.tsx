@@ -17,7 +17,8 @@ interface HomeScreenProps {
   onQuit: () => void;
 }
 
-const REVIEW_PHASES: readonly string[] = ['plan', 'reviewed'];
+// Tras crear, r sigue abierto para crear las tareas que se agreguen al plan
+const REVIEW_PHASES: readonly string[] = ['plan', 'reviewed', 'created', 'in-progress'];
 const CLOSE_PHASES: readonly string[] = ['created', 'in-progress'];
 const TASKS_PHASES: readonly string[] = ['created', 'in-progress'];
 

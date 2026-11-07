@@ -4,7 +4,16 @@ import * as fs from 'fs-extra';
 import * as os from 'os';
 import * as path from 'path';
 import { adfToMarkdown } from '../utils/adf';
-import { buildDescriptionMarkdown, buildPreview, estimateForJira, findExistingMatches, plannedUploads, resolveParent, resolveTarget, runCreation } from './create';
+import {
+  buildDescriptionMarkdown,
+  buildPreview,
+  estimateForJira,
+  findExistingMatches,
+  plannedUploads,
+  resolveParent,
+  resolveTarget,
+  runCreation,
+} from './create';
 import type { CreateRequest, CreationTarget } from './review-types';
 import { readState } from './state';
 import {
@@ -101,7 +110,7 @@ test('crea solo las tareas marcadas con descripción, criterio, estimación redo
   assert.match(markdown, /Detalle de T1/);
   assert.match(markdown, /Criterio de terminado/);
   assert.match(markdown, /- Pasa el test\n- Sin errores/);
-  assert.match(markdown, /Estimación: 30m \/ 1h \/ 2h · esperado 1h5m · riesgo medio/);
+  assert.doesNotMatch(markdown, /Estimación|esperado|riesgo/);
   assert.deepEqual(events, ['1/1:creating', '1/1:created']);
   const state = await readState(storeAt(root), KEY);
   assert.deepEqual(state?.createdIssues, { T1: 'AQ-101' });
@@ -123,7 +132,9 @@ test('propone las tareas cuyo título ya existe en el padre leyendo sus subtarea
   const root = await tempRoot();
   await seedStory(storeAt(root), KEY, tasks(2), { phase: 'reviewed' });
   const { jira, calls } = createFakeJira({ issues: { [KEY]: {} }, children: [{ key: 'AQ-7', summary: 'Tarea T2' }] });
-  assert.deepEqual(await findExistingMatches(jira, storeAt(root), KEY, TARGET), [{ taskId: 'T2', key: 'AQ-7', summary: 'Tarea T2' }]);
+  assert.deepEqual(await findExistingMatches(jira, storeAt(root), KEY, TARGET), [
+    { taskId: 'T2', key: 'AQ-7', summary: 'Tarea T2' },
+  ]);
   assert.deepEqual(calls.searches, []);
   assert.equal(calls.created.length, 0);
 });
@@ -200,7 +211,11 @@ test('consulta los adjuntos del issue una sola vez aunque haya varios archivos',
 
 test('estado.json con claves de issue inválidas las descarta al leer', async () => {
   const root = await tempRoot();
-  await seedStory(storeAt(root), KEY, tasks(1), { phase: 'reviewed', files: { 'c.png': 'x' }, attachments: [attachment('c.png')] });
+  await seedStory(storeAt(root), KEY, tasks(1), {
+    phase: 'reviewed',
+    files: { 'c.png': 'x' },
+    attachments: [attachment('c.png')],
+  });
   const file = statePathOf(root, KEY);
   const raw = await fs.readJson(file);
   raw.createdIssues = { T1: '../../etc', T2: 'AQ-5' };
@@ -351,14 +366,16 @@ test('un enlace simbólico dentro de adjuntos no se sube', async (t) => {
 const THURSDAY = '2026-11-05';
 const ONE_HOUR = 3600;
 
-test('la descripción declara la estimación del dev y conserva PERT como referencia', () => {
+test('la descripción no lleva estimación ni PERT: el tiempo va solo en el campo de Jira', () => {
   const markdown = buildDescriptionMarkdown(task('T1', { finalEstimate: '3h' }));
-  assert.match(markdown, /Estimación: 3h \(del dev\) · PERT: O 30m \/ M 1h \/ P 2h, esperado 1h5m · riesgo medio/);
+  assert.doesNotMatch(markdown, /Estimación|PERT|esperado|riesgo/);
 });
 
 test('crea con la estimación propia del dev y la fecha recomendada; sin ella, la recomendación redondeada', async () => {
   const root = await tempRoot();
-  await seedStory(storeAt(root), KEY, [task('T1', { finalEstimate: '3h' }), task('T2'), task('T3')], { phase: 'reviewed' });
+  await seedStory(storeAt(root), KEY, [task('T1', { finalEstimate: '3h' }), task('T2'), task('T3')], {
+    phase: 'reviewed',
+  });
   const { jira, calls } = createFakeJira();
   const outcome = await runCreation({ jira, store: storeAt(root), today: THURSDAY }, KEY, REQUEST);
   assert.ok(outcome.ok);
@@ -381,7 +398,10 @@ test('crea con la fecha manual y pasa al día siguiente lo que ya no cabe', asyn
   );
   const { jira, calls } = createFakeJira();
   await runCreation({ jira, store: storeAt(root), today: THURSDAY }, KEY, REQUEST);
-  assert.deepEqual(calls.created.map((p) => p.dueDate), [THURSDAY, '2026-11-08', '2026-11-06']);
+  assert.deepEqual(
+    calls.created.map((p) => p.dueDate),
+    [THURSDAY, '2026-11-08', '2026-11-06'],
+  );
 });
 
 test('la vista previa suma lo que irá a Jira y la creación no usa transiciones', async () => {

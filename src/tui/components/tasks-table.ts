@@ -22,8 +22,16 @@ const PENDING_CATEGORIES: readonly string[] = ['new', 'indeterminate', 'unknown'
 
 export const isPending = (row: TaskRow): boolean => !row.missing && PENDING_CATEGORIES.includes(row.category);
 
+// Lo accionable primero: en curso, por hacer, sin estado conocido; las finalizadas y las que Jira no devuelve al final
+const CATEGORY_ORDER: Record<string, number> = { indeterminate: 0, new: 1, unknown: 2, done: 3 };
+const MISSING_ORDER = 4;
+
+const rowOrder = (row: TaskRow): number =>
+  row.missing ? MISSING_ORDER : (CATEGORY_ORDER[row.category] ?? MISSING_ORDER);
+
+// sort es estable: dentro de cada grupo se respeta el orden de creación
 export const visibleRows = (rows: TaskRow[], pendingOnly: boolean): TaskRow[] =>
-  pendingOnly ? rows.filter(isPending) : rows;
+  (pendingOnly ? rows.filter(isPending) : [...rows]).sort((a, b) => rowOrder(a) - rowOrder(b));
 
 export function summaryLine(rows: TaskRow[]): string {
   const live = rows.filter((row) => !row.missing);

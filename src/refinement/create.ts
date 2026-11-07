@@ -3,10 +3,9 @@ import { IssueNotFoundError } from '../services/jira';
 import type { JiraIssue } from '../config/types';
 import { markdownToAdf } from '../utils/adf';
 import { getAvailableTypes, getLevel, IssueTypeInfo, isEpicType } from '../utils/issueTypes';
-import { formatSeconds } from '../utils/time';
 import { MAX_ATTACHMENT_BYTES } from './attachments';
 import { loadPlan } from './plan';
-import { effectiveSeconds, taskExpectedSeconds } from './pert';
+import { effectiveSeconds } from './pert';
 import { scheduleOf, todayIso } from './schedule';
 import { listLocalEntries, readAttachment } from './review';
 import type {
@@ -25,7 +24,7 @@ import type {
 import { advancePhase, assertKey, readState, updateState } from './state';
 import type { StoryStore } from './story-store';
 import { projectKeyOfStory } from './repos';
-import { PlannedTask, RefinementPlan, Risk, StoryState } from './types';
+import { PlannedTask, RefinementPlan, StoryState } from './types';
 
 export { ESTIMATE_ROUND_SECONDS, estimateForJira } from './pert';
 const DONE_CATEGORY = 'done';
@@ -39,24 +38,16 @@ export type CreateJira = Pick<
   'getIssue' | 'getIssueTypes' | 'createIssue' | 'uploadAttachment' | 'searchAllIssues' | 'getAttachments'
 >;
 
-const RISK_LABELS: Record<Risk, string> = { low: 'bajo', medium: 'medio', high: 'alto' };
-
 // Un salto de línea dentro de un ítem rompería la lista del markdown
 export const oneLine = (text: string): string => text.replace(NEWLINES, ' ').trim();
 
+// Solo descripción y criterio de terminado: la estimación va en su campo de Jira y el PERT queda en el plan local
 export function buildDescriptionMarkdown(task: PlannedTask): string {
-  const { optimistic, likely, pessimistic } = task.estimate;
-  const expected = formatSeconds(Math.round(taskExpectedSeconds(task)));
   const parts: string[] = [];
   if (task.description.trim()) parts.push(task.description.trim());
   if (task.doneCriteria.length) {
     parts.push(['## Criterio de terminado', ...task.doneCriteria.map((item) => `- ${oneLine(item)}`)].join('\n'));
   }
-  const final = task.finalEstimate?.trim();
-  const estimateLine = final
-    ? `Estimación: ${final} (del dev) · PERT: O ${optimistic} / M ${likely} / P ${pessimistic}, esperado ${expected}`
-    : `Estimación: ${optimistic} / ${likely} / ${pessimistic} · esperado ${expected}`;
-  parts.push(`${estimateLine} · riesgo ${RISK_LABELS[task.risk]}`);
   return parts.join('\n\n');
 }
 

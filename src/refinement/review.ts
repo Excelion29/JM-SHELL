@@ -17,7 +17,8 @@ import type { StoreEntry, StoryStore } from './story-store';
 import { WORK_OPEN_DIR, writeReadOnlyCopy } from './workdir';
 import { ATTACHMENT_PURPOSES, AttachmentPurpose, PlannedTask, RefinementPlan, StoryState, TaskEstimate } from './types';
 
-const REVIEWABLE_PHASES: readonly string[] = ['plan', 'reviewed'];
+// Tras crear se puede seguir revisando: solo se tocan las tareas que aún no están en Jira
+const REVIEWABLE_PHASES: readonly string[] = ['plan', 'reviewed', 'created', 'in-progress'];
 const TEMP_FILE_SUFFIX = /\.(part|tmp)$/;
 
 export function previewEstimate(estimate: TaskEstimate): EstimatePreview {
@@ -55,6 +56,11 @@ function assertReviewable(state: StoryState): void {
   if (!REVIEWABLE_PHASES.includes(state.phase)) {
     throw new Error(`El plan de ${state.key} ya no se puede revisar (fase "${state.phase}").`);
   }
+}
+
+function assertNotCreated(state: StoryState, taskId: string): void {
+  const issueKey = state.createdIssues[taskId];
+  if (issueKey) throw new Error(`La tarea ${taskId} ya se creó en Jira (${issueKey}); no se puede cambiar aquí.`);
 }
 
 // Primer guardado de la revisión: plan -> revisado
@@ -224,9 +230,7 @@ export async function updateTask(
   const plan = await readPlan(store, key);
   const task = plan.tasks.find((t) => t.id === taskId);
   if (!task) throw new Error(`No encontré la tarea ${taskId} en el plan.`);
-  if (before.createdIssues[taskId]) {
-    throw new Error(`La tarea ${taskId} ya se creó en Jira (${before.createdIssues[taskId]}); no se puede cambiar aquí.`);
-  }
+  assertNotCreated(before, taskId);
   if (patch.summary !== undefined) {
     if (!patch.summary.trim()) throw new Error('El título no puede quedar vacío.');
     task.summary = patch.summary.trim();
@@ -285,6 +289,7 @@ export async function toggleAttachmentTask(
   const plan = await readPlan(store, key);
   const task = plan.tasks.find((t) => t.id === taskId);
   if (!task) throw new Error(`No encontré la tarea ${taskId} en el plan.`);
+  assertNotCreated(before, taskId);
   const assigned =
     (before.attachments.find((a) => a.file === file)?.taskIds.includes(taskId) ?? false) ||
     task.attachments.includes(file);

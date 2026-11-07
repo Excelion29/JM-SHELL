@@ -62,10 +62,15 @@ async function openReview(planOptions: FakePlanOptions = {}) {
   return app;
 }
 
-test('r abre la revisión solo con la historia en plan o revisado', async () => {
+test('r abre la revisión en plan, revisado, creada o en curso; no antes del plan', async () => {
   const debate = setup({}, 'debate');
   await debate.press('r');
   assert.ok(debate.frame().includes(HOME_TEXTS.title));
+  for (const phase of ['created', 'in-progress'] as const) {
+    const later = setup({}, phase);
+    await later.press('r');
+    await later.has(PLAN_TEXTS.title('AQ-45', 'Login social'));
+  }
 
   const app = await openReview();
   const frame = app.frame();
@@ -132,7 +137,15 @@ test('la fila muestra lo que va a Jira y la fecha recomendada; e fija estimació
 
 test('editar solo el título de una tarea excluida conserva su fecha manual', async () => {
   const app = await openReview({
-    tasks: [fakeTask('T1', { include: false, effectiveDate: null, dateManual: true, dueDate: '2026-11-08', dueDateManual: true })],
+    tasks: [
+      fakeTask('T1', {
+        include: false,
+        effectiveDate: null,
+        dateManual: true,
+        dueDate: '2026-11-08',
+        dueDateManual: true,
+      }),
+    ],
   });
   await app.press('e');
   await app.has(PLAN_TEXTS.editTitle('T1'));
@@ -144,10 +157,7 @@ test('editar solo el título de una tarea excluida conserva su fecha manual', as
 
 test('avisa cuando un día suma más de la capacidad diaria, sin bloquear', async () => {
   const app = await openReview({
-    tasks: [
-      fakeTask('T1', { effectiveSeconds: 6 * 3600 }),
-      fakeTask('T2', { effectiveSeconds: 3 * 3600 }),
-    ],
+    tasks: [fakeTask('T1', { effectiveSeconds: 6 * 3600 }), fakeTask('T2', { effectiveSeconds: 3 * 3600 })],
   });
   assert.ok(app.frame().includes(PLAN_TEXTS.overload('2026-11-05', '9h', '8h')));
 });
@@ -381,7 +391,10 @@ test('las tareas se alinean en columnas y la elegida lleva el marcador', async (
   const app = await openReview({
     tasks: [fakeTask('T1', { summary: 'Corto' }), fakeTask('T2', { summary: 'Un título bastante más largo' })],
   });
-  const rows = app.frame().split('\n').filter((row) => /\[x\] T\d/.test(row));
+  const rows = app
+    .frame()
+    .split('\n')
+    .filter((row) => /\[x\] T\d/.test(row));
   assert.equal(rows.length, 2);
   assert.ok(rows[0].includes(`${HOME_TEXTS.selectedMarker} [x] T1`));
   assert.equal(rows[0].indexOf('Jira'), rows[1].indexOf('Jira'));
@@ -393,7 +406,9 @@ test('con muchas tareas la lista se desplaza y el pie con el total sigue visible
   const app = await openReview({ tasks });
   for (let i = 0; i < 35; i++) await app.press(DOWN);
   assert.ok(app.frame().includes('T36'));
-  assert.ok(app.frame().includes(PLAN_TEXTS.total(40, '43h30m', '43h30m', '1h35m')) || app.frame().includes('Total (40'));
+  assert.ok(
+    app.frame().includes(PLAN_TEXTS.total(40, '43h30m', '43h30m', '1h35m')) || app.frame().includes('Total (40'),
+  );
 });
 
 test('las tareas ya creadas no se listan: solo un resumen y los totales cuentan las pendientes', async () => {

@@ -37,6 +37,7 @@ export interface SeedOptions {
   phase?: Phase;
   files?: Record<string, string>;
   attachments?: StoryAttachment[];
+  createdIssues?: Record<string, string>;
 }
 
 export async function seedStory(
@@ -53,6 +54,7 @@ export async function seedStory(
   await updateState(store, key, (s) => {
     s.phase = options.phase ?? 'plan';
     s.attachments = options.attachments ?? [];
+    s.createdIssues = options.createdIssues ?? {};
   });
 }
 

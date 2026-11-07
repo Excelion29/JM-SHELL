@@ -86,11 +86,20 @@ test('la lista muestra asignado, lo que no es del plan y el resumen; p filtra pe
   assert.ok(app.frame().includes(TASKS_TEXTS.filterOn));
 });
 
+test('la lista pone primero lo en curso, luego lo por hacer y al final lo finalizado', async () => {
+  const app = await openTasks({
+    rows: [DONE_ROW, fakeRow('AQ-101'), fakeRow('AQ-102', { status: 'En curso', category: 'indeterminate' })],
+  });
+  const frame = app.frame();
+  const at = (key: string) => frame.indexOf(key);
+  assert.ok(at('AQ-102') < at('AQ-101') && at('AQ-101') < at('AQ-103'), frame);
+});
+
 test('i inicia la tarea y pide abrir Claude con la historia y la subtarea', async () => {
   const app = await openTasks();
   await app.press('i');
   await waitFor(() => app.actions.length === 1, 'la acción');
-  assert.deepEqual(app.actions[0], { type: 'runTask', storyKey: 'AQ-45', issueKey: 'AQ-101' });
+  assert.deepEqual(app.actions[0], { type: 'runTask', storyKey: 'AQ-45', issueKey: 'AQ-102' });
 });
 
 test('si Jira falla al iniciar se avisa y no se abre Claude', async () => {
@@ -122,11 +131,11 @@ test('cancelar el selector de transición no abre Claude', async () => {
 test('una tarea finalizada pregunta antes de reabrir: n cancela y s reabre', async () => {
   const app = await openTasks({ start: [{ kind: 'needs-reopen' }, { kind: 'needs-reopen' }] });
   await app.press('i');
-  await app.has(TASKS_TEXTS.reopenQuestion('AQ-101'));
+  await app.has(TASKS_TEXTS.reopenQuestion('AQ-102'));
   await app.press('n');
   assert.equal(app.actions.length, 0);
   await app.press('i');
-  await app.has(TASKS_TEXTS.reopenQuestion('AQ-101'));
+  await app.has(TASKS_TEXTS.reopenQuestion('AQ-102'));
   await app.press('s');
   await waitFor(() => app.actions.length === 1, 'la acción');
   assert.equal(app.calls.started.at(-1)?.options.reopen, true);
@@ -135,10 +144,10 @@ test('una tarea finalizada pregunta antes de reabrir: n cancela y s reabre', asy
 test('espacio no marca finalizadas ni en curso y lo explica', async () => {
   const app = await openTasks({ rows: [DONE_ROW, fakeRow('AQ-102', { category: 'indeterminate' })] });
   await app.press(' ');
-  await app.has(TASKS_TEXTS.doneBlocked('AQ-103'));
+  await app.has(TASKS_TEXTS.inProgressBlocked('AQ-102'));
   await app.press(DOWN);
   await app.press(' ');
-  await app.has(TASKS_TEXTS.inProgressBlocked('AQ-102'));
+  await app.has(TASKS_TEXTS.doneBlocked('AQ-103'));
 });
 
 test('borrar muestra la lista exacta y exige escribir la palabra completa', async () => {
@@ -226,10 +235,10 @@ test('f finaliza la tarea del cursor sin abrir Claude tras confirmar con s', asy
   const app = await openTasks();
   await app.press('f');
   await app.has(FINISH_TEXTS.directQuestion);
-  assert.ok(app.frame().includes('AQ-101'));
+  assert.ok(app.frame().includes('AQ-102'));
   await app.press('s');
   await app.has(FINISH_TEXTS.directSummary(1, []));
-  assert.deepEqual(app.calls.finished, [{ key: 'AQ-101', options: { direct: true } }]);
+  assert.deepEqual(app.calls.finished, [{ key: 'AQ-102', options: { direct: true } }]);
   assert.equal(app.actions.length, 0);
 });
 

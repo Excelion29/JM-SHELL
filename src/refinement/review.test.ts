@@ -111,9 +111,18 @@ test('no asigna ni cambia archivos que no están en adjuntos', async () => {
   await assert.rejects(setAttachmentPurpose(store, KEY, '../x', 'team'), /no está en la carpeta/);
 });
 
-test('una historia ya creada no admite cambios en el plan', async () => {
-  const store = await seeded({ phase: 'created' });
+test('una historia cerrada no admite cambios en el plan', async () => {
+  const store = await seeded({ phase: 'closed' });
   await assert.rejects(updateTask(store, KEY, 'T1', { include: false }), /ya no se puede revisar/);
+});
+
+test('ya creada o en curso, se revisan las tareas nuevas y las que están en Jira siguen bloqueadas', async () => {
+  for (const phase of ['created', 'in-progress'] as const) {
+    const store = await seeded({ phase, createdIssues: { T1: 'AQ-101' } });
+    const review = await updateTask(store, KEY, 'T2', { include: false });
+    assert.equal(review.phase, phase);
+    await assert.rejects(updateTask(store, KEY, 'T1', { include: false }), /ya se creó en Jira \(AQ-101\)/);
+  }
 });
 
 test('assertSafeToOpen permite extensiones seguras sin distinguir mayúsculas', () => {
@@ -133,10 +142,13 @@ const FRIDAY = '2026-11-06';
 test('loadReview recomienda fechas desde hoy y las recalcula en cada carga', async () => {
   const store = await seeded();
   const first = await loadReview(store, KEY, THURSDAY);
-  assert.deepEqual(first.tasks.map((t) => [t.recommendedDate, t.effectiveDate, t.dateManual]), [
-    [THURSDAY, THURSDAY, false],
-    [THURSDAY, THURSDAY, false],
-  ]);
+  assert.deepEqual(
+    first.tasks.map((t) => [t.recommendedDate, t.effectiveDate, t.dateManual]),
+    [
+      [THURSDAY, THURSDAY, false],
+      [THURSDAY, THURSDAY, false],
+    ],
+  );
   assert.equal(first.dailyCapacitySeconds, 8 * ONE_HOUR);
   assert.equal(first.daySeconds[THURSDAY], 3900 + 2 * ONE_HOUR);
   // Nada se persistió: al día siguiente la recomendación se corre sola

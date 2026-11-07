@@ -222,6 +222,9 @@ Escribe `plan.json` con este formato exacto (claves en inglés, contenido en esp
 - Luego pon `phase: "plan"` y `block: null` en `estado.json`.
 - Cierra con el total esperado y una línea: "Listo. Pulsa Esc y jm te abre la revisión para ajustar y crear las
   tareas."
+- Si la historia ya tiene tareas creadas (fase `created` o `in-progress`) y el dev agrega otra, súmala al final de
+  `plan.json` con el siguiente `id` y no toques `phase`: con `r`, la revisión de jm muestra solo las que faltan crear y
+  nunca duplica las que ya tienen clave de Jira. Cierra con: "Pulsa Esc y luego r para crearla."
 
 ## Tono
 
