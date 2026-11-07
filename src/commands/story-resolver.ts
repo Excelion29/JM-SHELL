@@ -171,6 +171,22 @@ async function knowledgeKeys(folders: KnowledgeFolders): Promise<string[]> {
   return entries.filter((e) => !e.isFile && isValidIssueKey(e.name)).map((e) => e.name);
 }
 
+// Cuántas historias hay en la ubicación que describe `config` (null: .jm del proyecto)
+export async function countStories(
+  root: string,
+  config: KnowledgeConfig | null,
+  options: ResolverOptions = {},
+): Promise<number> {
+  if (!config || config.type === 'none') return localKeys(root).length;
+  const folders = await knowledgeFoldersOf(root, config, options.secretsDir);
+  if (!folders) return 0;
+  try {
+    return (await knowledgeKeys(folders)).length;
+  } finally {
+    folders.close();
+  }
+}
+
 async function readInBatches(listed: ListedStore[]): Promise<StoryState[]> {
   const result: StoryState[] = [];
   for (let start = 0; start < listed.length; start += LISTING_CONCURRENCY) {

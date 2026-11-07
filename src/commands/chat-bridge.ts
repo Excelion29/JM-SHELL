@@ -30,12 +30,16 @@ import { ensureSkill, prepareStory } from './refine';
 import { applyKnowledgeFiles, KnowledgeRuntime, openKnowledge } from './knowledge-runtime';
 import { openStory } from './story-resolver';
 import {
+  changeKnowledge,
   confirmKnowledge,
   describeKnowledge,
   inspectServer,
+  knowledgeSettings,
   knowledgeStatus,
   listKnowledge,
   previewKnowledge,
+  renewKnowledgeKey,
+  resolveTarget,
   saveKnowledge,
 } from './knowledge-setup';
 
@@ -205,9 +209,12 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
       return knowledgeStatus(projectRoot());
     },
     inspectServer,
-    listKnowledge,
-    previewKnowledge,
+    listKnowledge: async (target, dir) => listKnowledge(await resolveTarget(projectRoot(), target), dir),
+    previewKnowledge: async (target, file) => previewKnowledge(await resolveTarget(projectRoot(), target), file),
     saveKnowledge: (choice) => saveKnowledge(projectRoot(), choice),
+    knowledgeSettings: () => knowledgeSettings(projectRoot()),
+    changeKnowledge: (choice) => changeKnowledge(projectRoot(), choice),
+    renewKnowledgeKey: (apiKey) => renewKnowledgeKey(projectRoot(), apiKey),
     describeKnowledge: () => describeKnowledge(projectRoot()),
     trustKnowledge: () => confirmKnowledge(projectRoot()),
     send(text) {

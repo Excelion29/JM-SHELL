@@ -179,6 +179,19 @@ Pedido del dev: no crear `.jm/` dentro del repositorio cuando hay una base conec
   entra en `jm`: el entendimiento del código lo aporta el entorno de Claude Code del dev al ejecutar tareas.
 - Prueba técnica autorizada contra Obsidian real en `PROYECTOS/PACASMAYO_MEZCLAS/_jm-prueba/` (se crea y se borra).
 
+### Parte 5 — Reconfigurar la base desde la app (agregada 2026-11-06)
+
+Tecla `b` en el inicio: muestra la configuración de la base de esa carpeta (tipo, URL o ruta, carpeta base, JM-ADR) y
+permite cambiar la carpeta base (navegador), cambiar la conexión (URL/key MCP con certificado, o carpeta local),
+quitar la base (ninguna) y renovar la API key sin tocar lo demás.
+- Historias existentes al cambiar: se quedan donde están y `jm` avisa cuántas quedan en la ubicación anterior
+  (opción A). Moverlas con la migración verificada (opción B) queda para una actualización posterior.
+- Ajustes del dev (2026-11-06): la pantalla de tareas muestra primero lo en curso, luego lo por hacer y al final lo
+  finalizado. La descripción de la subtarea en Jira ya no lleva la línea "Estimación … esperado … riesgo": el tiempo
+  va solo en el campo de estimación de Jira y el PERT queda en el plan local. `r` también abre la revisión con la
+  historia creada o en curso, para crear tareas agregadas después (las que ya tienen clave de Jira no se tocan ni se
+  duplican); la skill ya no cambia la fase en ese caso.
+
 ### Parte 4 — Ejecución tarea por tarea (idea registrada 2026-11-05, por diseñar)
 
 Elegir una tarea, iniciarla (pasa a "En curso"/"In Progress"), trabajar con Claude con ese contexto y al terminarla
@@ -303,6 +316,8 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Commit parte 3.5 | Marcello Cano | 2026-11-05 | aprobado ("sí apruebo, continuemos"); migración probada en real; review 2 dimensiones + re-review seguridad |
 | Commit parte 4 | Marcello Cano | 2026-11-06 | aprobado ("apruebo"); review combinada aplicada; la revisión del plan oculta las tareas ya creadas |
 | Commit finalizar directo + transiciones por tipo | Marcello Cano | 2026-11-06 | aprobado tras prueba real ("probé, exitoso") |
+| Commit parte 5 + ajustes (orden de tareas, descripción sin estimación, `r` tras crear) | Marcello Cano | 2026-11-07 | aprobado tras prueba ("listo, apruebo") |
+| Accept parte 5 (reconfigurar base, opción A ahora, B después) | Marcello Cano | 2026-11-06 | aprobado ("por ahorita vamos con la …, la B en otra actualización") |
 | Accept "Mi día" en parte 4 | Marcello Cano | 2026-11-05 | aprobado: vista de tareas propias que vencen hoy o vencidas, de cualquier historia |
 | Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |
 | Commit 3.3 + 3.4 | Marcello Cano | 2026-11-05 | aprobado ("haz el reajuste, luego commiteamos"); review por partes aplicada |

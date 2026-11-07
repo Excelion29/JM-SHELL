@@ -13,6 +13,7 @@ interface HomeScreenProps {
   onCloseStory: (key: string) => void;
   onTasks: (key: string) => void;
   onMyDay: () => void;
+  onKnowledge: () => void;
   onQuit: () => void;
 }
 
@@ -29,6 +30,7 @@ export function HomeScreen({
   onCloseStory,
   onTasks,
   onMyDay,
+  onKnowledge,
   onQuit,
 }: HomeScreenProps) {
   const [selected, setSelected] = useState(0);
@@ -42,6 +44,7 @@ export function HomeScreen({
     else if (input === KEYS.closeStory && current?.phaseId && CLOSE_PHASES.includes(current.phaseId)) onCloseStory(current.key);
     else if (input === KEYS.tasks && current?.phaseId && TASKS_PHASES.includes(current.phaseId)) onTasks(current.key);
     else if (input === KEYS.myDay) onMyDay();
+    else if (input === KEYS.knowledgeBase) onKnowledge();
     else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
     else if (key.downArrow) setSelected((i) => Math.min(stories.length - 1, i + 1));
     else if (key.return && stories[selected]) onRefine(stories[selected].key);

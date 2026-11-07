@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 // Solo tipos: se borra al compilar
-import type { ChatBridge, KnowledgeConnection, KnowledgeListing } from '../../refinement/chat-types.js';
+import type { ChatBridge, KnowledgeListing, KnowledgeTarget } from '../../refinement/chat-types.js';
 import { COLORS, HOME_TEXTS, KEYS, KNOWLEDGE_TEXTS, VISIBLE_ROWS } from '../texts.js';
 import { windowStart } from './picker-list.js';
 
 interface KnowledgeBrowserProps {
   chat: ChatBridge;
-  connection: KnowledgeConnection;
+  connection: KnowledgeTarget;
   onSelect: (baseFolder: string) => void;
   onCancel: () => void;
 }

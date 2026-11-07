@@ -1,21 +1,30 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import { saveKnowledgeCert, saveKnowledgeKey } from '../config/knowledge-secrets';
+import { loadKnowledgeCert, saveKnowledgeCert, saveKnowledgeKey } from '../config/knowledge-secrets';
 import { isKnowledgeTrusted, trustKnowledge } from '../config/knowledge-trust';
 import { PROJECT_CONFIG_NAME } from '../config/loader';
 import { writeFileAtomicNoLinks } from '../utils/safe-write';
 import { getSessionPin } from '../utils/session';
 import type {
+  KnowledgeChangeResult,
   KnowledgeChoice,
   KnowledgeConnection,
   KnowledgeListing,
+  KnowledgeSettings,
   KnowledgeStatus,
   KnowledgeSummary,
+  KnowledgeTarget,
   ServerInspection,
 } from '../refinement/chat-types';
-import { isNormalizedAbsolutePath } from '../refinement/claude';
+import { isNormalizedAbsolutePath, resetTrustedAddDirs } from '../refinement/claude';
 import { assertLocalRootAllowed } from '../refinement/local-root';
-import { isHttpsUrl, isValidBaseFolder, KnowledgeConfig, normalizeMcpUrl, resolveAdrFolder } from '../refinement/knowledge';
+import {
+  isHttpsUrl,
+  isValidBaseFolder,
+  KnowledgeConfig,
+  normalizeMcpUrl,
+  resolveAdrFolder,
+} from '../refinement/knowledge';
 import { inspectServerTls, McpEndpoint, verifyMcpEndpoint } from '../refinement/knowledge-rest';
 import {
   createLocalSource,
@@ -26,7 +35,8 @@ import {
   sortEntries,
 } from '../refinement/knowledge-source';
 import { stripTerminalControls } from '../refinement/text';
-import { readKnowledgeConfig } from './knowledge-runtime';
+import { readKnowledgeConfig, resolveMcpAccess } from './knowledge-runtime';
+import { closeStoryStores, countStories } from './story-resolver';
 
 // C0, DEL, C1, separadores de línea/párrafo y controles bidireccionales: escribirían en la terminal o disfrazarían el nombre
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/;
@@ -129,11 +139,11 @@ export async function previewKnowledge(connection: KnowledgeConnection, file: st
 export type McpVerifier = (endpoint: McpEndpoint) => Promise<void>;
 
 async function toConfig(
-  choice: Exclude<KnowledgeChoice, { type: 'none' }>,
+  connection: KnowledgeConnection,
+  baseFolder: string,
   secretsDir: string | undefined,
   verifyMcp: McpVerifier,
 ): Promise<KnowledgeConfig> {
-  const { connection, baseFolder } = choice;
   assertValidFolder(baseFolder);
   if (baseFolder === '') throw new Error('Elige una carpeta dentro de la bóveda como base, no la raíz.');
   if (connection.type === 'local') {
@@ -150,6 +160,25 @@ async function toConfig(
   return { type: 'mcp', url, baseFolder, tls: connection.certPem ? 'pinned' : 'system' };
 }
 
+// Misma conexión de la carpeta con otra carpeta base: no se toca la key ni el certificado
+async function keepConnection(root: string, baseFolder: string): Promise<KnowledgeConfig> {
+  assertValidFolder(baseFolder);
+  if (baseFolder === '') throw new Error('Elige una carpeta dentro de la bóveda como base, no la raíz.');
+  const config = await configToConfirm(root);
+  return { ...config, baseFolder };
+}
+
+async function configFor(
+  root: string,
+  choice: KnowledgeChoice,
+  secretsDir: string | undefined,
+  verifyMcp: McpVerifier,
+): Promise<KnowledgeConfig> {
+  if (choice.type === 'none') return { type: 'none' };
+  if (choice.connection.type === 'current') return keepConnection(root, choice.baseFolder);
+  return toConfig(choice.connection, choice.baseFolder, secretsDir, verifyMcp);
+}
+
 // La key y el certificado van a ~/.jira-tool; en el .jira.json solo queda dónde está la base
 // Lo configurado aquí por el dev queda confirmado (confianza) para esta carpeta
 export async function saveKnowledge(
@@ -160,10 +189,88 @@ export async function saveKnowledge(
 ): Promise<void> {
   const project = await readProjectFile(root);
   if (!project) throw new Error(`No hay ${PROJECT_CONFIG_NAME} en esta carpeta.`);
-  const knowledge = choice.type === 'none' ? { type: 'none' as const } : await toConfig(choice, secretsDir, verifyMcp);
+  const knowledge = await configFor(root, choice, secretsDir, verifyMcp);
   writeFileAtomicNoLinks(
     path.join(root, PROJECT_CONFIG_NAME),
     `${JSON.stringify({ ...project, knowledge }, null, 2)}\n`,
   );
   await trustKnowledge(root, knowledge, secretsDir);
+}
+
+// 'current' se resuelve aquí, en el lado de Node: la API key guardada no sale hacia la pantalla
+export async function resolveTarget(
+  root: string,
+  target: KnowledgeTarget,
+  secretsDir?: string,
+): Promise<KnowledgeConnection> {
+  if (target.type !== 'current') return target;
+  const config = await readKnowledgeConfig(root);
+  if (!config || config.type === 'none') throw new Error('Esta carpeta no tiene una base de conocimiento configurada.');
+  if (config.type === 'local') return { type: 'local', root: config.root };
+  const access = await resolveMcpAccess(config, secretsDir);
+  return { type: 'mcp', url: config.url, apiKey: access.apiKey, certPem: access.ca ?? null };
+}
+
+const NO_KNOWLEDGE_SETTINGS: KnowledgeSettings = {
+  type: 'none',
+  target: null,
+  baseFolder: null,
+  adrFolder: null,
+  connection: 'none',
+  connectionError: null,
+};
+
+export async function knowledgeSettings(root: string, secretsDir?: string): Promise<KnowledgeSettings> {
+  const config = await readKnowledgeConfig(root);
+  if (!config || config.type === 'none') return NO_KNOWLEDGE_SETTINGS;
+  const settings = {
+    type: config.type,
+    target: config.type === 'mcp' ? config.url : config.root,
+    baseFolder: config.baseFolder,
+  };
+  try {
+    const connection = await resolveTarget(root, { type: 'current' }, secretsDir);
+    const listing = await listKnowledge(connection, config.baseFolder);
+    return { ...settings, adrFolder: listing.adrFolder, connection: 'ok', connectionError: null };
+  } catch (err: unknown) {
+    return { ...settings, adrFolder: null, connection: 'unreachable', connectionError: (err as Error).message };
+  }
+}
+
+// Las historias no se mueven: se cuentan en la ubicación anterior para avisar al dev (nada se pierde)
+export async function changeKnowledge(
+  root: string,
+  choice: KnowledgeChoice,
+  secretsDir?: string,
+  verifyMcp: McpVerifier = verifyMcpEndpoint,
+): Promise<KnowledgeChangeResult> {
+  const previous = await readKnowledgeConfig(root);
+  const leftBehind = await countStories(root, previous, { secretsDir }).catch(() => null);
+  await saveKnowledge(root, choice, secretsDir, verifyMcp);
+  closeStoryStores();
+  resetTrustedAddDirs();
+  const fromProject = !previous || previous.type === 'none';
+  return { leftBehind, movesOnOpen: fromProject && choice.type !== 'none' };
+}
+
+// Solo cambia la key: la URL y la carpeta base siguen igual, así que la confianza guardada no se toca
+export async function renewKnowledgeKey(
+  root: string,
+  apiKey: string,
+  secretsDir?: string,
+  verifyMcp: McpVerifier = verifyMcpEndpoint,
+): Promise<void> {
+  const config = await readKnowledgeConfig(root);
+  if (!config || config.type !== 'mcp')
+    throw new Error('Esta carpeta no usa una base MCP: no hay API key que renovar.');
+  const pin = getSessionPin();
+  if (!pin) throw new Error('No tengo tu PIN en esta sesión. Reinicia jm e ingrésalo de nuevo.');
+  const ca = (await loadKnowledgeCert(config.url, secretsDir)) ?? undefined;
+  if (config.tls === 'pinned' && !ca)
+    throw new Error(
+      'No encuentro el certificado guardado de este servidor. Cambia la conexión para configurarla de nuevo.',
+    );
+  await verifyMcp({ url: normalizeMcpUrl(config.url), apiKey, ca });
+  await saveKnowledgeKey(config.url, apiKey, pin, secretsDir);
+  closeStoryStores();
 }

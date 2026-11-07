@@ -10,6 +10,8 @@ interface KnowledgePromptProps {
   chat: ChatBridge;
   onDone: () => void;
   onCancel: () => void;
+  // Reconfigurar desde el inicio guarda por otra vía (cuenta las historias que quedan atrás)
+  save?: (choice: KnowledgeChoice) => Promise<void>;
 }
 
 type Step =
@@ -57,7 +59,7 @@ interface LineInputProps {
   onCancel: () => void;
 }
 
-function LineInput({ label, nextStep, placeholder, mask, onSubmit, onCancel }: LineInputProps) {
+export function LineInput({ label, nextStep, placeholder, mask, onSubmit, onCancel }: LineInputProps) {
   const [value, setValue] = useState('');
   const [empty, setEmpty] = useState(false);
   useInput((_input, key) => {
@@ -93,7 +95,7 @@ function TrustQuestion({ fingerprint, onAnswer }: { fingerprint: string; onAnswe
   );
 }
 
-export function KnowledgePrompt({ chat, onDone, onCancel }: KnowledgePromptProps) {
+export function KnowledgePrompt({ chat, onDone, onCancel, save: saveChoice }: KnowledgePromptProps) {
   const [step, setStep] = useState<Step>({ name: 'kind' });
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,7 +118,7 @@ export function KnowledgePrompt({ chat, onDone, onCancel }: KnowledgePromptProps
     run(
       KNOWLEDGE_TEXTS.saving,
       async () => {
-        await chat.saveKnowledge(choice);
+        await (saveChoice ?? chat.saveKnowledge)(choice);
         onDone();
       },
       KNOWLEDGE_TEXTS.saveError,

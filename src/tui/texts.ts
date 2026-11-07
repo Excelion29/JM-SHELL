@@ -30,6 +30,7 @@ export const KEYS = {
   pendingFilter: 'p',
   viewPlan: 'v',
   finishDirect: 'f',
+  knowledgeBase: 'b',
 } as const;
 
 // Palabra que hay que escribir completa para borrar subtareas de Jira
@@ -163,7 +164,7 @@ export const CHAT_TEXTS = {
 
 export const FOOTER_HINTS = {
   pin: 'Enter confirmar · Ctrl+C salir',
-  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.quit} salir`,
+  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.quit} salir`,
   picker: `↑↓ elegir · Enter abrir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · ${KEYS.changeProject} proyecto · Esc volver`,
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
@@ -183,6 +184,7 @@ export const FOOTER_HINTS = {
   closed: 'Esc inicio',
   choose: (count: number) => `1-${count} elegir`,
   knowledge: 'Esc cancelar',
+  knowledgeSettings: '1-4 elegir · Esc inicio',
   knowledgeBrowse: `↑↓ elegir · Enter abrir carpeta o nota · Backspace subir · ${KEYS.selectFolder} elegir esta carpeta · Esc cancelar`,
   reviewReadOnly: `↑↓ moverte · ${KEYS.detail} detalle · Esc volver`,
   tasks: `↑↓ moverte · espacio marcar · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar · ${KEYS.giveBack} devolver · ${KEYS.removeTasks} borrar · ${KEYS.pendingFilter} pendientes · ${KEYS.retry} actualizar · ${KEYS.open} abrir · ${KEYS.viewPlan} ver plan · Esc inicio`,
@@ -379,6 +381,49 @@ export const KNOWLEDGE_TEXTS = {
   confirmError: (message: string) => `No pude leer la base configurada: ${message}`,
   rootNotAllowed: 'No puedes elegir la raíz de la bóveda: entra a una carpeta y pulsa de nuevo.',
   browseNextStep: `Siguiente paso: entra a la carpeta donde continuar y pulsa ${KEYS.selectFolder} para elegirla.`,
+} as const;
+
+const pluralStories = (count: number) =>
+  count === 1
+    ? 'Queda 1 historia en la ubicación anterior; sigue ahí.'
+    : `Quedan ${count} historias en la ubicación anterior; siguen ahí.`;
+
+export const KNOWLEDGE_SETTINGS_TEXTS = {
+  title: 'Base de conocimiento de esta carpeta',
+  needsProject: 'Primero elige un proyecto con p; la base de conocimiento se configura por proyecto.',
+  loading: 'Leyendo la configuración de la base...',
+  noBase: 'Sin base de conocimiento: las historias viven en .jm de esta carpeta.',
+  type: (type: 'mcp' | 'local') => `Tipo: ${type === 'mcp' ? 'MCP' : 'carpeta local'}`,
+  target: (type: 'mcp' | 'local', target: string) => `${type === 'mcp' ? 'URL' : 'Carpeta'}: ${target}`,
+  base: (baseFolder: string) => `Carpeta base: ${baseFolder || '/'}`,
+  adr: (folder: string) => `Carpeta de notas (JM-ADR): ${folder}/`,
+  adrUnknown: 'Carpeta de notas (JM-ADR): no se pudo leer',
+  connectionOk: 'Conexión: responde',
+  connectionError: (message: string) => `Conexión: no responde (${message})`,
+  actions: {
+    base: '1  Cambiar la carpeta base',
+    connection: '2  Cambiar la conexión',
+    remove: '3  Quitar la base de conocimiento',
+    renew: '4  Renovar la API key',
+  },
+  nextStep: 'Siguiente paso: pulsa el número de lo que quieres hacer o Esc para volver.',
+  loadError: (message: string) => `No pude leer la configuración: ${message}`,
+  leftBehind: pluralStories,
+  movesOnOpen: (count: number) =>
+    count === 1
+      ? 'Hay 1 historia en .jm de este proyecto; pasará a la base cuando la abras.'
+      : `Hay ${count} historias en .jm de este proyecto; pasarán a la base cuando las abras.`,
+  changed: 'Listo, la nueva configuración ya está en uso.',
+  removed: 'Listo, esta carpeta quedó sin base de conocimiento.',
+  removeQuestion: `¿Quitas la base de conocimiento de esta carpeta? Las historias no se borran. (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  removeNextStep: `Pulsa ${KEYS.confirmYes} para quitarla; cualquier otra tecla cancela.`,
+  renewNeedsMcp: 'Renovar la API key solo aplica a una base MCP.',
+  needsBase: 'Primero conecta una base con la opción 2.',
+  renewLabel: 'Nueva API key: ',
+  renewNextStep: 'Pega la nueva API key y pulsa Enter. Se verifica con el servidor y se guarda cifrada con tu PIN.',
+  renewing: 'Verificando la nueva API key...',
+  renewed: 'API key renovada. La conexión y la carpeta base siguen igual.',
+  renewError: (message: string) => `No pude renovar la API key: ${message}`,
 } as const;
 
 export const TASKS_TEXTS = {

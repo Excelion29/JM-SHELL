@@ -3,11 +3,13 @@ import type {
   ChatHeader,
   ChatLine,
   ChatUiEvent,
+  KnowledgeChangeResult,
   KnowledgeChoice,
-  KnowledgeConnection,
   KnowledgeListing,
+  KnowledgeSettings,
   KnowledgeStatus,
   KnowledgeSummary,
+  KnowledgeTarget,
   ServerInspection,
 } from '../refinement/chat-types.js';
 import type {
@@ -71,6 +73,15 @@ export const BASE_HEADER: ChatHeader = {
 const FAKE_KB_URL = 'https://127.0.0.1:27124/mcp';
 const FAKE_KB_BASE = 'PROYECTOS/X';
 
+export const FAKE_SETTINGS: KnowledgeSettings = {
+  type: 'mcp',
+  target: FAKE_KB_URL,
+  baseFolder: FAKE_KB_BASE,
+  adrFolder: '06-JM-ADR',
+  connection: 'ok',
+  connectionError: null,
+};
+
 export interface FakeKnowledge {
   status?: KnowledgeStatus;
   statusError?: boolean;
@@ -82,6 +93,11 @@ export interface FakeKnowledge {
   previews?: Record<string, string>;
   openError?: string;
   summary?: KnowledgeSummary;
+  settings?: KnowledgeSettings;
+  changeResult?: KnowledgeChangeResult;
+  // Errores simulados al cambiar la base o renovar la key
+  changeError?: string;
+  renewError?: string;
 }
 
 export function createFakeChat(
@@ -98,7 +114,9 @@ export function createFakeChat(
     saved: [] as KnowledgeChoice[],
     trusted: 0,
     inspected: [] as string[],
-    listed: [] as Array<{ connection: KnowledgeConnection; dir: string }>,
+    listed: [] as Array<{ connection: KnowledgeTarget; dir: string }>,
+    changed: [] as KnowledgeChoice[],
+    renewed: [] as string[],
   };
   let listener: ((event: ChatUiEvent) => void) | null = null;
   const chat: ChatBridge = {
@@ -136,6 +154,16 @@ export function createFakeChat(
     saveKnowledge: async (choice) => void calls.saved.push(choice),
     describeKnowledge: async () => knowledge.summary ?? { type: 'mcp', target: FAKE_KB_URL, baseFolder: FAKE_KB_BASE },
     trustKnowledge: async () => void (calls.trusted += 1),
+    knowledgeSettings: async () => knowledge.settings ?? FAKE_SETTINGS,
+    changeKnowledge: async (choice) => {
+      if (knowledge.changeError) throw new Error(knowledge.changeError);
+      calls.changed.push(choice);
+      return knowledge.changeResult ?? { leftBehind: 0 };
+    },
+    renewKnowledgeKey: async (apiKey) => {
+      if (knowledge.renewError) throw new Error(knowledge.renewError);
+      calls.renewed.push(apiKey);
+    },
   };
   return { chat, sent, calls, header, emit: (event: ChatUiEvent) => listener?.(event) };
 }

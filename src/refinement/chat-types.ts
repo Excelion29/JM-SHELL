@@ -60,8 +60,29 @@ export interface KnowledgeSummary {
 export type KnowledgeConnection =
   { type: 'mcp'; url: string; apiKey: string; certPem: string | null } | { type: 'local'; root: string };
 
-export type KnowledgeChoice =
-  { type: 'none' } | { type: 'connect'; connection: KnowledgeConnection; baseFolder: string };
+// 'current': la conexión ya guardada para esta carpeta; la API key nunca llega a la pantalla
+export type KnowledgeTarget = KnowledgeConnection | { type: 'current' };
+
+export type KnowledgeChoice = { type: 'none' } | { type: 'connect'; connection: KnowledgeTarget; baseFolder: string };
+
+export interface KnowledgeSettings {
+  type: 'none' | 'mcp' | 'local';
+  // URL del MCP o carpeta raíz local; null sin base
+  target: string | null;
+  baseFolder: string | null;
+  // Carpeta JM-ADR resuelta; null si la base no responde o no hay base
+  adrFolder: string | null;
+  // 'unreachable': hay base pero no se pudo leer (el motivo va en connectionError)
+  connection: 'ok' | 'unreachable' | 'none';
+  connectionError: string | null;
+}
+
+export interface KnowledgeChangeResult {
+  // Historias que quedaron en la ubicación anterior; null si no se pudieron contar
+  leftBehind: number | null;
+  // Vienen de .jm del proyecto y la nueva config tiene base: se migran al abrirlas
+  movesOnOpen?: boolean;
+}
 
 export interface KnowledgeEntryView {
   name: string;
@@ -85,9 +106,12 @@ export interface ChatBridge {
   close: () => Promise<void>;
   knowledgeStatus: () => Promise<KnowledgeStatus>;
   inspectServer: (url: string) => Promise<ServerInspection>;
-  listKnowledge: (connection: KnowledgeConnection, dir: string) => Promise<KnowledgeListing>;
-  previewKnowledge: (connection: KnowledgeConnection, file: string) => Promise<string>;
+  listKnowledge: (connection: KnowledgeTarget, dir: string) => Promise<KnowledgeListing>;
+  previewKnowledge: (connection: KnowledgeTarget, file: string) => Promise<string>;
   saveKnowledge: (choice: KnowledgeChoice) => Promise<void>;
+  knowledgeSettings: () => Promise<KnowledgeSettings>;
+  changeKnowledge: (choice: KnowledgeChoice) => Promise<KnowledgeChangeResult>;
+  renewKnowledgeKey: (apiKey: string) => Promise<void>;
   describeKnowledge: () => Promise<KnowledgeSummary>;
   trustKnowledge: () => Promise<void>;
 }

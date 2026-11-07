@@ -13,12 +13,13 @@ import { PinPrompt } from './components/pin-prompt.js';
 import { BrowseScreen } from './screens/browse-screen.js';
 import { ChatScreen } from './screens/chat-screen.js';
 import { CloseScreen } from './screens/close-screen.js';
+import { KnowledgeScreen } from './screens/knowledge-screen.js';
 import { MyDayScreen } from './screens/my-day-screen.js';
 import { PlanScreen } from './screens/plan-screen.js';
 import { TaskFinishScreen } from './screens/task-finish-screen.js';
 import { TasksScreen } from './screens/tasks-screen.js';
 import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
-import { COLORS, FOOTER_HINTS, KNOWLEDGE_TEXTS, PIN_TEXTS } from './texts.js';
+import { COLORS, FOOTER_HINTS, KNOWLEDGE_SETTINGS_TEXTS, KNOWLEDGE_TEXTS, PIN_TEXTS } from './texts.js';
 
 export type { StorySummary, BrowseItem, ProjectItem, SetProjectResult };
 
@@ -63,6 +64,7 @@ type Stage =
   | 'routing'
   | 'knowledge'
   | 'knowledgeConfirm'
+  | 'knowledgeSettings'
   | 'chat'
   | 'review'
   | 'close'
@@ -76,6 +78,7 @@ function hintFor(stage: Stage, choiceCount: number): string {
   if (stage === 'pin') return FOOTER_HINTS.pin;
   if (stage === 'home') return FOOTER_HINTS.home;
   if (stage === 'knowledge' || stage === 'knowledgeConfirm') return FOOTER_HINTS.knowledge;
+  if (stage === 'knowledgeSettings') return FOOTER_HINTS.knowledgeSettings;
   if (stage !== 'chat') return '';
   return choiceCount > 0 ? `${FOOTER_HINTS.choose(choiceCount)} · ${FOOTER_HINTS.chat}` : FOOTER_HINTS.chat;
 }
@@ -182,6 +185,12 @@ export function App({
     else void leaveStoryScreen();
   };
 
+  const openKnowledgeSettings = () => {
+    if (projectKey) setStage('knowledgeSettings');
+    // Después de la tecla que respondió: el useInput global borra el aviso con cada pulsación
+    else queueMicrotask(() => setNotice(KNOWLEDGE_SETTINGS_TEXTS.needsProject));
+  };
+
   const openProjects = (from: Stage) => {
     setProjectsReturnTo(from);
     setStage('projects');
@@ -202,6 +211,7 @@ export function App({
           onCloseStory={(key) => openStoryScreen(key, 'close')}
           onTasks={(key) => tasks && openStoryScreen(key, 'tasks')}
           onMyDay={() => tasks && setStage('myDay')}
+          onKnowledge={openKnowledgeSettings}
           onQuit={exit}
         />
       )}
@@ -220,6 +230,13 @@ export function App({
       )}
       {stage === 'knowledgeConfirm' && (
         <KnowledgeConfirm chat={chat} onDone={() => setStage('chat')} onCancel={() => void leaveChat()} />
+      )}
+      {stage === 'knowledgeSettings' && (
+        <KnowledgeScreen
+          chat={chat}
+          onChanged={() => void loadStories(projectKey).then(setStories)}
+          onBack={() => setStage('home')}
+        />
       )}
       {stage === 'chat' && chatKey && (
         <ChatScreen
