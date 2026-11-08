@@ -14,6 +14,7 @@ import { BrowseScreen } from './screens/browse-screen.js';
 import { ChatScreen } from './screens/chat-screen.js';
 import { CloseScreen } from './screens/close-screen.js';
 import { KnowledgeScreen } from './screens/knowledge-screen.js';
+import { CalibrationScreen } from './screens/calibration-screen.js';
 import { MyDayScreen } from './screens/my-day-screen.js';
 import { PlanScreen } from './screens/plan-screen.js';
 import { TaskFinishScreen } from './screens/task-finish-screen.js';
@@ -70,7 +71,8 @@ type Stage =
   | 'close'
   | 'tasks'
   | 'taskFinish'
-  | 'myDay';
+  | 'myDay'
+  | 'calibration';
 
 const NOTICE_STAGES: readonly Stage[] = ['home', 'chat', 'tasks', 'myDay'];
 
@@ -212,6 +214,7 @@ export function App({
           onTasks={(key) => tasks && openStoryScreen(key, 'tasks')}
           onMyDay={() => tasks && setStage('myDay')}
           onKnowledge={openKnowledgeSettings}
+          onCalibration={() => tasks && setStage('calibration')}
           onQuit={exit}
         />
       )}
@@ -270,6 +273,7 @@ export function App({
       {stage === 'myDay' && tasks && (
         <MyDayScreen tasks={tasks} onBack={() => void leaveStoryScreen()} onRunTask={handleRunTask} />
       )}
+      {stage === 'calibration' && tasks && <CalibrationScreen tasks={tasks} onBack={() => setStage('home')} />}
       {stage === 'taskFinish' && finishTarget && tasks && (
         <TaskFinishScreen target={finishTarget} tasks={tasks} onDone={finishTask} />
       )}

@@ -10,10 +10,12 @@ import {
   returnTo,
   startTask,
 } from '../refinement/execution';
+import { calibrate, measuresOf, type StoryMeasures } from '../refinement/calibration';
+import { loadPlan } from '../refinement/plan';
 import { createFileTransitionMemory } from '../refinement/transition-memory';
 import { isValidIssueKey, projectRoot } from '../refinement/state';
 import type { StoryStore } from '../refinement/story-store';
-import type { TasksBridge } from '../refinement/tasks-types';
+import type { CalibrationModel, TasksBridge } from '../refinement/tasks-types';
 import { openStory, listAllStories } from './story-resolver';
 
 const storeOf = (key: string): Promise<StoryStore> => openStory(projectRoot(), key).then((access) => access.store);
@@ -26,6 +28,24 @@ async function localStoryOf(parentKey: string | null): Promise<string | null> {
   } catch {
     return null; // sin poder listar historias, la tarea se trata como suelta
   }
+}
+
+// Todas las historias de esta carpeta; una que no se pueda leer se cuenta aparte y no frena el resto
+async function loadCalibration(now: Date = new Date()): Promise<CalibrationModel> {
+  const root = projectRoot();
+  const stories = await listAllStories(root);
+  const measured: StoryMeasures[] = [];
+  let unreadable = 0;
+  for (const state of stories) {
+    try {
+      const { store } = await openStory(root, state.key);
+      const plan = await loadPlan(store).catch(() => null);
+      measured.push(measuresOf(state, plan, now));
+    } catch {
+      unreadable += 1;
+    }
+  }
+  return calibrate(measured, unreadable);
 }
 
 export function createTasksBridge(getJira: () => JiraService): TasksBridge {
@@ -52,6 +72,7 @@ export function createTasksBridge(getJira: () => JiraService): TasksBridge {
     returnTo: (issueKey, name) => returnTo(getJira(), issueKey, name),
     remove: async (storyKey, keys) => deleteTasks(await ctxOf(storyKey), storyKey, keys),
     myDay: () => loadMyDay(getJira()),
+    calibration: () => loadCalibration(),
     openInBrowser: async (issueKey) => {
       await openBrowser(getJira().getBrowseUrl(issueKey));
     },

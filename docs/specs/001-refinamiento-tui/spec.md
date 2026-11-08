@@ -192,6 +192,18 @@ quitar la base (ninguna) y renovar la API key sin tocar lo demás.
   historia creada o en curso, para crear tareas agregadas después (las que ya tienen clave de Jira no se tocan ni se
   duplican); la skill ya no cambia la fase en ese caso.
 
+### Parte 6 — Calibración estimado vs. real (agregada 2026-11-07)
+
+Todo sin IA ni Jira extra (0 tokens), con lo que `jm` ya guarda por tarea.
+- Tiempo real con **dos medidas**: con Claude abierto (la herramienta de trabajo, aunque abierto no siempre es
+  trabajando) y de inicio a fin (se puede cerrar Claude sin haber terminado).
+- Pantalla de tareas: columna "real" (Claude / inicio a fin) y resumen de las finalizadas medidas contra su estimación.
+- Pantalla "Calibración" (tecla `c` en el inicio), historias de esta carpeta: cuántas medidas, real = N × estimado con
+  cada medida, lo mismo por riesgo y las 5 tareas más desviadas. Las finalizadas con `f` (sin inicio medido) y las que
+  no son del plan quedan fuera.
+- No se registra worklog en Jira: al PM le importa la estimación y la fecha; la estimación original no se toca.
+- Después: ajustar la estimación propuesta con una fórmula propia (sin pasar más contexto a Claude).
+
 ### Parte 4 — Ejecución tarea por tarea (idea registrada 2026-11-05, por diseñar)
 
 Elegir una tarea, iniciarla (pasa a "En curso"/"In Progress"), trabajar con Claude con ese contexto y al terminarla
@@ -317,6 +329,8 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Commit parte 4 | Marcello Cano | 2026-11-06 | aprobado ("apruebo"); review combinada aplicada; la revisión del plan oculta las tareas ya creadas |
 | Commit finalizar directo + transiciones por tipo | Marcello Cano | 2026-11-06 | aprobado tras prueba real ("probé, exitoso") |
 | Commit parte 5 + ajustes (orden de tareas, descripción sin estimación, `r` tras crear) | Marcello Cano | 2026-11-07 | aprobado tras prueba ("listo, apruebo") |
+| Accept parte 6 (calibración, puntos 1 y 2) | Marcello Cano | 2026-11-07 | aprobado: A ambas medidas, B sin worklog, C fórmula propia después |
+| Commit parte 6 (calibración, puntos 1 y 2) | Marcello Cano | 2026-11-08 | aprobado tras prueba ("está excelente, queda lo apruebo") |
 | Accept parte 5 (reconfigurar base, opción A ahora, B después) | Marcello Cano | 2026-11-06 | aprobado ("por ahorita vamos con la …, la B en otra actualización") |
 | Accept "Mi día" en parte 4 | Marcello Cano | 2026-11-05 | aprobado: vista de tareas propias que vencen hoy o vencidas, de cualquier historia |
 | Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |

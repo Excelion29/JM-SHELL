@@ -163,6 +163,7 @@ function readTaskRuns(value: unknown): Record<string, TaskRun> {
       status: raw.status === 'done' ? 'done' : 'started',
       ...(raw.pendingDone === true ? { pendingDone: true } : {}),
       ...(direct ? { finishedDirect: true } : {}),
+      ...(readCount(raw.priorElapsedMs) > 0 ? { priorElapsedMs: readCount(raw.priorElapsedMs) } : {}),
     };
   }
   return runs;

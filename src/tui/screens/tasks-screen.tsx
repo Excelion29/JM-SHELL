@@ -6,7 +6,7 @@ import { DirectFinishFlow, type DirectFinishItem, type DirectFinishResult } from
 import { LoadGate } from '../components/load-gate.js';
 import { OptionSelector } from '../components/option-selector.js';
 import { TypedConfirm, YesNoPrompt } from '../components/task-prompts.js';
-import { buildRowCells, joinCells, summaryLine, visibleRows } from '../components/tasks-table.js';
+import { buildRowCells, joinCells, realLine, summaryLine, visibleRows } from '../components/tasks-table.js';
 import { useTerminalSize } from '../components/terminal-size.js';
 import { useLoad } from '../components/use-load.js';
 import {
@@ -254,9 +254,10 @@ function TasksBody({ initial, storyKey, tasks, plan, onBack, onRunTask }: TasksS
   }
   if (mode.name === 'deleted') return <DeleteReport results={mode.results} onClose={() => backToList()} />;
 
+  const real = realLine(model.rows);
   const visibleCount = Math.max(
     REVIEW_MIN_VISIBLE_ROWS,
-    (size.rows ?? CHAT_DEFAULT_TERMINAL_ROWS) - REVIEW_CHROME_ROWS,
+    (size.rows ?? CHAT_DEFAULT_TERMINAL_ROWS) - REVIEW_CHROME_ROWS - (real ? 1 : 0),
   );
   const index = Math.min(selected, Math.max(0, rows.length - 1));
   const first = Math.max(0, index - visibleCount + 1);
@@ -285,6 +286,7 @@ function TasksBody({ initial, storyKey, tasks, plan, onBack, onRunTask }: TasksS
           {summaryLine(model.rows)}
           {pendingOnly && <Text color={COLORS.code}>{` · ${TASKS_TEXTS.filterOn}`}</Text>}
         </Text>
+        {real && <Text color={COLORS.brand}>{real}</Text>}
         {message && <Text color={message.error ? COLORS.error : COLORS.accent}>{message.text}</Text>}
         <Text color={COLORS.muted}>{TASKS_TEXTS.nextStep}</Text>
         <Text color={COLORS.muted}>{FOOTER_HINTS.tasks}</Text>

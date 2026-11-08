@@ -31,6 +31,7 @@ export const KEYS = {
   viewPlan: 'v',
   finishDirect: 'f',
   knowledgeBase: 'b',
+  calibration: 'c',
 } as const;
 
 // Palabra que hay que escribir completa para borrar subtareas de Jira
@@ -164,7 +165,7 @@ export const CHAT_TEXTS = {
 
 export const FOOTER_HINTS = {
   pin: 'Enter confirmar · Ctrl+C salir',
-  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.quit} salir`,
+  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.calibration} calibración · ${KEYS.quit} salir`,
   picker: `↑↓ elegir · Enter abrir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · ${KEYS.changeProject} proyecto · Esc volver`,
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
@@ -188,6 +189,7 @@ export const FOOTER_HINTS = {
   knowledgeBrowse: `↑↓ elegir · Enter abrir carpeta o nota · Backspace subir · ${KEYS.selectFolder} elegir esta carpeta · Esc cancelar`,
   reviewReadOnly: `↑↓ moverte · ${KEYS.detail} detalle · Esc volver`,
   tasks: `↑↓ moverte · espacio marcar · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar · ${KEYS.giveBack} devolver · ${KEYS.removeTasks} borrar · ${KEYS.pendingFilter} pendientes · ${KEYS.retry} actualizar · ${KEYS.open} abrir · ${KEYS.viewPlan} ver plan · Esc inicio`,
+  calibration: `${KEYS.retry} actualizar · Esc inicio`,
   myDay: `↑↓ moverte · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar ·${KEYS.retry} actualizar · ${KEYS.open} abrir · Esc inicio`,
   options: '↑↓ elegir · Enter confirmar · Esc cancelar',
   yesNo: `${KEYS.confirmYes}/${KEYS.confirmNo}`,
@@ -437,6 +439,11 @@ export const TASKS_TEXTS = {
   noEstimate: '—',
   noDate: '—',
   summary: (done: number, total: number, pending: string) => `${done} de ${total} finalizadas · ${pending} pendientes`,
+  real: (claude: string, elapsed: string) => `real ${claude} / ${elapsed}`,
+  noReal: '—',
+  measured: (count: number, estimate: string, claude: string, elapsed: string) =>
+    `Medidas ${count}: estimado ${estimate} · con Claude ${claude} · de inicio a fin ${elapsed}`,
+  realLegend: 'real = con Claude abierto / de inicio a fin',
   filterOn: 'Filtro: solo pendientes',
   nextStep: `Siguiente paso: elige una tarea y pulsa ${KEYS.start} para iniciarla.`,
   doneBlocked: (key: string) => `${key} está finalizada: no se puede borrar ni editar.`,
@@ -481,6 +488,26 @@ export const FINISH_TEXTS = {
     failed.length === 0
       ? `${done} finalizadas.`
       : `${done} finalizadas, ${failed.length} con error: ${failed.join('; ')}`,
+} as const;
+
+export const CALIBRATION_TEXTS = {
+  title: 'Calibración · estimado vs. real',
+  loading: 'Leyendo las tareas medidas de esta carpeta...',
+  empty: `Aún no hay tareas medidas. Inicia una con ${KEYS.start} en tareas y finalízala para empezar a comparar.`,
+  totals: (count: number, estimate: string, claude: string, elapsed: string) =>
+    `${count} tarea(s) medidas · estimado ${estimate} · con Claude ${claude} · de inicio a fin ${elapsed}`,
+  claudeRatio: (ratio: string) => `Con Claude abierto: real = ${ratio} × estimado`,
+  elapsedRatio: (ratio: string) => `De inicio a fin: real = ${ratio} × estimado`,
+  noRatio: '—',
+  byRiskTitle: 'Por riesgo:',
+  riskLine: (risk: string, count: number, claude: string, elapsed: string) =>
+    `  ${risk} · ${count} · con Claude ${claude}× · de inicio a fin ${elapsed}×`,
+  outliersTitle: 'Las más desviadas (con Claude vs. estimado):',
+  outlierLine: (key: string, title: string, estimate: string, claude: string, elapsed: string) =>
+    `  ${key} · ${title} · estimado ${estimate} · con Claude ${claude} · de inicio a fin ${elapsed}`,
+  excludedDirect: (count: number) => `${count} finalizada(s) con ${KEYS.finishDirect} quedan fuera: no tienen inicio medido.`,
+  unreadable: (count: number) => `${count} historia(s) no se pudieron leer (¿base sin conexión?).`,
+  note: 'Abierto no siempre es trabajando: úsalo como referencia, no como cronómetro.',
 } as const;
 
 export const MY_DAY_TEXTS = {

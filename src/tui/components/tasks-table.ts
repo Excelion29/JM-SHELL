@@ -15,6 +15,7 @@ export interface RowCells {
   status: string;
   assignee: string;
   estimate: string;
+  real: string;
   due: string;
 }
 
@@ -42,6 +43,30 @@ export function summaryLine(rows: TaskRow[]): string {
 
 const estimateText = (seconds: number | null) => (seconds === null ? TASKS_TEXTS.noEstimate : formatDuration(seconds));
 
+const realText = (row: TaskRow): string =>
+  row.realClaudeSeconds === null || row.realElapsedSeconds === null
+    ? TASKS_TEXTS.noReal
+    : TASKS_TEXTS.real(formatDuration(row.realClaudeSeconds), formatDuration(row.realElapsedSeconds));
+
+// Finalizadas con tiempo medido por jm contra su estimación; null si aún no hay ninguna
+function measuredLine(rows: TaskRow[]): string | null {
+  const measured = rows.filter(
+    (row) =>
+      row.category === 'done' &&
+      row.estimateSeconds !== null &&
+      row.realClaudeSeconds !== null &&
+      row.realElapsedSeconds !== null,
+  );
+  if (measured.length === 0) return null;
+  const sum = (pick: (row: TaskRow) => number | null) => measured.reduce((total, row) => total + (pick(row) ?? 0), 0);
+  return TASKS_TEXTS.measured(
+    measured.length,
+    formatDuration(sum((row) => row.estimateSeconds)),
+    formatDuration(sum((row) => row.realClaudeSeconds)),
+    formatDuration(sum((row) => row.realElapsedSeconds)),
+  );
+}
+
 function rawCells(row: TaskRow): RowCells {
   const notes = [
     row.inPlan ? '' : TASKS_TEXTS.notInPlan,
@@ -54,15 +79,23 @@ function rawCells(row: TaskRow): RowCells {
     status: row.status,
     assignee: row.assignee ?? TASKS_TEXTS.noAssignee,
     estimate: estimateText(row.estimateSeconds),
+    real: realText(row),
     due: row.dueDate ?? TASKS_TEXTS.noDate,
   };
+}
+
+// Lo medido ya nombra ambas medidas; sin finalizadas medidas basta la leyenda de la columna real
+// null si ninguna tarea tiene tiempo medido
+export function realLine(rows: TaskRow[]): string | null {
+  if (!rows.some((row) => row.realClaudeSeconds !== null)) return null;
+  return measuredLine(rows) ?? TASKS_TEXTS.realLegend;
 }
 
 const widest = (values: string[]) => Math.max(0, ...values.map(textWidth));
 
 function fitCells(raw: RowCells[], available: number): RowCells[] {
   const width = (key: keyof RowCells) => widest(raw.map((cells) => cells[key]));
-  const fixed = (['key', 'status', 'assignee', 'estimate', 'due'] as const).reduce(
+  const fixed = (['key', 'status', 'assignee', 'estimate', 'real', 'due'] as const).reduce(
     (total, key) => total + width(key) + COLUMN_GAP.length,
     0,
   );
@@ -76,6 +109,7 @@ function fitCells(raw: RowCells[], available: number): RowCells[] {
     status: fitText(cells.status, width('status')),
     assignee: fitText(cells.assignee, width('assignee')),
     estimate: fitText(cells.estimate, width('estimate')),
+    real: fitText(cells.real, width('real')),
     due: fitText(cells.due, width('due')),
   }));
 }
@@ -83,8 +117,11 @@ function fitCells(raw: RowCells[], available: number): RowCells[] {
 export const buildRowCells = (rows: TaskRow[], available: number): RowCells[] =>
   fitCells(rows.map(rawCells), available);
 
+// Una columna vacía en todas las filas (p. ej. real en Mi día) no deja hueco
 export const joinCells = (cells: RowCells): string =>
-  [cells.key, cells.title, cells.status, cells.assignee, cells.estimate, cells.due].join(COLUMN_GAP);
+  [cells.key, cells.title, cells.status, cells.assignee, cells.estimate, cells.real, cells.due]
+    .filter((cell) => cell !== '')
+    .join(COLUMN_GAP);
 
 export function buildMyDayCells(rows: MyDayRow[], available: number): RowCells[] {
   const raw: RowCells[] = rows.map((row) => ({
@@ -93,6 +130,7 @@ export function buildMyDayCells(rows: MyDayRow[], available: number): RowCells[]
     status: row.status,
     assignee: row.parentKey ?? '',
     estimate: estimateText(row.estimateSeconds),
+    real: '',
     due: row.dueDate ?? TASKS_TEXTS.noDate,
   }));
   return fitCells(raw, available);

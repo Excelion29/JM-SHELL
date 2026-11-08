@@ -69,6 +69,8 @@ export interface TaskRun {
   status: TaskRunStatus;
   // Finalizada sin abrir Claude: la calibración estimado-vs-real la excluye
   finishedDirect?: boolean;
+  // Inicio a fin de los tramos anteriores a una reapertura: activeMs ya los acumula, el reloj de pared también
+  priorElapsedMs?: number;
   // Se terminó pero Jira no respondió: se reintenta con `r`
   pendingDone?: boolean;
 }

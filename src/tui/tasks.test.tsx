@@ -4,8 +4,23 @@ import React from 'react';
 import { render } from 'ink-testing-library';
 import type { StorySummary } from '../refinement/types.js';
 import { App, type AppAction } from './app.js';
-import { createFakeChat, createFakePlan, createFakeTasks, FakeTasksOptions, fakeRow, waitFor } from './test-support.js';
-import { DELETE_CONFIRM_WORD, FINISH_TEXTS, HOME_TEXTS, MY_DAY_TEXTS, TASKS_TEXTS } from './texts.js';
+import {
+  createFakeChat,
+  createFakePlan,
+  createFakeTasks,
+  EMPTY_CALIBRATION,
+  FakeTasksOptions,
+  fakeRow,
+  waitFor,
+} from './test-support.js';
+import {
+  CALIBRATION_TEXTS,
+  DELETE_CONFIRM_WORD,
+  FINISH_TEXTS,
+  HOME_TEXTS,
+  MY_DAY_TEXTS,
+  TASKS_TEXTS,
+} from './texts.js';
 
 const ENTER = '\r';
 const ESC = '\u001b';
@@ -317,4 +332,72 @@ test('Mi día lista lo asignado con el total contra las 8 h e inicia la tarea', 
   await app.press('i');
   await waitFor(() => app.actions.length === 1, 'la acción');
   assert.deepEqual(app.actions[0], { type: 'runTask', storyKey: 'ZZ-1', issueKey: 'ZZ-9' });
+});
+
+test('la columna real muestra Claude abierto / inicio a fin y el resumen compara lo medido', async () => {
+  const measured = fakeRow('AQ-103', {
+    status: 'Finalizada',
+    category: 'done',
+    estimateSeconds: 3600,
+    realClaudeSeconds: 2700,
+    realElapsedSeconds: 3 * 3600,
+  });
+  const app = await openTasks({ rows: [fakeRow('AQ-101'), measured] });
+  const frame = app.frame();
+  assert.ok(frame.includes(TASKS_TEXTS.real('45m', '3h')), frame);
+  assert.ok(frame.includes(TASKS_TEXTS.measured(1, '1h', '45m', '3h')), frame);
+});
+
+test('en curso sin finalizadas medidas se ve la leyenda de la columna real; sin tiempos, nada', async () => {
+  const app = await openTasks();
+  assert.ok(!app.frame().includes(TASKS_TEXTS.realLegend));
+  const started = fakeRow('AQ-102', { category: 'indeterminate', realClaudeSeconds: 600, realElapsedSeconds: 900 });
+  const running = await openTasks({ rows: [started] });
+  assert.ok(running.frame().includes(TASKS_TEXTS.realLegend));
+  assert.ok(running.frame().includes(TASKS_TEXTS.real('10m', '15m')));
+});
+
+test('c abre la calibración: ratios por medida y por riesgo, desviadas y excluidas; Esc vuelve', async () => {
+  const group = {
+    count: 2,
+    estimateSeconds: 7200,
+    claudeSeconds: 5400,
+    elapsedSeconds: 14400,
+    claudeRatio: 0.75,
+    elapsedRatio: 2,
+  };
+  const app = setup({
+    calibration: {
+      total: group,
+      byRisk: [{ risk: 'low', ...group }],
+      outliers: [
+        {
+          key: 'AQ-101',
+          storyKey: 'AQ-45',
+          title: 'Login',
+          estimateSeconds: 3600,
+          claudeSeconds: 1800,
+          elapsedSeconds: 7200,
+        },
+      ],
+      excludedDirect: 1,
+      unreadable: 0,
+    },
+  });
+  await app.press('c');
+  await app.has(CALIBRATION_TEXTS.title);
+  const frame = app.frame();
+  assert.ok(frame.includes(CALIBRATION_TEXTS.claudeRatio('0,75')), frame);
+  assert.ok(frame.includes(CALIBRATION_TEXTS.elapsedRatio('2,00')));
+  assert.ok(frame.includes(CALIBRATION_TEXTS.riskLine('bajo', 2, '0,75', '2,00')));
+  assert.ok(frame.includes(CALIBRATION_TEXTS.outlierLine('AQ-101', 'Login', '1h', '30m', '2h')));
+  assert.ok(frame.includes(CALIBRATION_TEXTS.excludedDirect(1)));
+  await app.press(ESC);
+  await app.has(HOME_TEXTS.title);
+});
+
+test('c sin tareas medidas lo explica', async () => {
+  const app = setup({ calibration: EMPTY_CALIBRATION });
+  await app.press('c');
+  await app.has(CALIBRATION_TEXTS.empty);
 });

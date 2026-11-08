@@ -31,6 +31,7 @@ import type {
   TaskPatch,
 } from '../refinement/review-types.js';
 import type {
+  CalibrationModel,
   DeleteResult,
   MyDayModel,
   TaskRow,
@@ -378,6 +379,23 @@ export function createFakePlan(options: FakePlanOptions = {}) {
   return { plan, calls, getModel: () => model };
 }
 
+const EMPTY_GROUP = {
+  count: 0,
+  estimateSeconds: 0,
+  claudeSeconds: 0,
+  elapsedSeconds: 0,
+  claudeRatio: null,
+  elapsedRatio: null,
+};
+
+export const EMPTY_CALIBRATION: CalibrationModel = {
+  total: EMPTY_GROUP,
+  byRisk: [],
+  outliers: [],
+  excludedDirect: 0,
+  unreadable: 0,
+};
+
 export const fakeRow = (key: string, patch: Partial<TaskRow> = {}): TaskRow => ({
   key,
   title: `Subtarea ${key}`,
@@ -389,6 +407,8 @@ export const fakeRow = (key: string, patch: Partial<TaskRow> = {}): TaskRow => (
   inPlan: true,
   missing: false,
   pendingDone: false,
+  realClaudeSeconds: null,
+  realElapsedSeconds: null,
   ...patch,
 });
 
@@ -399,6 +419,7 @@ export interface FakeTasksOptions {
   returnOptions?: string[];
   removeResults?: Record<string, DeleteResult>;
   myDay?: MyDayModel;
+  calibration?: CalibrationModel;
 }
 
 // Puente de tareas falso en memoria: registra lo que la pantalla pide, sin Jira ni disco
@@ -446,6 +467,7 @@ export function createFakeTasks(options: FakeTasksOptions = {}) {
       return results;
     },
     myDay: async () => options.myDay ?? { rows: [], totalSeconds: 0, capacitySeconds: 8 * SECONDS_PER_HOUR },
+    calibration: async () => options.calibration ?? EMPTY_CALIBRATION,
     openInBrowser: async () => undefined,
   };
   return { tasks, calls };

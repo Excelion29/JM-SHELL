@@ -1,6 +1,7 @@
 import type { JiraIssue, JiraTransition } from '../config/types';
 import type { JiraService } from '../services/jira';
 import { adfToMarkdown } from '../utils/adf';
+import { elapsedMsOf, realTimesOf, type RealTimes } from './calibration';
 import { effectiveSeconds } from './pert';
 import { loadPlan } from './plan';
 import { DAILY_CAPACITY_SECONDS, todayIso } from './schedule';
@@ -105,6 +106,7 @@ async function recordStart(ctx: ExecutionContext, storyKey: string, issueKey: st
   await updateState(store, storyKey, (state) => {
     const previous = state.taskRuns[issueKey];
     if (previous && previous.status !== 'done') return;
+    const priorElapsedMs = previous ? elapsedMsOf(previous) : 0;
     state.taskRuns[issueKey] = {
       issueKey,
       claudeSessionId: previous?.claudeSessionId ?? null,
@@ -112,6 +114,7 @@ async function recordStart(ctx: ExecutionContext, storyKey: string, issueKey: st
       finishedAt: null,
       activeMs: previous?.activeMs ?? 0,
       status: 'started',
+      ...(priorElapsedMs > 0 ? { priorElapsedMs } : {}),
     };
   });
   await advancePhase(store, storyKey, 'in-progress');
@@ -284,7 +287,7 @@ async function planOrNull(store: StoryStore): Promise<RefinementPlan | null> {
   }
 }
 
-function rowFrom(issue: JiraIssue, planTask: PlannedTask | undefined, pendingDone: boolean): TaskRow {
+function rowFrom(issue: JiraIssue, planTask: PlannedTask | undefined, pendingDone: boolean, real: RealTimes): TaskRow {
   const { fields } = issue;
   return {
     key: issue.key,
@@ -297,10 +300,12 @@ function rowFrom(issue: JiraIssue, planTask: PlannedTask | undefined, pendingDon
     inPlan: Boolean(planTask),
     missing: false,
     pendingDone,
+    realClaudeSeconds: real.claudeSeconds,
+    realElapsedSeconds: real.elapsedSeconds,
   };
 }
 
-function missingRow(issueKey: string, planTask: PlannedTask | undefined, pendingDone: boolean): TaskRow {
+function missingRow(issueKey: string, planTask: PlannedTask | undefined, pendingDone: boolean, real: RealTimes): TaskRow {
   return {
     key: issueKey,
     title: planTask?.summary ?? issueKey,
@@ -312,6 +317,8 @@ function missingRow(issueKey: string, planTask: PlannedTask | undefined, pending
     inPlan: Boolean(planTask),
     missing: true,
     pendingDone,
+    realClaudeSeconds: real.claudeSeconds,
+    realElapsedSeconds: real.elapsedSeconds,
   };
 }
 
@@ -324,10 +331,14 @@ export async function loadTaskRows(ctx: ExecutionContext, storyKey: string): Pro
   const plan = await planOrNull(store);
   const issues = await ctx.jira.searchIssues(`parent = ${storyKey} ORDER BY created ASC`, ROW_FIELDS);
   const pending = (key: string) => state.taskRuns[key]?.pendingDone === true;
-  const rows = issues.map((issue) => rowFrom(issue, planTaskOf(plan, state, issue.key), pending(issue.key)));
+  const now = ctx.now?.() ?? new Date();
+  const real = (key: string) => realTimesOf(state.taskRuns[key], now);
+  const rows = issues.map((issue) =>
+    rowFrom(issue, planTaskOf(plan, state, issue.key), pending(issue.key), real(issue.key)),
+  );
   const seen = new Set(rows.map((row) => row.key));
   for (const key of Object.values(state.createdIssues)) {
-    if (!seen.has(key)) rows.push(missingRow(key, planTaskOf(plan, state, key), pending(key)));
+    if (!seen.has(key)) rows.push(missingRow(key, planTaskOf(plan, state, key), pending(key), real(key)));
   }
   return { storyKey, summary: state.summary, rows };
 }

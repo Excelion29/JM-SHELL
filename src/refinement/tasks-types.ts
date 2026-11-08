@@ -13,6 +13,9 @@ export interface TaskRow {
   // Está en el registro de la historia pero Jira ya no la devuelve
   missing: boolean;
   pendingDone: boolean;
+  // Tiempo real medido por jm: con Claude abierto y de inicio a fin; null si nunca se inició con jm
+  realClaudeSeconds: number | null;
+  realElapsedSeconds: number | null;
 }
 
 export interface TasksModel {
@@ -70,6 +73,38 @@ export interface TaskFinishTarget {
   issueKey: string;
 }
 
+// Calibración estimado vs. real: solo tareas finalizadas que se iniciaron con jm y están en el plan
+export type CalibrationRisk = 'low' | 'medium' | 'high';
+
+export interface CalibrationGroup {
+  count: number;
+  estimateSeconds: number;
+  claudeSeconds: number;
+  elapsedSeconds: number;
+  // real / estimado; null si la estimación suma 0
+  claudeRatio: number | null;
+  elapsedRatio: number | null;
+}
+
+export interface CalibrationOutlier {
+  key: string;
+  storyKey: string;
+  title: string;
+  estimateSeconds: number;
+  claudeSeconds: number;
+  elapsedSeconds: number;
+}
+
+export interface CalibrationModel {
+  total: CalibrationGroup;
+  byRisk: Array<{ risk: CalibrationRisk } & CalibrationGroup>;
+  outliers: CalibrationOutlier[];
+  // Finalizadas con f, sin inicio medido
+  excludedDirect: number;
+  // Historias que no se pudieron leer (p. ej. base sin conexión)
+  unreadable: number;
+}
+
 export interface TasksBridge {
   load: (storyKey: string) => Promise<TasksModel>;
   start: (storyKey: string, issueKey: string, options: TransitionOptions) => Promise<TransitionOutcome>;
@@ -81,5 +116,6 @@ export interface TasksBridge {
   returnTo: (issueKey: string, transitionName: string) => Promise<void>;
   remove: (storyKey: string, keys: string[]) => Promise<DeleteResult[]>;
   myDay: () => Promise<MyDayModel>;
+  calibration: () => Promise<CalibrationModel>;
   openInBrowser: (issueKey: string) => Promise<void>;
 }
