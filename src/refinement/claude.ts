@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { ChatKnowledge, ChatModel } from './chat-types';
 import { KB_ALLOWED_TOOLS, kbToolRule } from './kb-proxy';
-import { CHAT_FILES, isWorkHashSegment, workBase, WORK_ATTACHMENTS_DIR } from './workdir';
+import { CHAT_FILES, isWorkHashSegment, workBase, WORK_ATTACHMENTS_DIR, writeWorkFile } from './workdir';
 
 export { CHAT_FILES };
 
@@ -99,11 +99,7 @@ export const trustAddDir = (root: string): void => {
 export const resetTrustedAddDirs = (): void => trustedAddDirs.clear();
 
 // Archivo técnico de jm: <~/.jira-tool/trabajo>/<hash>/<archivo conocido>, nada más
-export function isWorkFilePath(
-  candidate: string,
-  windows: boolean = IS_WINDOWS,
-  base: string = workBase(),
-): boolean {
+export function isWorkFilePath(candidate: string, windows: boolean = IS_WINDOWS, base: string = workBase()): boolean {
   if (!isSafeAddDirPath(candidate, windows)) return false;
   const pathApi = windows ? path.win32 : path.posix;
   const parts = pathApi.relative(base, candidate).split(pathApi.sep);
@@ -237,6 +233,8 @@ export const buildResumeArgs = (sessionId: string): string[] => ['--resume', ses
 export interface WorkFiles {
   mcp: string;
   context: string;
+  // Ajustes propios de la ejecución de una tarea (ver TASK_DENIED_COMMANDS)
+  taskSettings: string;
   // Copias de solo lectura de los adjuntos de la bóveda (solo con MCP)
   attachments: string;
 }
@@ -244,6 +242,7 @@ export interface WorkFiles {
 export const workFilesOf = (workDir: string, key: string): WorkFiles => ({
   mcp: path.join(workDir, CHAT_FILES.mcp),
   context: path.join(workDir, CHAT_FILES.context),
+  taskSettings: path.join(workDir, CHAT_FILES.taskSettings),
   attachments: path.join(workDir, WORK_ATTACHMENTS_DIR, key),
 });
 
@@ -256,10 +255,33 @@ export const handoffKnowledgeArgs = (kb: ChatKnowledge | null, files: WorkFiles)
   return kb?.type === 'local' ? [ADD_DIR_FLAG, kb.root, ...context] : [];
 };
 
-// Al ejecutar una tarea el contexto de la tarea viaja siempre, haya o no base conectada
+// Los commits y los push los hace siempre el dev: al ejecutar una tarea Claude no puede hacerlos.
+// Una regla deny gana sobre cualquier allow de los ajustes del dev o del proyecto. Es una barrera de buena fe
+// (las reglas de Bash casan por texto); la segunda forma cubre opciones previas como `git -C <repo> commit`.
+export const TASK_DENIED_COMMANDS: readonly string[] = [
+  'Bash(git commit:*)',
+  'Bash(git push:*)',
+  'Bash(git * commit:*)',
+  'Bash(git * push:*)',
+];
+
+export const buildTaskSettings = (): Record<string, unknown> => ({
+  permissions: { deny: [...TASK_DENIED_COMMANDS] },
+});
+
+// Se regenera en cada arranque: contenido fijo de jm, no depende de lo que haya en disco
+export const writeTaskSettings = (workDir: string): string =>
+  writeWorkFile(workDir, CHAT_FILES.taskSettings, `${JSON.stringify(buildTaskSettings(), null, 2)}\n`);
+
+// Al ejecutar una tarea el contexto de la tarea viaja siempre, haya o no base conectada.
+// --settings va primero: las banderas variádicas de la base se tragarían lo que siga.
 export const taskHandoffArgs = (kb: ChatKnowledge | null, files: WorkFiles): string[] => {
   const args = handoffKnowledgeArgs(kb, files);
-  return args.length > 0 ? args : ['--append-system-prompt-file', files.context];
+  return [
+    '--settings',
+    files.taskSettings,
+    ...(args.length > 0 ? args : ['--append-system-prompt-file', files.context]),
+  ];
 };
 
 export interface LaunchOptions {

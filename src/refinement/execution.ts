@@ -2,7 +2,9 @@ import type { JiraIssue, JiraTransition } from '../config/types';
 import type { JiraService } from '../services/jira';
 import { adfToMarkdown } from '../utils/adf';
 import { elapsedMsOf, realTimesOf, type RealTimes } from './calibration';
+import { storyLinkLine, taskNoteFrontmatter, wikiLink } from './note-links';
 import { effectiveSeconds } from './pert';
+import { warn } from '../utils/format';
 import { loadPlan } from './plan';
 import { DAILY_CAPACITY_SECONDS, todayIso } from './schedule';
 import { advancePhase, assertKey, LOG_FILE, readState, updateState } from './state';
@@ -305,7 +307,12 @@ function rowFrom(issue: JiraIssue, planTask: PlannedTask | undefined, pendingDon
   };
 }
 
-function missingRow(issueKey: string, planTask: PlannedTask | undefined, pendingDone: boolean, real: RealTimes): TaskRow {
+function missingRow(
+  issueKey: string,
+  planTask: PlannedTask | undefined,
+  pendingDone: boolean,
+  real: RealTimes,
+): TaskRow {
   return {
     key: issueKey,
     title: planTask?.summary ?? issueKey,
@@ -354,20 +361,28 @@ export interface TaskContextInput {
   previous: Array<{ key: string; title: string }>;
 }
 
-// Sin PIN, claves de API, URL del intermediario ni contenido de .jira.json: solo lo que hace falta para trabajar la tarea
-export function renderTaskContext(input: TaskContextInput): string {
+const CRITERIA_IN_DESCRIPTION = /criterio de terminado/i;
+
+// Sin PIN, claves de API, URL del intermediario ni contenido de .jira.json: solo lo que hace falta para trabajar la tarea.
+// Es también la nota de la tarea en la base, sin la indicación técnica para Claude (noteHint), que solo viaja en su contexto.
+export function renderTaskContext(input: TaskContextInput, forNote = false): string {
   const lines = [`# ${input.issueKey} · ${input.title}`, ''];
-  if (input.storyKey) lines.push(`Historia: ${input.storyKey}`, '');
+  if (input.storyKey) lines.push(storyLinkLine(input.storyKey), '');
   lines.push('## Descripción', '', input.description || '_Sin descripción._', '');
-  if (input.doneCriteria.length > 0) {
+  // La descripción que crea jm ya trae el criterio: no se repite
+  if (input.doneCriteria.length > 0 && !CRITERIA_IN_DESCRIPTION.test(input.description)) {
     lines.push('## Criterio de terminado', '', ...input.doneCriteria.map((item) => `- ${item}`), '');
   }
-  if (input.noteHint) lines.push('## Nota de la historia', '', input.noteHint, '');
+  if (input.noteHint && !forNote) lines.push('## Nota de la historia', '', input.noteHint, '');
   if (input.previous.length > 0) {
     lines.push(
       '## Tareas anteriores (ya terminadas)',
       '',
-      ...input.previous.map((p) => `- ${p.key} · ${p.title} (su detalle está en ${taskContextName(p.key)})`),
+      ...input.previous.map((p) =>
+        forNote
+          ? `- ${wikiLink(p.key)} · ${p.title}`
+          : `- ${p.key} · ${p.title} (su detalle está en ${taskContextName(p.key)})`,
+      ),
       '',
     );
   }
@@ -400,14 +415,22 @@ export async function prepareTaskContext(
     .filter((run) => run.status === 'done' && run.issueKey !== issueKey)
     .map((run) => ({ key: run.issueKey, title: titleOf(run.issueKey) }));
   const log = (await ctx.store.readText(LOG_FILE)) ?? '';
-  const text = renderTaskContext({
+  const input: TaskContextInput = {
     ...base,
     doneCriteria: (state && planTaskOf(plan, state, issueKey)?.doneCriteria) || [],
     logTail: log.slice(-LOG_TAIL_CHARS),
     previous,
-  });
-  await ctx.store.writeText(taskContextName(issueKey), text);
-  return text;
+  };
+  const name = taskContextName(issueKey);
+  const isNew = !(await ctx.store.exists(name));
+  await ctx.store.writeText(name, taskNoteFrontmatter(storyKey, issueKey) + renderTaskContext(input, true));
+  // Una nota nueva cambia los enlaces de la historia y del índice
+  if (isNew && state) {
+    await ctx.store
+      .onStoryChanged?.(state)
+      .catch((err: unknown) => warn(`No pude enlazar la nota de ${issueKey}: ${(err as Error).message}`));
+  }
+  return renderTaskContext(input);
 }
 
 export async function loadMyDay(jira: ExecutionJira, now: Date = new Date()): Promise<MyDayModel> {

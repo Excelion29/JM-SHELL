@@ -14,6 +14,7 @@ export const WORK_OPEN_DIR = 'abrir';
 // Archivos técnicos que Claude lee al arrancar; viven en la carpeta de trabajo de jm, nunca en el repositorio
 export const CHAT_FILES = {
   settings: 'claude-settings.json',
+  taskSettings: 'tarea-settings.json',
   agents: 'agents.json',
   skill: 'refinar-skill.md',
   mcp: 'mcp.json',

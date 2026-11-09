@@ -18,6 +18,7 @@ import {
   runClaude,
   workFilesOf,
 } from '../refinement/claude';
+import { storyLinkLine } from '../refinement/note-links';
 import { loadPlan } from '../refinement/plan';
 import { attachmentStoreName } from '../refinement/review';
 import { planTotals } from '../refinement/pert';
@@ -51,6 +52,8 @@ function renderStoryDoc(issue: JiraIssue, attachments: JiraAttachment[]): string
   const files = attachments.length ? attachments.map((a) => `- ${a.filename}`) : ['_Sin adjuntos._'];
   return [
     `# [${issue.key}] ${fields.summary}`,
+    '',
+    storyLinkLine(issue.key),
     '',
     `**Tipo:** ${fields.issuetype?.name ?? '—'} | **Estado:** ${fields.status.name}`,
     `**Padre:** ${parent}`,
@@ -202,11 +205,7 @@ interface ClaudeOutcome {
   printCli: () => void;
 }
 
-async function summarizeAfterClaude(
-  store: StoryStore,
-  key: string,
-  planBefore: string | null,
-): Promise<ClaudeOutcome> {
+async function summarizeAfterClaude(store: StoryStore, key: string, planBefore: string | null): Promise<ClaudeOutcome> {
   const planAfter = await planFingerprint(store);
   if (planAfter === null || planAfter === planBefore) {
     return {
@@ -246,7 +245,14 @@ interface SessionInput {
   sessionId: string | null;
 }
 
-async function runClaudeSession({ root, key, store, workDir, knowledge, sessionId }: SessionInput): Promise<ClaudeOutcome> {
+async function runClaudeSession({
+  root,
+  key,
+  store,
+  workDir,
+  knowledge,
+  sessionId,
+}: SessionInput): Promise<ClaudeOutcome> {
   const planBefore = await planFingerprint(store);
   info('Abriendo Claude Code. Para volver a JM-SHELL escribe /exit o pulsa Ctrl+C dos veces.');
   releaseStdin();

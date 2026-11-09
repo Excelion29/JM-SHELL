@@ -1,3 +1,4 @@
+import { taskRefs } from './note-links';
 import { escapeCell, PHASE_LABELS } from './state';
 import type { StoryStore } from './story-store';
 import type { StoryState } from './types';
@@ -15,26 +16,31 @@ const INDEX_HEADER = [
 const ROW_PATTERN = /^\| \[\[([^\]|]+)\]\] \|/;
 const NO_TASKS = '—';
 
-function rowOf(state: StoryState): string {
-  const tasks = Object.values(state.createdIssues);
+// Las tareas con nota en la base van como enlace; las demás, como texto
+function rowOf(state: StoryState, withNote: ReadonlySet<string>): string {
+  const tasks = taskRefs(state, withNote);
   const cells = [
     `[[${state.key}]]`,
     escapeCell(state.summary),
     PHASE_LABELS[state.phase],
-    tasks.length ? escapeCell(tasks.join(', ')) : NO_TASKS,
+    tasks.length ? tasks.join(', ') : NO_TASKS,
     state.updatedAt,
   ];
   return `| ${cells.join(' | ')} |`;
 }
 
 // Reemplaza (o agrega) la fila de la historia y deja el resto de filas como estaban
-export function upsertIndexRow(current: string | null, state: StoryState): string {
+export function upsertIndexRow(
+  current: string | null,
+  state: StoryState,
+  withNote: ReadonlySet<string> = new Set(),
+): string {
   const rows = new Map<string, string>();
   for (const line of (current ?? '').split(/\r?\n/)) {
     const match = ROW_PATTERN.exec(line);
     if (match) rows.set(match[1], line);
   }
-  rows.set(state.key, rowOf(state));
+  rows.set(state.key, rowOf(state, withNote));
   const sorted = [...rows.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, line]) => line);
   return `${[...INDEX_HEADER, ...sorted].join('\n')}\n`;
 }
@@ -42,6 +48,6 @@ export function upsertIndexRow(current: string | null, state: StoryState): strin
 // adrStore apunta a la carpeta JM-ADR (no a la de una historia)
 export const createIndexUpdater =
   (adrStore: StoryStore) =>
-  async (state: StoryState): Promise<void> => {
-    await adrStore.writeText(INDEX_FILE, upsertIndexRow(await adrStore.readText(INDEX_FILE), state));
+  async (state: StoryState, withNote: ReadonlySet<string> = new Set()): Promise<void> => {
+    await adrStore.writeText(INDEX_FILE, upsertIndexRow(await adrStore.readText(INDEX_FILE), state, withNote));
   };

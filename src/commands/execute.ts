@@ -9,6 +9,7 @@ import {
   runClaude,
   taskHandoffArgs,
   workFilesOf,
+  writeTaskSettings,
 } from '../refinement/claude';
 import { prepareTaskContext } from '../refinement/execution';
 import { hasLogProgress, assertKey, projectRoot, readState, updateState } from '../refinement/state';
@@ -55,6 +56,7 @@ async function launch(session: TaskSession): Promise<void> {
   const folderKey = storyKey ?? issueKey;
   if (knowledge) applyKnowledgeFiles(workDir, { ...knowledge, context }, folderKey);
   else writeKnowledgeContext(workDir, context);
+  writeTaskSettings(workDir);
   info('Abriendo Claude Code. Para volver a JM-SHELL escribe /exit o pulsa Ctrl+C dos veces.');
   releaseStdin();
   await launchClaude({

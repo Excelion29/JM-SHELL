@@ -88,6 +88,8 @@ export interface StoryState {
   attachments: StoryAttachment[];
   usage: StoryUsage;
   updatedAt: string;
+  // Versión de los enlaces entre notas de la base (ver NOTES_VERSION); sin valor, las notas aún no se repararon
+  notesVersion?: number;
 }
 
 export interface StorySummary {

@@ -12,6 +12,7 @@ import {
   loadMyDay,
   loadTaskRows,
   prepareTaskContext,
+  renderTaskContext,
   retryPending,
   returnOptions,
   returnTo,
@@ -187,7 +188,28 @@ test('el contexto trae título y criterio de terminado y ningún dato sensible',
   assert.match(text, /Pasa el test/);
   assert.match(text, /JM-ADR\/AQ-45\.md/);
   assert.doesNotMatch(text, /apiKey|pin|127\.0\.0\.1/i);
-  assert.equal(await store.readText(taskContextName(T1)), text);
+  // La nota de la base: ficha, enlace a la historia y sin la indicación técnica para Claude
+  const note = (await store.readText(taskContextName(T1))) ?? '';
+  assert.ok(note.startsWith('---\nhistoria: AQ-45\ntarea: AQ-101\ntags: [tipo/tarea]\n---\n'), note);
+  assert.match(note, /Historia: \[\[AQ-45\]\]/);
+  assert.match(note, /Pasa el test/);
+  assert.doesNotMatch(note, /Nota de la historia|JM-ADR\/AQ-45\.md/);
+});
+
+test('el criterio de terminado no se repite si la descripción de Jira ya lo trae', () => {
+  const input = {
+    storyKey: STORY,
+    issueKey: T1,
+    title: 'Tarea',
+    description: 'Hacer algo\n\n#### Criterio de terminado\n\n- Pasa el test',
+    doneCriteria: ['Pasa el test'],
+    logTail: '',
+    noteHint: null,
+    previous: [{ key: T2, title: 'Anterior' }],
+  };
+  assert.equal((renderTaskContext(input).match(/Criterio de terminado/g) ?? []).length, 1);
+  assert.match(renderTaskContext(input, true), /- \[\[AQ-102\]\] · Anterior/);
+  assert.match(renderTaskContext(input), /AQ-102 · Anterior \(su detalle está en tareas\/AQ-102\.md\)/);
 });
 
 test('terminar guarda finishedAt, pasa a Finalizada y no toca la estimación', async () => {
@@ -352,7 +374,15 @@ test('con varias candidatas de la categoría se pregunta solo entre ellas', asyn
 });
 
 test('sin categoría que coincida se ofrecen todas las transiciones', async () => {
-  const { ctx } = await setup({ issues: ISSUES, transitions: { [T1]: [{ id: '1', name: 'X' }, { id: '2', name: 'Y' }] } });
+  const { ctx } = await setup({
+    issues: ISSUES,
+    transitions: {
+      [T1]: [
+        { id: '1', name: 'X' },
+        { id: '2', name: 'Y' },
+      ],
+    },
+  });
   assert.deepEqual(await startTask(ctx, STORY, T1), { kind: 'choose', available: ['X', 'Y'] });
 });
 
@@ -364,13 +394,22 @@ test('la elección del dev se recuerda por proyecto y se usa la próxima vez', a
   assert.equal((await startTask(withMemory, STORY, T1, { transitionName: 'Revisar' })).kind, 'ok');
   const stored = JSON.parse(fs.readFileSync(path.join(dir, 'transiciones.json'), 'utf8'));
   assert.deepEqual(stored, { AQ: { start: 'Revisar' } });
-  assert.equal((await startTask({ ...withMemory, transitionMemory: createFileTransitionMemory(dir) }, STORY, T1)).kind, 'ok');
-  assert.deepEqual(calls.transitions, [{ key: T1, id: '23' }, { key: T1, id: '23' }]);
+  assert.equal(
+    (await startTask({ ...withMemory, transitionMemory: createFileTransitionMemory(dir) }, STORY, T1)).kind,
+    'ok',
+  );
+  assert.deepEqual(calls.transitions, [
+    { key: T1, id: '23' },
+    { key: T1, id: '23' },
+  ]);
 });
 
 test('la memoria ignora entradas inválidas', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jm-trans-'));
-  fs.writeFileSync(path.join(dir, 'transiciones.json'), JSON.stringify({ 'bad key': { start: 'X' }, AQ: { start: 5, done: 'Cerrar' } }));
+  fs.writeFileSync(
+    path.join(dir, 'transiciones.json'),
+    JSON.stringify({ 'bad key': { start: 'X' }, AQ: { start: 5, done: 'Cerrar' } }),
+  );
   const memory: TransitionMemory = createFileTransitionMemory(dir);
   assert.equal(memory.get('AQ', 'start'), undefined);
   assert.equal(memory.get('AQ', 'done'), 'Cerrar');

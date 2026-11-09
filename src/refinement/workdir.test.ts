@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import * as fs from 'fs-extra';
 import * as os from 'os';
 import * as path from 'path';
-import { writeAgentsFile, writeClaudeSettings, writeKnowledgeContext, writeMcpConfig, writeSkillCopy } from './chat-store';
+import {
+  writeAgentsFile,
+  writeClaudeSettings,
+  writeKnowledgeContext,
+  writeMcpConfig,
+  writeSkillCopy,
+} from './chat-store';
+import { writeTaskSettings } from './claude';
 import { CHAT_FILES, isWorkHashSegment, workBase, workDirFor, writeReadOnlyCopy } from './workdir';
 
 const temp = (prefix: string) => fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -30,6 +37,7 @@ test('los archivos técnicos van a la carpeta de trabajo, el repo queda limpio y
   writeSkillCopy(workDir, skill);
   writeMcpConfig(workDir, 'http://127.0.0.1:50123/mcp/abc');
   writeKnowledgeContext(workDir, 'contexto');
+  writeTaskSettings(workDir);
   for (const file of Object.values(CHAT_FILES)) assert.ok(await fs.pathExists(path.join(workDir, file)), file);
   assert.deepEqual(await fs.readdir(root), [], 'el repositorio no recibe nada');
   const mcp = await fs.readFile(path.join(workDir, CHAT_FILES.mcp), 'utf8');

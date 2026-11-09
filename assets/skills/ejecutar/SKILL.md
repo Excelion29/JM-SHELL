@@ -24,6 +24,8 @@ actualizar. Jira lo toca `jm`, no tú: no cambias estados ni estimaciones.
 - Cumple el criterio de terminado punto por punto. No des la tarea por terminada si falta alguno: dilo.
 - Sigue los patrones del código que ya existe y corre las pruebas que correspondan antes de dar algo por hecho.
 - No leas credenciales (`~/.jira-tool/`, `.env*`) ni uses herramientas de Jira.
+- Los commits y los push los hace siempre el dev: no los hagas ni los ofrezcas (`jm` los bloquea). Si hace falta una
+  rama nueva, pregúntale antes desde qué rama base crearla y créala solo cuando te lo diga.
 
 ## Al terminar o al pausar
 
@@ -34,4 +36,5 @@ Deja constancia para poder retomar otro día, incluso desde otra carpeta:
 2. En `bitacora.md` de la historia agrega una entrada corta (fecha, tarea, una o dos líneas).
 3. Si no hay historia (claves iguales), omite los dos pasos anteriores y resume en el chat.
 
+Resume los cambios por repositorio para que el dev haga sus commits, sin ofrecerte a hacerlos.
 Después dile al dev: «Escribe /exit para volver a jm; allí te preguntará si terminaste la tarea.»

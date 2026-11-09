@@ -204,6 +204,27 @@ Todo sin IA ni Jira extra (0 tokens), con lo que `jm` ya guarda por tarea.
 - No se registra worklog en Jira: al PM le importa la estimación y la fecha; la estimación original no se toca.
 - Después: ajustar la estimación propuesta con una fórmula propia (sin pasar más contexto a Claude).
 
+### Parte 7 — Al ejecutar una tarea, los commits los hace el dev (agregada 2026-11-08)
+
+Corrección del dev en una ejecución real (PM-2096): "de los commits siempre me encargo yo; puedes crear ramas
+preguntándome desde dónde".
+- `jm` le pasa a Claude, al ejecutar una tarea, unos ajustes propios que **niegan** `git commit` y `git push` (la
+  negación gana sobre cualquier permiso del dev o del proyecto). Sin Talos: es parte de `jm`.
+- Crear ramas sigue permitido, pero la skill `ejecutar` pregunta antes desde qué rama base.
+- Al terminar, Claude resume lo hecho y no ofrece commits.
+
+### Parte 8 — Relaciones en el grafo de la base (agregada 2026-11-08)
+
+El dev ve el grafo de Obsidian disperso: las notas de `06-JM-ADR` casi no se enlazan. Todo lo hace `jm` (0 tokens):
+1. Nota de tarea: ficha (historia, tarea, `tipo/tarea`), `Historia: [[CLAVE]]` como enlace y las tareas anteriores
+   enlazadas; sin la instrucción técnica para Claude ni el criterio de terminado repetido. El estado de cada tarea se
+   muestra en la sección de la historia (siempre al día) y no en la ficha de la tarea (quedaría vieja).
+2. Nota de la historia: `jm` mantiene una sección `## Tareas` con un enlace por tarea y su estado, y pone al día `fase`
+   y `tareas` de la ficha.
+3. `historia.md` y `bitacora.md` empiezan con `Historia: [[CLAVE]]`.
+4. Índice: las tareas con nota pasan a enlaces.
+5. Las notas existentes se reparan una sola vez, solo dentro de `06-JM-ADR`.
+
 ### Parte 4 — Ejecución tarea por tarea (idea registrada 2026-11-05, por diseñar)
 
 Elegir una tarea, iniciarla (pasa a "En curso"/"In Progress"), trabajar con Claude con ese contexto y al terminarla
@@ -331,6 +352,8 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Commit parte 5 + ajustes (orden de tareas, descripción sin estimación, `r` tras crear) | Marcello Cano | 2026-11-07 | aprobado tras prueba ("listo, apruebo") |
 | Accept parte 6 (calibración, puntos 1 y 2) | Marcello Cano | 2026-11-07 | aprobado: A ambas medidas, B sin worklog, C fórmula propia después |
 | Commit parte 6 (calibración, puntos 1 y 2) | Marcello Cano | 2026-11-08 | aprobado tras prueba ("está excelente, queda lo apruebo") |
+| Accept parte 7 (sin commits al ejecutar, ramas preguntando la base) | Marcello Cano | 2026-11-08 | aprobado ("si") |
+| Accept parte 8 (relaciones en el grafo de la base: 5 puntos) | Marcello Cano | 2026-11-08 | aprobado ("si aceptalo") |
 | Accept parte 5 (reconfigurar base, opción A ahora, B después) | Marcello Cano | 2026-11-06 | aprobado ("por ahorita vamos con la …, la B en otra actualización") |
 | Accept "Mi día" en parte 4 | Marcello Cano | 2026-11-05 | aprobado: vista de tareas propias que vencen hoy o vencidas, de cualquier historia |
 | Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |

@@ -16,7 +16,10 @@ import {
   scopedKnowledgeRules,
   toRulePath,
   resetTrustedAddDirs,
+  TASK_DENIED_COMMANDS,
+  taskHandoffArgs,
   trustAddDir,
+  writeTaskSettings,
 } from './claude';
 import { KB_ALLOWED_TOOLS } from './kb-proxy';
 import { workDirFor } from './workdir';
@@ -152,6 +155,32 @@ test('el arranque de Claude completo recibe las banderas de la base antes del pr
     FILES.context,
   ]);
   assert.deepEqual(handoffKnowledgeArgs(null, FILES), []);
+});
+
+test('al ejecutar una tarea Claude recibe ajustes que niegan commit y push; crear ramas sigue permitido', async () => {
+  const temp = (prefix: string) => fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  const workDir = workDirFor(await temp('jm-tarea-'), await temp('jm-home-'));
+  const file = writeTaskSettings(workDir);
+  assert.equal(file, workFilesOf(workDir, 'AQ-45').taskSettings);
+  const settings = JSON.parse(await fs.readFile(file, 'utf8'));
+  assert.deepEqual(settings, {
+    permissions: {
+      deny: ['Bash(git commit:*)', 'Bash(git push:*)', 'Bash(git * commit:*)', 'Bash(git * push:*)'],
+    },
+  });
+  assert.deepEqual(TASK_DENIED_COMMANDS, settings.permissions.deny);
+  assert.ok(!JSON.stringify(settings).includes('git checkout'), 'crear ramas no se niega');
+});
+
+test('las banderas de una tarea empiezan con sus ajustes, con o sin base, y pasan la lista blanca', () => {
+  for (const kb of [MCP, null]) {
+    const args = taskHandoffArgs(kb, FILES);
+    assert.deepEqual(args.slice(0, 2), ['--settings', FILES.taskSettings]);
+    assert.deepEqual(args.slice(-2), ['--append-system-prompt-file', FILES.context]);
+    assert.doesNotThrow(() =>
+      assertSafeArgs([...args, '--session-id', SESSION, '-n', 'ejecutar AQ-101', '/ejecutar AQ-45 AQ-101']),
+    );
+  }
 });
 
 test('mcp.json apunta al intermediario local y no lleva key, cabeceras ni variables', async () => {

@@ -8,9 +8,11 @@ import { joinKnowledgePath, KnowledgeConfig, resolveAdrFolder } from '../refinem
 import { createRestClient } from '../refinement/knowledge-rest';
 import { createLocalStore } from '../refinement/local-store';
 import { migrateLocalStory } from '../refinement/migrate';
+import { linkStoryNote, NOTES_VERSION, repairStoryNotes, taskNoteKeys } from '../refinement/note-links';
+import { loadPlan } from '../refinement/plan';
 import { createProjectStore } from '../refinement/project-store';
 import { JM_DIR } from '../refinement/safe-fs';
-import { assertKey, isValidIssueKey, listStoriesFrom, STORIES_DIR } from '../refinement/state';
+import { assertKey, isValidIssueKey, listStoriesFrom, readState, STORIES_DIR, updateState } from '../refinement/state';
 import type { StoryStore } from '../refinement/story-store';
 import type { StoryState } from '../refinement/types';
 import { createVaultStore } from '../refinement/vault-store';
@@ -121,6 +123,35 @@ async function knowledgeFoldersOf(
   return config.type === 'mcp' ? mcpFolders(config, secretsDir) : localFolders(config);
 }
 
+// La nota de la historia (<CLAVE>.md en JM-ADR) la escribe Claude; jm solo pone al día la ficha y su sección de tareas
+async function syncStoryNote(
+  adrStore: StoryStore,
+  store: StoryStore,
+  state: StoryState,
+  withNote: ReadonlySet<string>,
+): Promise<void> {
+  const name = `${state.key}.md`;
+  const note = await adrStore.readText(name);
+  if (note === null) return;
+  const plan = await loadPlan(store).catch(() => null);
+  const next = linkStoryNote(note, state, plan, withNote);
+  if (next !== note) await adrStore.writeText(name, next);
+}
+
+// Repara una sola vez las notas que dejaron versiones anteriores de jm; un fallo avisa y no impide abrir la historia
+async function repairNotesOnce(store: StoryStore, key: string): Promise<void> {
+  try {
+    const state = await readState(store, key);
+    if (!state || (state.notesVersion ?? 0) >= NOTES_VERSION) return;
+    await repairStoryNotes(store, key);
+    await updateState(store, key, (s) => {
+      s.notesVersion = NOTES_VERSION;
+    });
+  } catch (err: unknown) {
+    warn(`No pude enlazar las notas de ${key} en la base: ${(err as Error).message}`);
+  }
+}
+
 async function openStoryUncached(root: string, key: string, options: ResolverOptions): Promise<StoryAccess> {
   const config = await readKnowledgeConfig(root);
   const folders = config ? await knowledgeFoldersOf(root, config, options.secretsDir) : null;
@@ -130,9 +161,13 @@ async function openStoryUncached(root: string, key: string, options: ResolverOpt
   const updateIndex = createIndexUpdater(folders.adrStore);
   store.onStoryChanged = async (state) => {
     listingCache.delete(root);
-    await updateIndex(state);
+    // Si no se puede listar tareas/, el índice se actualiza igual (sin enlaces nuevos)
+    const withNote = await taskNoteKeys(store).catch(() => new Set<string>());
+    await updateIndex(state, withNote);
+    await syncStoryNote(folders.adrStore, store, state, withNote);
   };
   const migration = await migrateLocalStory(root, key, store);
+  await repairNotesOnce(store, key);
   return { store, notice: migration.notice };
 }
 

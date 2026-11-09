@@ -204,12 +204,14 @@ function normalize(raw: unknown, key: string, file: string, progressed: boolean)
     attachments: readAttachments(raw.attachments),
     usage: readUsage(raw.usage),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date(0).toISOString(),
+    ...(typeof raw.notesVersion === 'number' && raw.notesVersion > 0 ? { notesVersion: raw.notesVersion } : {}),
   };
 }
 
 export async function hasLogProgress(store: StoryStore, key: string): Promise<boolean> {
   const log = await store.readText(LOG_FILE);
-  return log !== null && log.trim() !== `# Bitácora ${key}`;
+  // El enlace a la historia que pone jm no cuenta como avance
+  return log !== null && log.replace(`Historia: [[${key}]]`, '').trim() !== `# Bitácora ${key}`;
 }
 
 export async function readState(store: StoryStore, key: string): Promise<StoryState | null> {
@@ -227,9 +229,17 @@ export async function readState(store: StoryStore, key: string): Promise<StorySt
   }
 }
 
-// El índice de la base solo se rehace cuando cambia algo que muestra
+// El índice y la nota de la historia solo se rehacen cuando cambia algo que muestran
 const indexSignature = (state: StoryState) =>
-  `${state.phase}|${state.summary}|${Object.keys(state.createdIssues).length}`;
+  [
+    state.phase,
+    state.summary,
+    Object.values(state.createdIssues).join(','),
+    Object.values(state.taskRuns)
+      .map((run) => `${run.issueKey}:${run.status}`)
+      .join(','),
+    state.notesVersion ?? 0,
+  ].join('|');
 
 async function writeState(store: StoryStore, state: StoryState, previous: StoryState | null): Promise<void> {
   state.updatedAt = new Date().toISOString();
@@ -280,7 +290,7 @@ export async function ensureStory(
 ): Promise<StoryState> {
   assertKey(key);
   await store.ensureReady();
-  if (!(await store.exists(LOG_FILE))) await store.writeText(LOG_FILE, `# Bitácora ${key}\n\n`);
+  if (!(await store.exists(LOG_FILE))) await store.writeText(LOG_FILE, `# Bitácora ${key}\n\nHistoria: [[${key}]]\n\n`);
   const existing = await readState(store, key);
   if (existing) {
     return updateState(store, key, (s) => {
