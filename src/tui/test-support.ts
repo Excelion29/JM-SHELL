@@ -12,6 +12,7 @@ import type {
   KnowledgeTarget,
   ServerInspection,
 } from '../refinement/chat-types.js';
+import type { ManagementBridge, ManagementStatus } from '../refinement/management-types.js';
 import type {
   AssigneeView,
   CloseResult,
@@ -430,6 +431,8 @@ export interface FakeTasksOptions {
   // Planificación al entrar a una historia; sin `planningOpen` no hay ninguna abierta
   planningOpen?: string | null;
   planningOutcome?: PlanningOutcome;
+  // Gestión del proyecto a la que iría la Planificación; sin ella va en la misma historia
+  managementKey?: string;
 }
 
 // Puente de tareas falso en memoria: registra lo que la pantalla pide, sin Jira ni disco
@@ -479,7 +482,7 @@ export function createFakeTasks(options: FakeTasksOptions = {}) {
     },
     myDay: async () => options.myDay ?? { rows: [], totalSeconds: 0, capacitySeconds: 8 * SECONDS_PER_HOUR },
     calibration: async () => options.calibration ?? EMPTY_CALIBRATION,
-    planningStatus: async () => ({ open: options.planningOpen ?? null }),
+    planningStatus: async () => ({ open: options.planningOpen ?? null, managementKey: options.managementKey ?? null }),
     planningSuggestion: async () => ({ estimate: '1h', dueDate: 'hoy', measured: 0 }),
     createPlanning: async (storyKey, input) => {
       calls.planning.push({ storyKey, input });
@@ -488,4 +491,29 @@ export function createFakeTasks(options: FakeTasksOptions = {}) {
     openInBrowser: async () => undefined,
   };
   return { tasks, calls };
+}
+
+export interface FakeManagementOptions {
+  // Valor inicial por proyecto; sin entrada, 'unset'
+  status?: Record<string, ManagementStatus>;
+  saveError?: string;
+}
+
+// Puente de gestión falso en memoria: guarda como el real, sin disco ni Jira
+export function createFakeManagement(options: FakeManagementOptions = {}) {
+  const values = new Map<string, ManagementStatus>(Object.entries(options.status ?? {}));
+  const calls = { saved: [] as Array<{ projectKey: string; key: string | null }>, statusReads: [] as string[] };
+  const management: ManagementBridge = {
+    status: async (projectKey) => {
+      calls.statusReads.push(projectKey);
+      return values.get(projectKey) ?? 'unset';
+    },
+    save: async (projectKey, key) => {
+      calls.saved.push({ projectKey, key });
+      if (options.saveError) return { ok: false, message: options.saveError };
+      values.set(projectKey, key === null ? 'none' : { key, summary: `Resumen de ${key}` });
+      return { ok: true };
+    },
+  };
+  return { management, calls };
 }

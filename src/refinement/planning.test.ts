@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { JiraIssue } from '../config/types';
+import { IssueNotFoundError } from '../services/jira';
+import { managementPlanningSummary } from './management';
 import { renderTasksSection } from './note-links';
 import {
   createPlanning,
@@ -19,10 +21,18 @@ const STORY = 'AQ-45';
 const NOW = new Date('2026-11-09T15:00:00.000Z');
 const TODAY = '2026-11-09';
 const HOUR_MS = 3600 * 1000;
+const EPIC = 'AQ-5';
+const MANAGEMENT_STORY = 'AQ-7';
+const MISSING = 'AQ-99';
 
 // Jira de creación + transiciones: la subtarea nueva nace "Por hacer" y se puede pasar a "En curso"
-function planningJira(story: FakeIssueSpec | null = {}, transitions = true) {
-  const fake = createFakeJira({ issues: story ? { [STORY]: story } : {} });
+function planningJira(
+  story: FakeIssueSpec | null = {},
+  transitions = true,
+  others: Record<string, FakeIssueSpec> = {},
+) {
+  const issues = { ...(story ? { [STORY]: story } : {}), ...others };
+  const fake = createFakeJira({ issues });
   const moved: string[] = [];
   const newIssue = (key: string): JiraIssue =>
     ({
@@ -36,7 +46,10 @@ function planningJira(story: FakeIssueSpec | null = {}, transitions = true) {
     }) as JiraIssue;
   const jira: PlanningDeps['jira'] = {
     ...fake.jira,
-    getIssue: async (key) => (key === STORY ? fake.jira.getIssue(key) : newIssue(key)),
+    getIssue: async (key) => {
+      if (key === MISSING) throw new IssueNotFoundError(`Resource not found: ${key}`);
+      return key === STORY || key in issues ? fake.jira.getIssue(key) : newIssue(key);
+    },
     getIssueWithDescription: async (key) => newIssue(key),
     getTransitions: async () => (transitions ? [{ id: '11', name: 'Iniciar', to: { name: 'En curso' } }] : []),
     doTransition: async (key) => {
@@ -202,4 +215,68 @@ test('la nota de la historia lista las Planificaciones con su estado', () => {
     new Set(),
   );
   assert.match(section, /^- AQ-101 · Planificación · en curso$/m);
+});
+
+test('con una épica de gestión: tarea hija en la épica, título con la clave de la historia y registro en la historia', async () => {
+  const { jira, created, moved } = planningJira({}, true, { [EPIC]: { type: 'Epic' } });
+  const d = { ...(await deps(jira)), management: EPIC };
+  const outcome = await createPlanning(d, STORY, { estimate: '1h', dueDate: 'hoy' });
+  assert.deepEqual(outcome, { ok: true, issueKey: 'AQ-101', started: true });
+  assert.equal(created.length, 1);
+  assert.equal(created[0].parentKey, EPIC);
+  assert.equal(created[0].issueTypeName, 'Tarea');
+  assert.equal(created[0].summary, managementPlanningSummary(STORY, TODAY));
+  assert.equal(created[0].summary, 'Planificación · AQ-45 · 2026-11-09');
+  assert.deepEqual(moved, ['AQ-101']);
+  const saved = await readState(d.store, STORY);
+  assert.equal(openPlanningOf(saved ?? null), 'AQ-101');
+  assert.equal(saved?.taskRuns['AQ-101']?.status, 'started');
+});
+
+test('con una historia de gestión: subtarea bajo ella, aunque la historia donde se entró esté finalizada', async () => {
+  const { jira, created } = planningJira({ status: 'done' }, true, { [MANAGEMENT_STORY]: {} });
+  const d = { ...(await deps(jira)), management: MANAGEMENT_STORY };
+  const outcome = await createPlanning(d, STORY, { estimate: '30m', dueDate: 'hoy' });
+  assert.deepEqual(outcome, { ok: true, issueKey: 'AQ-101', started: true });
+  assert.equal(created[0].parentKey, MANAGEMENT_STORY);
+  assert.equal(created[0].issueTypeName, 'Subtarea');
+  assert.equal(created[0].summary, managementPlanningSummary(STORY, TODAY));
+});
+
+test('sin gestión (null) sigue como antes: bajo la historia y sin clave en el título', async () => {
+  const { jira, created } = planningJira();
+  const d = { ...(await deps(jira)), management: null };
+  await createPlanning(d, STORY, { estimate: '1h', dueDate: 'hoy' });
+  assert.equal(created[0].parentKey, STORY);
+  assert.equal(created[0].summary, planningSummary(TODAY));
+});
+
+test('si la de gestión ya no sirve se crea en la historia actual y el resultado trae el aviso', async () => {
+  const cases: Array<[Record<string, FakeIssueSpec>, string, string]> = [
+    [{ [MANAGEMENT_STORY]: { status: 'done' } }, MANAGEMENT_STORY, 'done'],
+    [{}, MISSING, 'not-found'],
+    [{ [MANAGEMENT_STORY]: { type: 'Subtarea' } }, MANAGEMENT_STORY, 'subtask'],
+  ];
+  for (const [others, management, reason] of cases) {
+    const { jira, created } = planningJira({}, true, others);
+    const d = { ...(await deps(jira)), management };
+    const outcome = await createPlanning(d, STORY, { estimate: '1h', dueDate: 'hoy' });
+    assert.equal(outcome.ok, true);
+    assert.equal(outcome.ok && outcome.fallback?.key, management);
+    assert.equal(outcome.ok && outcome.fallback?.reason, reason);
+    assert.equal(created.length, 1);
+    assert.equal(created[0].parentKey, STORY);
+    assert.equal(created[0].summary, planningSummary(TODAY));
+    assert.equal(openPlanningOf((await readState(d.store, STORY)) ?? null), 'AQ-101');
+  }
+});
+
+test('con la de gestión inservible y la historia también finalizada no se crea nada', async () => {
+  const { jira, created } = planningJira({ status: 'done' }, true, { [MANAGEMENT_STORY]: { status: 'done' } });
+  const outcome = await createPlanning({ ...(await deps(jira)), management: MANAGEMENT_STORY }, STORY, {
+    estimate: '1h',
+    dueDate: 'hoy',
+  });
+  assert.equal(outcome.ok, false);
+  assert.equal(created.length, 0);
 });

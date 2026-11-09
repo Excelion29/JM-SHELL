@@ -7,14 +7,17 @@ interface YesNoPromptProps {
   question: string;
   onYes: () => void;
   onNo: () => void;
+  // Esc aparte de n; sin él Esc equivale a n
+  onCancel?: () => void;
 }
 
 // Solo s/y confirma; n o Esc cancelan y cualquier otra tecla se ignora
-export function YesNoPrompt({ question, onYes, onNo }: YesNoPromptProps) {
+export function YesNoPrompt({ question, onYes, onNo, onCancel = onNo }: YesNoPromptProps) {
   useInput((input, key) => {
     const letter = input.toLowerCase();
     if (letter === KEYS.confirmYes || letter === KEYS.confirmYesAlt) onYes();
-    else if (letter === KEYS.confirmNo || key.escape) onNo();
+    else if (letter === KEYS.confirmNo) onNo();
+    else if (key.escape) onCancel();
   });
   return (
     <Box flexDirection="column">

@@ -261,6 +261,16 @@ observaciones que luego se repartieron en varias historias). El análisis tambi�
    fecha sugeridas y editables, queda "En curso" y al salir pregunta si terminó. Título `Análisis · <nombre> ·
    AAAA-MM-DD` (suelto) o `Planificación · <CLAVE> · AAAA-MM-DD` (historia, cuando va a gestión).
 
+Plan técnico 10A (aprobado 2026-11-09):
+- Se guarda en `.jira.json` de la carpeta, por proyecto: `management: { "<PROYECTO>": { key, summary } | null }`
+  (`null` = respondió que no tiene; no se vuelve a preguntar). Cambiar de proyecto no arrastra el valor.
+- Pregunta tras elegir proyecto con `p` y al entrar a una historia de un proyecto que nunca respondió (antes de la
+  Planificación). Se cambia con `g` desde el inicio. Elegir: lista de épicas (Enter) o `k` para escribir la clave de
+  una historia o épica; se valida que exista, no esté finalizada y no sea subtarea.
+- Con gestión, la Planificación se titula `Planificación · <CLAVE> · AAAA-MM-DD`; su registro, tiempo, cierre y
+  calibración siguen en la historia donde se entró.
+- Si la de gestión ya no sirve (finalizada o inexistente), se crea en la historia actual y se avisa que se cambie con `g`.
+
 **B. Análisis sin historia**
 1. Desde el inicio, "Nuevo análisis": nombre y fuentes (texto pegado, rutas de archivos `.md/.txt/.pdf/.eml`, fotos o
    capturas). Queda en la base con un id local, sin Jira.
@@ -409,6 +419,9 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Prueba real parte 9 (tras review 3 dimensiones aplicada) | Marcello Cano | 2026-11-09 | exitosa ("funcionó completamenteeeee") |
 | Commit parte 9 + parte 6 punto 3 (un solo commit) | Marcello Cano | 2026-11-09 | aprobado ("si") |
 | Accept parte 10 (análisis sin historia + gestión por tablero) | Marcello Cano | 2026-11-09 | aprobado (diseño A/B/C; con gestión configurada también la Planificación de historias va ahí, si no en la misma historia) |
+| Accept plan técnico 10A (gestión por tablero) | Marcello Cano | 2026-11-09 | aprobado ("okey genial si"); si la de gestión no sirve, se crea en la historia actual y avisa |
+| Prueba real parte 10A (tras review 2 revisores aplicada) | Marcello Cano | 2026-11-09 | exitosa ("genial quedó") |
+| Commit parte 10A | Marcello Cano | 2026-11-09 | aprobado ("si") |
 | Accept parte 5 (reconfigurar base, opción A ahora, B después) | Marcello Cano | 2026-11-06 | aprobado ("por ahorita vamos con la …, la B en otra actualización") |
 | Accept "Mi día" en parte 4 | Marcello Cano | 2026-11-05 | aprobado: vista de tareas propias que vencen hoy o vencidas, de cualquier historia |
 | Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |

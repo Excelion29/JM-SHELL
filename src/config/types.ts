@@ -1,4 +1,5 @@
 import type { KnowledgeConfig } from '../refinement/knowledge';
+import type { ManagementIssue } from '../refinement/management-types';
 
 export interface GlobalConfig {
   jiraUrl: string;
@@ -10,6 +11,8 @@ export interface ProjectConfig {
   projectKey: string;
   defaultAssignee: string;
   knowledge?: KnowledgeConfig;
+  // Por proyecto; null = respondió que no tiene
+  management?: Record<string, ManagementIssue | null>;
 }
 
 export interface JiraContext {

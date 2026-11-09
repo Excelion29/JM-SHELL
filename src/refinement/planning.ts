@@ -4,15 +4,22 @@ import { IssueNotFoundError } from '../services/jira';
 import { markdownToAdf } from '../utils/adf';
 import { formatSeconds } from '../utils/time';
 import { elapsedMsOf, EMPTY_PLANNING } from './calibration';
-import { type CreateJira, resolveParent } from './create';
+import { type CreateJira, resolveManagementTarget, resolveParent } from './create';
 import { type ExecutionJira, startTask } from './execution';
+import { managementPlanningSummary } from './management';
 import { estimateForJira, parseFinalEstimate } from './pert';
 import { projectKeyOfStory } from './repos';
 import { parseDueDateInput, TODAY_WORD, todayIso } from './schedule';
 import { assertKey, ensureStory, isValidIssueKey, readState, updateState } from './state';
 import type { StoryStore } from './story-store';
-import type { AskReason } from './review-types';
-import type { PlanningGroup, PlanningInput, PlanningOutcome, PlanningSuggestion } from './tasks-types';
+import type { AskReason, CreationTarget } from './review-types';
+import type {
+  PlanningFallback,
+  PlanningGroup,
+  PlanningInput,
+  PlanningOutcome,
+  PlanningSuggestion,
+} from './tasks-types';
 import type { TransitionMemory } from './transition-memory';
 import type { StoryState } from './types';
 
@@ -64,6 +71,8 @@ export interface PlanningDeps {
   store: StoryStore;
   assigneeId: string;
   transitionMemory?: TransitionMemory;
+  // Épica o historia de gestión del proyecto; sin ella (o null) la Planificación va en la misma historia
+  management?: string | null;
   now?: () => Date;
 }
 
@@ -72,6 +81,16 @@ async function ensureState(deps: PlanningDeps, storyKey: string): Promise<void> 
   if (await readState(deps.store, storyKey)) return;
   const issue = await deps.jira.getIssue(storyKey);
   await ensureStory(deps.store, storyKey, issue.fields.summary, issue.fields.parent?.key ?? null);
+}
+
+// Con gestión configurada y utilizable la Planificación va ahí; si no sirve, se avisa y se usa la historia actual
+async function resolveManagement(
+  deps: PlanningDeps,
+): Promise<{ target: CreationTarget | null; fallback?: PlanningFallback }> {
+  if (!deps.management) return { target: null };
+  const resolved = await resolveManagementTarget(deps.jira, deps.management);
+  if (resolved.ok) return { target: resolved.target };
+  return { target: null, fallback: { key: deps.management, reason: resolved.reason, message: resolved.message } };
 }
 
 export async function createPlanning(
@@ -85,15 +104,20 @@ export async function createPlanning(
     const today = todayIso(now);
     const estimateSeconds = parseFinalEstimate(input.estimate.trim());
     const dueDate = parseDueDateInput(input.dueDate.trim() || today, today);
-    const parent = await resolveParent(deps.jira, storyKey);
-    if (parent.kind !== 'ready') {
-      return { ok: false, message: planningFailure(`${PARENT_PROBLEMS[parent.reason]}.`) };
+    const managed = await resolveManagement(deps);
+    let target: CreationTarget;
+    if (managed.target) target = managed.target;
+    else {
+      const parent = await resolveParent(deps.jira, storyKey);
+      if (parent.kind !== 'ready') {
+        return { ok: false, message: planningFailure(`${PARENT_PROBLEMS[parent.reason]}.`) };
+      }
+      target = parent.target;
     }
     await ensureState(deps, storyKey);
-    const { target } = parent;
     const { key } = await deps.jira.createIssue({
       projectKey: projectKeyOfStory(target.parentKey),
-      summary: planningSummary(today),
+      summary: managed.target ? managementPlanningSummary(storyKey, today) : planningSummary(today),
       issueTypeName: target.issueTypeName,
       issueTypeId: target.issueTypeId,
       assigneeId: deps.assigneeId,
@@ -105,7 +129,7 @@ export async function createPlanning(
     // Una clave anómala se descartaría al releer el estado: mejor avisar ahora que perder el registro en silencio
     if (!isValidIssueKey(key)) return { ok: false, message: planningFailure(`Jira devolvió una clave inesperada (${key}).`) };
     // Ya existe en Jira: desde aquí nada puede devolver un fallo sin su clave (se volvería a crear otra al entrar)
-    return await recordPlanning(deps, storyKey, key, estimateSeconds, now);
+    return await recordPlanning(deps, storyKey, key, estimateSeconds, now, managed.fallback);
   } catch (err: unknown) {
     const message = err instanceof IssueNotFoundError ? `No encontré ${storyKey} en Jira.` : (err as Error).message;
     return { ok: false, message: planningFailure(message) };
@@ -118,6 +142,7 @@ async function recordPlanning(
   key: string,
   estimateSeconds: number,
   now: Date,
+  fallback?: PlanningFallback,
 ): Promise<PlanningOutcome> {
   // Sin almacén: solo se mueve en Jira; el registro se hace aquí para no cambiar la fase de la historia.
   // Si la transición falla, la tarea queda creada y su tiempo corre igual en jm
@@ -141,7 +166,7 @@ async function recordPlanning(
         status: 'started',
       };
     });
-    return { ok: true, issueKey: key, started: transition?.kind === 'ok' };
+    return { ok: true, issueKey: key, started: transition?.kind === 'ok', ...(fallback ? { fallback } : {}) };
   } catch (err: unknown) {
     return {
       ok: false,

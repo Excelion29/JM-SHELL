@@ -24,6 +24,7 @@ import {
 } from '../refinement/browse';
 import { BrowseItem, ProjectItem } from '../refinement/types';
 import { createChatBridge } from './chat-bridge';
+import { createManagementBridge } from './management-bridge';
 import type { TaskFinishTarget } from '../refinement/tasks-types';
 import { runTaskSession } from './execute';
 import { createPlanBridge } from './plan-bridge';
@@ -132,6 +133,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
   const chat = createChatBridge(sessionJira);
   const plan = createPlanBridge(sessionJira);
   const tasks = createTasksBridge(sessionJira);
+  const management = createManagementBridge(sessionJira);
   let initialTaskFinish: TaskFinishTarget | null = null;
 
   try {
@@ -144,6 +146,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
         chat,
         plan,
         tasks,
+        management,
         initialTaskFinish,
         initialChatKey,
         notice,

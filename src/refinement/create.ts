@@ -8,6 +8,7 @@ import { loadPlan } from './plan';
 import { effectiveSeconds } from './pert';
 import { scheduleOf, todayIso } from './schedule';
 import { listLocalEntries, readAttachment } from './review';
+import type { ManagementProblem } from './management-types';
 import type {
   AssigneeView,
   CreateOutcome,
@@ -79,6 +80,33 @@ export async function resolveTarget(jira: CreateJira, parentKey: string): Promis
   } catch (err: unknown) {
     const message = err instanceof IssueNotFoundError ? `No encontré ${parentKey} en Jira.` : (err as Error).message;
     return { ok: false, message };
+  }
+}
+
+export type ManagementTargetResult =
+  { ok: true; target: CreationTarget } | { ok: false; reason: ManagementProblem; message: string };
+
+// La épica o historia de gestión: debe existir, seguir abierta y no ser subtarea para crear tareas dentro
+export async function resolveManagementTarget(jira: CreateJira, key: string): Promise<ManagementTargetResult> {
+  try {
+    assertKey(key);
+    const issue = await jira.getIssue(key);
+    if (getLevel({ issueKey: issue.key, issueType: issue.fields.issuetype?.name }) === 'subtask') {
+      return {
+        ok: false,
+        reason: 'subtask',
+        message: `${key} es una subtarea: no se pueden crear tareas dentro de ella.`,
+      };
+    }
+    if (issue.fields.status.statusCategory?.key === DONE_CATEGORY) {
+      return { ok: false, reason: 'done', message: `${key} ya está finalizada.` };
+    }
+    return { ok: true, target: await targetFromIssue(jira, issue) };
+  } catch (err: unknown) {
+    if (err instanceof IssueNotFoundError) {
+      return { ok: false, reason: 'not-found', message: `No encontré ${key} en Jira.` };
+    }
+    return { ok: false, reason: 'error', message: (err as Error).message };
   }
 }
 

@@ -1,4 +1,6 @@
 // ── Textos y teclas de la app ───────────────────────────────────
+import type { ManagementProblem, ManagementStatus } from '../refinement/management-types.js';
+
 export const APP_NAME = 'JM-SHELL';
 export const NO_PROJECT_LABEL = 'sin proyecto';
 
@@ -33,6 +35,7 @@ export const KEYS = {
   knowledgeBase: 'b',
   calibration: 'c',
   useAdjusted: 'u',
+  management: 'g',
 } as const;
 
 // Palabra que hay que escribir completa para borrar subtareas de Jira
@@ -166,7 +169,7 @@ export const CHAT_TEXTS = {
 
 export const FOOTER_HINTS = {
   pin: 'Enter confirmar · Ctrl+C salir',
-  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.calibration} calibración · ${KEYS.quit} salir`,
+  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.calibration} calibración · ${KEYS.management} gestión · ${KEYS.quit} salir`,
   picker: `↑↓ elegir · Enter abrir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · ${KEYS.changeProject} proyecto · Esc volver`,
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
@@ -187,6 +190,8 @@ export const FOOTER_HINTS = {
   choose: (count: number) => `1-${count} elegir`,
   knowledge: 'Esc cancelar',
   knowledgeSettings: '1-4 elegir · Esc inicio',
+  management: 'Esc salir sin guardar',
+  managementCheck: 'Esc cancelar',
   knowledgeBrowse: `↑↓ elegir · Enter abrir carpeta o nota · Backspace subir · ${KEYS.selectFolder} elegir esta carpeta · Esc cancelar`,
   reviewReadOnly: `↑↓ moverte · ${KEYS.detail} detalle · Esc volver`,
   tasks: `↑↓ moverte · espacio marcar · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar · ${KEYS.giveBack} devolver · ${KEYS.removeTasks} borrar · ${KEYS.pendingFilter} pendientes · ${KEYS.retry} actualizar · ${KEYS.open} abrir · ${KEYS.viewPlan} ver plan · Esc inicio`,
@@ -476,8 +481,11 @@ export const TASKS_TEXTS = {
 export const PLANNING_TEXTS = {
   checking: 'Revisando si ya hay una Planificación abierta...',
   suggesting: 'Calculando la estimación sugerida...',
-  question: (key: string) => `¿Registro una tarea de Planificación en ${key}? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  question: (key: string, managementKey: string | null = null) =>
+    `¿Registro una tarea de Planificación en ${managementKey ? `${managementKey} (gestión)` : key}? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
   why: 'El análisis también es trabajo: queda en Jira bajo la historia y se mide su tiempo de inicio a fin.',
+  whyManagement: (managementKey: string, storyKey: string) =>
+    `El análisis también es trabajo: queda en Jira bajo ${managementKey} (gestión), con ${storyKey} en el título, y se mide su tiempo de inicio a fin.`,
   stillOpen: (key: string) => `Sigues en la Planificación ${key}; al salir del chat te pregunto si terminaste.`,
   formTitle: (key: string) => `Planificación de ${key}`,
   fields: {
@@ -494,6 +502,35 @@ export const PLANNING_TEXTS = {
     `${key} creada, pero no pude pasarla a En curso en Jira; su tiempo ya corre en jm.`,
   continueHint: 'Enter o Esc seguir al chat',
   formHint: '↑↓ o Tab cambiar de campo · Enter siguiente o crear · Esc no registrar',
+} as const;
+
+const MANAGEMENT_PROBLEM_REASONS = {
+  done: 'está finalizada',
+  'not-found': 'ya no existe en Jira',
+  subtask: 'es una subtarea',
+} as const;
+
+export const MANAGEMENT_TEXTS = {
+  title: 'Gestión del tablero',
+  needsProject: 'Primero elige un proyecto con p; la gestión se configura por proyecto.',
+  loading: 'Leyendo la gestión de este proyecto...',
+  question: '¿Tienes una épica o historia para reuniones, análisis y coordinaciones?',
+  why: `Ahí quedan registradas las tareas de análisis y planificación. Se guarda por proyecto y se cambia con ${KEYS.management} desde el inicio.`,
+  current: (status: ManagementStatus) =>
+    status === 'unset'
+      ? null
+      : status === 'none'
+        ? 'Ahora: sin gestión (no vuelvo a preguntar).'
+        : `Ahora: ${status.key} · ${status.summary}`,
+  pickTitle: (projectKey: string) => `Épica de gestión de ${projectKey}`,
+  noEpics: `No encontré épicas en el proyecto. Pulsa ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
+  pickNextStep: `Siguiente paso: elige una épica y pulsa Enter, o ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
+  pickHint: `↑↓ elegir · Enter guardar · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc volver`,
+  saving: 'Comprobando en Jira y guardando...',
+  saveError: (message: string) => `No pude guardar la gestión: ${message}`,
+  askHint: `${KEYS.confirmYes} elegir · ${KEYS.confirmNo} no tengo (no vuelvo a preguntar) · Esc seguir sin guardar`,
+  fallback: (key: string, reason: ManagementProblem, message: string) =>
+    `La de gestión ${key} ya no sirve (${reason === 'error' ? message : MANAGEMENT_PROBLEM_REASONS[reason]}); la Planificación quedó en la historia. Cámbiala con ${KEYS.management}.`,
 } as const;
 
 export const FINISH_TEXTS = {

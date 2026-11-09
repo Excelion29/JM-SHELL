@@ -10,6 +10,7 @@ import {
   estimateForJira,
   findExistingMatches,
   plannedUploads,
+  resolveManagementTarget,
   resolveParent,
   resolveTarget,
   runCreation,
@@ -89,6 +90,34 @@ test('destino manual: épica crea issues estándar, subtarea se rechaza, clave i
   assert.ok(!missing.ok && /No encontré AQ-9/.test(missing.message));
   const invalid = await resolveTarget(jira, 'mala');
   assert.ok(!invalid.ok && /inválida/.test(invalid.message));
+});
+
+test('gestión: una épica abierta crea tareas estándar y una historia abierta, subtareas', async () => {
+  const { jira } = createFakeJira({ issues: { 'AQ-1': { type: 'Epic' }, 'AQ-2': {} } });
+  const epic = await resolveManagementTarget(jira, 'AQ-1');
+  assert.ok(epic.ok && epic.target.childKind === 'standard' && epic.target.issueTypeName === 'Tarea');
+  const story = await resolveManagementTarget(jira, 'AQ-2');
+  assert.ok(story.ok && story.target.childKind === 'subtask' && story.target.parentKey === 'AQ-2');
+});
+
+test('gestión: finalizada, subtarea, inexistente y error de Jira se rechazan con su motivo', async () => {
+  const { jira } = createFakeJira({ issues: { 'AQ-1': { status: 'done' }, 'AQ-2': { type: 'Subtarea' } } });
+  const done = await resolveManagementTarget(jira, 'AQ-1');
+  assert.ok(!done.ok && done.reason === 'done' && /finalizada/.test(done.message));
+  const subtask = await resolveManagementTarget(jira, 'AQ-2');
+  assert.ok(!subtask.ok && subtask.reason === 'subtask' && /subtarea/.test(subtask.message));
+  const missing = await resolveManagementTarget(jira, 'AQ-9');
+  assert.ok(!missing.ok && missing.reason === 'not-found' && /No encontré AQ-9/.test(missing.message));
+  const broken = await resolveManagementTarget(
+    {
+      ...jira,
+      getIssue: async () => {
+        throw new Error('Jira API error (503): caído');
+      },
+    },
+    'AQ-3',
+  );
+  assert.ok(!broken.ok && broken.reason === 'error' && /caído/.test(broken.message));
 });
 
 test('crea solo las tareas marcadas con descripción, criterio, estimación redondeada y padre', async () => {

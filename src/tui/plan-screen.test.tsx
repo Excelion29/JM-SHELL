@@ -405,7 +405,8 @@ test('con muchas tareas la lista se desplaza y el pie con el total sigue visible
   const tasks = Array.from({ length: 40 }, (_, index) => fakeTask(`T${index + 1}`));
   const app = await openReview({ tasks });
   for (let i = 0; i < 35; i++) await app.press(DOWN);
-  assert.ok(app.frame().includes('T36'));
+  // Bajo carga las 35 flechas pueden tardar más que el tick fijo: se espera a que se vea la fila
+  await waitFor(() => app.frame().includes('T36'), '"T36"');
   assert.ok(
     app.frame().includes(PLAN_TEXTS.total(40, '43h30m', '43h30m', '1h35m')) || app.frame().includes('Total (40'),
   );

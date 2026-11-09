@@ -1,4 +1,6 @@
 // Contrato entre el puente de tareas (CJS) y las pantallas de Tareas y Mi día (isla ESM): solo tipos
+import type { ManagementProblem } from './management-types';
+
 export type StatusCategory = 'new' | 'indeterminate' | 'done' | 'unknown';
 
 export interface TaskRow {
@@ -117,6 +119,8 @@ export interface CalibrationModel {
 export interface PlanningStatus {
   // Clave de una Planificación aún abierta en la historia; null si no hay
   open: string | null;
+  // Clave de gestión del proyecto de la historia (donde irá la Planificación); null = en la misma historia
+  managementKey: string | null;
 }
 
 export interface PlanningSuggestion {
@@ -132,9 +136,15 @@ export interface PlanningInput {
   dueDate: string;
 }
 
+// La de gestión no sirvió y la Planificación quedó en la historia actual
+export interface PlanningFallback {
+  key: string;
+  reason: ManagementProblem;
+  message: string;
+}
+
 export type PlanningOutcome =
-  | { ok: true; issueKey: string; started: boolean }
-  | { ok: false; message: string };
+  { ok: true; issueKey: string; started: boolean; fallback?: PlanningFallback } | { ok: false; message: string };
 
 export interface PlanningGroup {
   count: number;

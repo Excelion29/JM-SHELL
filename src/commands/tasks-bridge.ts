@@ -18,6 +18,7 @@ import type { StoryStore } from '../refinement/story-store';
 import type { PlanningInput, PlanningOutcome, TasksBridge } from '../refinement/tasks-types';
 import { createFileTransitionMemory } from '../refinement/transition-memory';
 import { configuredAssignee } from './assignee';
+import { readManagement } from './management-store';
 import { loadCalibration, loadPlanningSuggestion } from './calibration-loader';
 import { openStory, listAllStories } from './story-resolver';
 
@@ -42,6 +43,12 @@ async function planningAssignee(jira: JiraService, storyKey: string): Promise<st
   return assignee.accountId;
 }
 
+// La gestión del proyecto de la historia: si está leída pero ilegible, se trata como sin gestión
+async function managementKeyOf(storyKey: string): Promise<string | null> {
+  const status = await readManagement(projectRoot(), projectKeyOfStory(storyKey)).catch(() => null);
+  return typeof status === 'object' && status ? status.key : null;
+}
+
 async function startPlanning(
   jira: JiraService,
   transitionMemory: ReturnType<typeof createFileTransitionMemory>,
@@ -51,7 +58,8 @@ async function startPlanning(
   try {
     const store = await storeOf(storyKey);
     const assigneeId = await planningAssignee(jira, storyKey);
-    return await createPlanning({ jira, store, assigneeId, transitionMemory }, storyKey, input);
+    const management = await managementKeyOf(storyKey);
+    return await createPlanning({ jira, store, assigneeId, transitionMemory, management }, storyKey, input);
   } catch (err: unknown) {
     return { ok: false, message: planningFailure((err as Error).message) };
   }
@@ -82,7 +90,10 @@ export function createTasksBridge(getJira: () => JiraService): TasksBridge {
     remove: async (storyKey, keys) => deleteTasks(await ctxOf(storyKey), storyKey, keys),
     myDay: () => loadMyDay(getJira()),
     calibration: () => loadCalibration(),
-    planningStatus: async (storyKey) => ({ open: openPlanningOf(await readState(await storeOf(storyKey), storyKey)) }),
+    planningStatus: async (storyKey) => ({
+      open: openPlanningOf(await readState(await storeOf(storyKey), storyKey)),
+      managementKey: await managementKeyOf(storyKey),
+    }),
     planningSuggestion: () => loadPlanningSuggestion(),
     createPlanning: (storyKey, input) => startPlanning(getJira(), transitionMemory, storyKey, input),
     openInBrowser: async (issueKey) => {

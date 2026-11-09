@@ -4,7 +4,7 @@ import TextInput from 'ink-text-input';
 // Solo tipos: se borra al compilar
 import type { PlanningSuggestion, TasksBridge } from '../../refinement/tasks-types.js';
 import { YesNoPrompt } from '../components/task-prompts.js';
-import { COLORS, PLANNING_TEXTS as T } from '../texts.js';
+import { COLORS, MANAGEMENT_TEXTS, PLANNING_TEXTS as T } from '../texts.js';
 
 interface PlanningScreenProps {
   storyKey: string;
@@ -32,6 +32,8 @@ export function PlanningScreen({ storyKey, tasks, onDone }: PlanningScreenProps)
   const [suggestion, setSuggestion] = useState<PlanningSuggestion>(NO_SUGGESTION);
   const [values, setValues] = useState<Record<Field, string>>({ estimate: '', dueDate: '' });
   const [focus, setFocus] = useState(0);
+  // Dónde irá la tarea: null = en la misma historia
+  const [managementKey, setManagementKey] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -40,7 +42,10 @@ export function PlanningScreen({ storyKey, tasks, onDone }: PlanningScreenProps)
       .then((status) => {
         if (!alive) return;
         if (status.open) onDone(T.stillOpen(status.open), status.open);
-        else setStep({ name: 'ask' });
+        else {
+          setManagementKey(status.managementKey);
+          setStep({ name: 'ask' });
+        }
       })
       // Sin poder leer la historia no se pregunta: el chat reporta el problema al abrir
       .catch(() => alive && onDone(null, null));
@@ -78,8 +83,12 @@ export function PlanningScreen({ storyKey, tasks, onDone }: PlanningScreenProps)
       .createPlanning(storyKey, values)
       .catch((err: unknown) => ({ ok: false as const, message: (err as Error).message }));
     if (!outcome.ok) setStep({ name: 'failed', message: outcome.message });
-    else
-      onDone(outcome.started ? T.created(outcome.issueKey) : T.createdNotStarted(outcome.issueKey), outcome.issueKey);
+    else {
+      const created = outcome.started ? T.created(outcome.issueKey) : T.createdNotStarted(outcome.issueKey);
+      const { fallback } = outcome;
+      const warning = fallback ? ` ${MANAGEMENT_TEXTS.fallback(fallback.key, fallback.reason, fallback.message)}` : '';
+      onDone(`${created}${warning}`, outcome.issueKey);
+    }
   };
 
   const submit = () => {
@@ -101,9 +110,9 @@ export function PlanningScreen({ storyKey, tasks, onDone }: PlanningScreenProps)
   if (step.name === 'ask') {
     return (
       <Box flexDirection="column">
-        <Text color={COLORS.muted}>{T.why}</Text>
+        <Text color={COLORS.muted}>{managementKey ? T.whyManagement(managementKey, storyKey) : T.why}</Text>
         <YesNoPrompt
-          question={T.question(storyKey)}
+          question={T.question(storyKey, managementKey)}
           onYes={() => void openForm()}
           onNo={() => onDone(null, null)}
         />

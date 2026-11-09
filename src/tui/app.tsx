@@ -4,6 +4,7 @@ import { Frame } from './components/frame.js';
 import { HomeScreen } from './components/home-screen.js';
 // Solo tipos: se borra al compilar
 import type { ChatBridge, KnowledgeStatus } from '../refinement/chat-types.js';
+import type { ManagementBridge, ManagementStatus } from '../refinement/management-types.js';
 import type { PlanBridge } from '../refinement/review-types.js';
 import type { TaskFinishTarget, TasksBridge } from '../refinement/tasks-types.js';
 import type { BrowseItem, ProjectItem, StorySummary } from '../refinement/types.js';
@@ -15,13 +16,21 @@ import { ChatScreen } from './screens/chat-screen.js';
 import { CloseScreen } from './screens/close-screen.js';
 import { KnowledgeScreen } from './screens/knowledge-screen.js';
 import { CalibrationScreen } from './screens/calibration-screen.js';
+import { ManagementScreen } from './screens/management-screen.js';
 import { MyDayScreen } from './screens/my-day-screen.js';
 import { PlanScreen } from './screens/plan-screen.js';
 import { PlanningScreen } from './screens/planning-screen.js';
 import { TaskFinishScreen } from './screens/task-finish-screen.js';
 import { TasksScreen } from './screens/tasks-screen.js';
 import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
-import { COLORS, FOOTER_HINTS, KNOWLEDGE_SETTINGS_TEXTS, KNOWLEDGE_TEXTS, PIN_TEXTS } from './texts.js';
+import {
+  COLORS,
+  FOOTER_HINTS,
+  KNOWLEDGE_SETTINGS_TEXTS,
+  KNOWLEDGE_TEXTS,
+  MANAGEMENT_TEXTS,
+  PIN_TEXTS,
+} from './texts.js';
 
 export type { StorySummary, BrowseItem, ProjectItem, SetProjectResult };
 
@@ -49,6 +58,7 @@ export interface AppProps {
   chat: ChatBridge;
   plan: PlanBridge;
   tasks?: TasksBridge;
+  management?: ManagementBridge;
   initialTaskFinish?: TaskFinishTarget | null;
   initialChatKey?: string | null;
   notice?: string | null;
@@ -57,6 +67,8 @@ export interface AppProps {
 
 // 'routing': decide entre pedir la base de conocimiento o abrir el chat
 const ROUTE_BY_STATUS = { unset: 'knowledge', untrusted: 'knowledgeConfirm', set: 'chat' } as const;
+// Si no se puede leer la gestión no se pregunta: la Planificación cae en la historia como sin gestión
+const MANAGEMENT_UNREADABLE: ManagementStatus = 'none';
 
 type Stage =
   | 'pin'
@@ -67,6 +79,8 @@ type Stage =
   | 'knowledge'
   | 'knowledgeConfirm'
   | 'knowledgeSettings'
+  | 'managementCheck'
+  | 'management'
   | 'planning'
   | 'chat'
   | 'review'
@@ -78,11 +92,16 @@ type Stage =
 
 const NOTICE_STAGES: readonly Stage[] = ['home', 'chat', 'tasks', 'myDay'];
 
+// La clave de la historia es PROYECTO-NÚMERO
+const projectOfKey = (key: string): string => key.slice(0, key.lastIndexOf('-'));
+
 function hintFor(stage: Stage, choiceCount: number): string {
   if (stage === 'pin') return FOOTER_HINTS.pin;
   if (stage === 'home') return FOOTER_HINTS.home;
   if (stage === 'knowledge' || stage === 'knowledgeConfirm') return FOOTER_HINTS.knowledge;
   if (stage === 'knowledgeSettings') return FOOTER_HINTS.knowledgeSettings;
+  if (stage === 'management') return FOOTER_HINTS.management;
+  if (stage === 'managementCheck') return FOOTER_HINTS.managementCheck;
   if (stage !== 'chat') return '';
   return choiceCount > 0 ? `${FOOTER_HINTS.choose(choiceCount)} · ${FOOTER_HINTS.chat}` : FOOTER_HINTS.chat;
 }
@@ -100,6 +119,7 @@ export function App({
   chat,
   plan,
   tasks,
+  management,
   initialTaskFinish = null,
   initialChatKey = null,
   notice: initialNotice = null,
@@ -119,6 +139,9 @@ export function App({
   const [planningKey, setPlanningKey] = useState<string | null>(null);
   const [finishToHome, setFinishToHome] = useState(false);
   const [projectsReturnTo, setProjectsReturnTo] = useState<Stage>('home');
+  const [managementNext, setManagementNext] = useState<Stage>('home');
+  // Proyecto por el que se pregunta: el de la historia al entrar, el de la app al cambiar de proyecto o con g
+  const [managementProject, setManagementProject] = useState<string | null>(null);
   const [projectKey, setProjectKey] = useState(initialProjectKey);
   const [stories, setStories] = useState(initialStories);
   const [checking, setChecking] = useState(false);
@@ -148,11 +171,28 @@ export function App({
     chat
       .knowledgeStatus()
       .catch((): KnowledgeStatus => 'set')
-      .then((status) => setStage(ROUTE_BY_STATUS[status] === 'chat' ? chatEntry : ROUTE_BY_STATUS[status]));
+      .then((status) => setStage(ROUTE_BY_STATUS[status] === 'chat' ? entryRoute : ROUTE_BY_STATUS[status]));
   }, [stage, chat]);
+
+  // La gestión del proyecto se pregunta una sola vez: solo si nunca respondió, y luego sigue a `next`
+  const askManagementThen = async (key: string | null, next: Stage) => {
+    const status =
+      key && management ? await management.status(key).catch(() => MANAGEMENT_UNREADABLE) : MANAGEMENT_UNREADABLE;
+    if (status === 'unset') {
+      setManagementProject(key);
+      setManagementNext(next);
+      setStage('management');
+    } else setStage(next);
+  };
+
+  useEffect(() => {
+    if (stage === 'managementCheck') void askManagementThen(chatKey ? projectOfKey(chatKey) : null, chatEntry);
+  }, [stage]);
 
   // Sin puente de tareas (p. ej. pruebas del chat) no hay Planificación que registrar
   const chatEntry: Stage = tasks ? 'planning' : 'chat';
+  // Antes de la Planificación: la gestión del proyecto, si aún no se respondió
+  const entryRoute: Stage = tasks && management && chatKey ? 'managementCheck' : chatEntry;
 
   const handleRefine = (key: string) => {
     setChatKey(key);
@@ -212,6 +252,15 @@ export function App({
     else queueMicrotask(() => setNotice(KNOWLEDGE_SETTINGS_TEXTS.needsProject));
   };
 
+  const openManagement = () => {
+    if (!management) return;
+    if (projectKey) {
+      setManagementProject(projectKey);
+      setManagementNext('home');
+      setStage('management');
+    } else queueMicrotask(() => setNotice(MANAGEMENT_TEXTS.needsProject));
+  };
+
   const openProjects = (from: Stage) => {
     setProjectsReturnTo(from);
     setStage('projects');
@@ -220,7 +269,7 @@ export function App({
   return (
     <Frame projectKey={projectKey} hint={hintFor(stage, choiceCount)}>
       {notice && NOTICE_STAGES.includes(stage) && <Text color={COLORS.brand}>{notice}</Text>}
-      {stage === 'routing' && <Text>{KNOWLEDGE_TEXTS.routing}</Text>}
+      {(stage === 'routing' || stage === 'managementCheck') && <Text>{KNOWLEDGE_TEXTS.routing}</Text>}
       {stage === 'pin' && <PinPrompt onSubmit={handlePin} error={pinError} checking={checking} />}
       {stage === 'home' && (
         <HomeScreen
@@ -234,6 +283,7 @@ export function App({
           onMyDay={() => tasks && setStage('myDay')}
           onKnowledge={openKnowledgeSettings}
           onCalibration={() => tasks && setStage('calibration')}
+          onManagement={openManagement}
           onQuit={exit}
         />
       )}
@@ -248,16 +298,24 @@ export function App({
         />
       )}
       {stage === 'knowledge' && (
-        <KnowledgePrompt chat={chat} onDone={() => setStage(chatEntry)} onCancel={() => void leaveChat()} />
+        <KnowledgePrompt chat={chat} onDone={() => setStage(entryRoute)} onCancel={() => void leaveChat()} />
       )}
       {stage === 'knowledgeConfirm' && (
-        <KnowledgeConfirm chat={chat} onDone={() => setStage(chatEntry)} onCancel={() => void leaveChat()} />
+        <KnowledgeConfirm chat={chat} onDone={() => setStage(entryRoute)} onCancel={() => void leaveChat()} />
       )}
       {stage === 'knowledgeSettings' && (
         <KnowledgeScreen
           chat={chat}
           onChanged={() => void loadStories(projectKey).then(setStories)}
           onBack={() => setStage('home')}
+        />
+      )}
+      {stage === 'management' && managementProject && management && (
+        <ManagementScreen
+          projectKey={managementProject}
+          management={management}
+          fetchEpics={fetchEpics}
+          onDone={() => setStage(managementNext)}
         />
       )}
       {stage === 'planning' && chatKey && tasks && (
@@ -316,7 +374,7 @@ export function App({
           onChanged={async (key) => {
             setProjectKey(key);
             setStories(await loadStories(key));
-            setStage(projectsReturnTo);
+            await askManagementThen(key, projectsReturnTo);
           }}
           onBack={() => setStage(projectsReturnTo)}
         />

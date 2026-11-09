@@ -15,6 +15,7 @@ interface HomeScreenProps {
   onMyDay: () => void;
   onKnowledge: () => void;
   onCalibration: () => void;
+  onManagement?: () => void;
   onQuit: () => void;
 }
 
@@ -34,6 +35,7 @@ export function HomeScreen({
   onMyDay,
   onKnowledge,
   onCalibration,
+  onManagement,
   onQuit,
 }: HomeScreenProps) {
   const [selected, setSelected] = useState(0);
@@ -49,6 +51,7 @@ export function HomeScreen({
     else if (input === KEYS.myDay) onMyDay();
     else if (input === KEYS.knowledgeBase) onKnowledge();
     else if (input === KEYS.calibration) onCalibration();
+    else if (input === KEYS.management) onManagement?.();
     else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
     else if (key.downArrow) setSelected((i) => Math.min(stories.length - 1, i + 1));
     else if (key.return && stories[selected]) onRefine(stories[selected].key);
