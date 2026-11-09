@@ -248,3 +248,19 @@ test('una tarea ya creada no se puede marcar ni editar', async () => {
   await assert.rejects(updateTask(store, KEY, 'T1', { include: false }), /PM-2080/);
   await assert.rejects(updateTask(store, KEY, 'T1', { summary: 'Otro' }), /ya se creó/);
 });
+
+test('loadReview sin historial no sugiere ajuste; con factor sugiere recomendada × factor y updateTask lo conserva', async () => {
+  const store = await seeded();
+  const bare = await loadReview(store, KEY);
+  assert.equal(bare.history, null);
+  assert.equal(bare.tasks[0].adjustedSeconds, null);
+  const factors = { total: { factor: 1.5, count: 6 }, byRisk: {} };
+  const model = await loadReview(store, KEY, undefined, factors);
+  // T1 recomendada 1h5m × 1,5 = 97,5m: a 5 min, 1h40m
+  assert.equal(model.tasks[0].adjustedSeconds, 6000);
+  assert.equal(model.tasks[0].adjustedEstimate, '1h40m');
+  assert.deepEqual(model.history, { factor: 1.5, count: 6 });
+  const updated = await updateTask(store, KEY, 'T1', { finalEstimate: '1h40m' }, undefined, factors);
+  assert.equal(updated.tasks[0].effectiveSeconds, 6000);
+  assert.equal(updated.tasks[0].adjustedSeconds, 6000, 'la sugerencia sigue a la vista tras guardar');
+});

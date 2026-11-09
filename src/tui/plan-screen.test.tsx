@@ -425,3 +425,27 @@ test('con todo el plan creado el siguiente paso lo dice', async () => {
   const app = await openReview({ tasks: [fakeTask('T1', { jiraKey: 'PM-2080' })] });
   assert.ok(app.frame().includes(PLAN_TEXTS.allCreated));
 });
+
+test('con historial se ve el factor; u usa el ajustado como estimación y e lo muestra como referencia', async () => {
+  const app = await openReview({
+    tasks: [fakeTask('T1', { adjustedSeconds: 5100, adjustedEstimate: '1h25m' })],
+    history: { factor: 1.3, count: 8 },
+  });
+  assert.ok(app.frame().includes(PLAN_TEXTS.history('1,30', 8)));
+  await app.press('e');
+  await app.has(PLAN_TEXTS.editTitle('T1'));
+  assert.ok(app.frame().includes(PLAN_TEXTS.adjusted('1h25m')));
+  await app.press(ESC);
+  await app.has(PLAN_TEXTS.title('AQ-45', 'Login social'));
+  await app.press('u');
+  await waitFor(() => app.calls.updates.length === 1);
+  assert.equal(app.calls.updates[0].patch.finalEstimate, '1h25m');
+});
+
+test('sin historial no hay línea de ajuste y u no cambia nada', async () => {
+  const app = await openReview();
+  assert.ok(!app.frame().includes('Tu historial'));
+  await app.press('u');
+  await tick();
+  assert.equal(app.calls.updates.length, 0);
+});

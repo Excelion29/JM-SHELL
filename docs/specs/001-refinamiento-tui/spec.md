@@ -202,7 +202,13 @@ Todo sin IA ni Jira extra (0 tokens), con lo que `jm` ya guarda por tarea.
   cada medida, lo mismo por riesgo y las 5 tareas más desviadas. Las finalizadas con `f` (sin inicio medido) y las que
   no son del plan quedan fuera.
 - No se registra worklog en Jira: al PM le importa la estimación y la fecha; la estimación original no se toca.
-- Después: ajustar la estimación propuesta con una fórmula propia (sin pasar más contexto a Claude).
+- Punto 3 (agregado 2026-11-09): en la revisión del plan, cada tarea muestra un **ajustado según tu historial** como
+  sugerencia; con `u` se usa como tu estimación (va a Jira), si no queda la recomendada. Sin IA (0 tokens):
+  - Medida: **de inicio a fin** (lo que de verdad tomó la tarea, con Claude abierto o no).
+  - Factor = real ÷ recomendada de las tareas medidas de la carpeta, del mismo riesgo si hay al menos 3; si no, el
+    total. Contra la recomendada y no contra lo enviado a Jira: si ya se usó el ajustado, el factor no se borra solo.
+  - Con pocas medidas el factor se acerca a 1: `(n × factor + 5) ÷ (n + 5)`; además queda entre 0,5 y 2.
+  - Ajustado = recomendada × factor, redondeado a 5 min. Sin medidas no se muestra nada.
 
 ### Parte 7 — Al ejecutar una tarea, los commits los hace el dev (agregada 2026-11-08)
 
@@ -224,6 +230,49 @@ El dev ve el grafo de Obsidian disperso: las notas de `06-JM-ADR` casi no se enl
 3. `historia.md` y `bitacora.md` empiezan con `Historia: [[CLAVE]]`.
 4. Índice: las tareas con nota pasan a enlaces.
 5. Las notas existentes se reparan una sola vez, solo dentro de `06-JM-ADR`.
+
+### Parte 9 — Tarea de Planificación al entrar a una historia (agregada 2026-11-09)
+
+El análisis y la replanificación también son trabajo y deben quedar registrados sin depender de Jira. Sin IA (0 tokens):
+1. Cada vez que el dev entra a una historia (la primera vez o al volver), antes del chat `jm` pregunta si registra
+   una tarea de Planificación. Si ya hay una abierta en esa historia, no pregunta: avisa que sigue en ella.
+2. Si dice que sí: estimación sugerida (1h; con Planificaciones finalizadas, el promedio de lo real de inicio a fin) y
+   fecha sugerida hoy, ambas editables. Se crea de una vez en Jira bajo la historia, con el responsable de siempre,
+   título `Planificación · AAAA-MM-DD`, y queda iniciada ("En curso") para medir su tiempo.
+3. Al salir del chat, si hay una Planificación abierta, `jm` pregunta si terminó; si no, se finaliza otro día desde
+   tareas.
+4. No entra en el factor de ajuste de las tareas del plan (no tiene estimación de Claude); la calibración la muestra
+   aparte. Se lista en la nota de la historia en la base.
+
+### Parte 10 — Análisis sin historia y registro de gestión por tablero (agregada 2026-11-09)
+
+Caso real: piden analizar y estimar observaciones antes de que exista una historia en Jira (MineTrack, 8
+observaciones que luego se repartieron en varias historias). El análisis también es trabajo y debe quedar registrado.
+
+**A. Registro de gestión por tablero (sin IA)**
+1. La primera vez que el dev se conecta a un tablero, `jm` pregunta si hay una épica o historia de gestión
+   (reuniones, análisis, coordinaciones). Si dice que sí, elige cuál y queda guardada para ese tablero; se puede cambiar
+   después.
+2. Con gestión configurada, **todas** las tareas de análisis van ahí: las de un análisis suelto y también la
+   Planificación de la Parte 9 al entrar a una historia existente.
+3. Sin gestión configurada: la Planificación de la Parte 9 se queda en la misma historia (como hoy); un análisis suelto
+   pregunta si se crea la tarea de análisis y dónde (épica o historia del tablero, o no registrarla).
+4. Bajo una historia se crea como subtarea; bajo una épica, como tarea hija. Misma mecánica que la Parte 9: estimación y
+   fecha sugeridas y editables, queda "En curso" y al salir pregunta si terminó. Título `Análisis · <nombre> ·
+   AAAA-MM-DD` (suelto) o `Planificación · <CLAVE> · AAAA-MM-DD` (historia, cuando va a gestión).
+
+**B. Análisis sin historia**
+1. Desde el inicio, "Nuevo análisis": nombre y fuentes (texto pegado, rutas de archivos `.md/.txt/.pdf/.eml`, fotos o
+   capturas). Queda en la base con un id local, sin Jira.
+2. Debate con Claude leyendo el código real; identifica **puntos**, cada uno con análisis, propuesta y estimación.
+3. Al cerrar el debate se generan los 3 documentos en la carpeta del análisis: `análisis_propuesta.md` (técnico),
+   `observaciones_funcional_tecnico.md` (qué pasa hoy / qué vamos a hacer) y `resumen_observaciones.md` (cliente, sin
+   términos técnicos).
+
+**C. Vincular después (manual)**
+1. "Vincular" en el análisis: el dev asigna cada punto a una historia de Jira (todos a una, uno a uno o por grupos).
+2. Cada historia vinculada arranca con su parte del análisis y su estimación como contexto de `/refinar`.
+3. Vincular no registra tiempo: ya quedó en la tarea de análisis.
 
 ### Parte 4 — Ejecución tarea por tarea (idea registrada 2026-11-05, por diseñar)
 
@@ -354,6 +403,12 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Commit parte 6 (calibración, puntos 1 y 2) | Marcello Cano | 2026-11-08 | aprobado tras prueba ("está excelente, queda lo apruebo") |
 | Accept parte 7 (sin commits al ejecutar, ramas preguntando la base) | Marcello Cano | 2026-11-08 | aprobado ("si") |
 | Accept parte 8 (relaciones en el grafo de la base: 5 puntos) | Marcello Cano | 2026-11-08 | aprobado ("si aceptalo") |
+| Commit partes 7 y 8 (lo hizo el dev en `addc94d`) | Marcello Cano | 2026-11-09 | aprobado ("listo quedo genial aunqeu ya comitie creo ajaja") |
+| Accept parte 6 punto 3 (ajuste por historial, de inicio a fin, como sugerencia) | Marcello Cano | 2026-11-09 | aprobado ("acept"; medida: "la duración de inicio a fin") |
+| Accept parte 9 (tarea de Planificación al entrar a una historia) | Marcello Cano | 2026-11-09 | aprobado ("si ojo tanto al vovler como al ingresar a una por primera vez") |
+| Prueba real parte 9 (tras review 3 dimensiones aplicada) | Marcello Cano | 2026-11-09 | exitosa ("funcionó completamenteeeee") |
+| Commit parte 9 + parte 6 punto 3 (un solo commit) | Marcello Cano | 2026-11-09 | aprobado ("si") |
+| Accept parte 10 (análisis sin historia + gestión por tablero) | Marcello Cano | 2026-11-09 | aprobado (diseño A/B/C; con gestión configurada también la Planificación de historias va ahí, si no en la misma historia) |
 | Accept parte 5 (reconfigurar base, opción A ahora, B después) | Marcello Cano | 2026-11-06 | aprobado ("por ahorita vamos con la …, la B en otra actualización") |
 | Accept "Mi día" en parte 4 | Marcello Cano | 2026-11-05 | aprobado: vista de tareas propias que vencen hoy o vencidas, de cualquier historia |
 | Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |

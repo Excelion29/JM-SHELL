@@ -90,6 +90,14 @@ export interface StoryState {
   updatedAt: string;
   // Versión de los enlaces entre notas de la base (ver NOTES_VERSION); sin valor, las notas aún no se repararon
   notesVersion?: number;
+  // Tareas de Planificación registradas al entrar a la historia (su tiempo vive en taskRuns, como las demás)
+  planningTasks?: PlanningTask[];
+}
+
+export interface PlanningTask {
+  issueKey: string;
+  estimateSeconds: number;
+  createdAt: string;
 }
 
 export interface StorySummary {

@@ -32,6 +32,7 @@ export const KEYS = {
   finishDirect: 'f',
   knowledgeBase: 'b',
   calibration: 'c',
+  useAdjusted: 'u',
 } as const;
 
 // Palabra que hay que escribir completa para borrar subtareas de Jira
@@ -170,7 +171,7 @@ export const FOOTER_HINTS = {
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
   status: 'Esc volver',
-  review: `↑↓ moverte · espacio marcar · ${KEYS.edit} editar · ${KEYS.detail} detalle · ${KEYS.attachments} adjuntos · ${KEYS.create} crear en Jira · Esc inicio`,
+  review: `↑↓ moverte · espacio marcar · ${KEYS.edit} editar · ${KEYS.useAdjusted} usar ajustado · ${KEYS.detail} detalle · ${KEYS.attachments} adjuntos · ${KEYS.create} crear en Jira · Esc inicio`,
   edit: '↑↓ o Tab cambiar de campo · Enter siguiente o guardar · Esc cancelar',
   files: `↑↓ elegir · espacio cambiar propósito · Enter tareas · ${KEYS.open} abrir · Esc volver`,
   fileTasks: '↑↓ elegir · espacio asignar o quitar · Esc volver',
@@ -244,9 +245,11 @@ export const PLAN_TEXTS = {
     `Aviso: el ${date} suma ${total} (más de ${capacity} por día). Puedes dejarlo así.`,
   reference: (recommended: string, date: string | null) =>
     `Recomendado: ${recommended}${date ? ` · fecha recomendada ${date}` : ''}`,
+  adjusted: (adjusted: string) => `Ajustado según tu historial: ${adjusted} (${KEYS.useAdjusted} en la lista lo usa)`,
+  history: (factor: string, count: number) => `Tu historial: real ≈ ${factor} × estimado (${count} medida(s))`,
   saveError: (message: string) => `No pude guardar el cambio: ${message}`,
   noneIncluded: 'Marca al menos una tarea para crearla en Jira.',
-  nextStep: `Siguiente paso: marca lo que quieres crear y pulsa ${'c'}.`,
+  nextStep: `Siguiente paso: marca lo que quieres crear y pulsa ${KEYS.create}.`,
   editTitle: (id: string) => `Editar ${id}`,
   emptySummary: 'El título no puede quedar vacío.',
   fields: {
@@ -470,6 +473,29 @@ export const TASKS_TEXTS = {
   planTitle: 'Plan (solo lectura)',
 } as const;
 
+export const PLANNING_TEXTS = {
+  checking: 'Revisando si ya hay una Planificación abierta...',
+  suggesting: 'Calculando la estimación sugerida...',
+  question: (key: string) => `¿Registro una tarea de Planificación en ${key}? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  why: 'El análisis también es trabajo: queda en Jira bajo la historia y se mide su tiempo de inicio a fin.',
+  stillOpen: (key: string) => `Sigues en la Planificación ${key}; al salir del chat te pregunto si terminaste.`,
+  formTitle: (key: string) => `Planificación de ${key}`,
+  fields: {
+    estimate: 'Estimación (ej. 1h, 45m)',
+    dueDate: 'Fecha (AAAA-MM-DD, hoy, mañana, +2)',
+  },
+  suggested: (measured: number) =>
+    measured > 0
+      ? `Sugerida con lo que te tomaron ${measured} Planificación(es) anteriores.`
+      : 'Sugerida: aún no hay Planificaciones medidas.',
+  creating: 'Creando la Planificación en Jira...',
+  created: (key: string) => `${key} creada y En curso. Al salir del chat te pregunto si terminaste.`,
+  createdNotStarted: (key: string) =>
+    `${key} creada, pero no pude pasarla a En curso en Jira; su tiempo ya corre en jm.`,
+  continueHint: 'Enter o Esc seguir al chat',
+  formHint: '↑↓ o Tab cambiar de campo · Enter siguiente o crear · Esc no registrar',
+} as const;
+
 export const FINISH_TEXTS = {
   question: (key: string) => `¿Terminaste ${key}? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
   working: 'Pasando la tarea a Finalizada...',
@@ -507,6 +533,8 @@ export const CALIBRATION_TEXTS = {
     `  ${key} · ${title} · estimado ${estimate} · con Claude ${claude} · de inicio a fin ${elapsed}`,
   excludedDirect: (count: number) => `${count} finalizada(s) con ${KEYS.finishDirect} quedan fuera: no tienen inicio medido.`,
   unreadable: (count: number) => `${count} historia(s) no se pudieron leer (¿base sin conexión?).`,
+  planning: (count: number, estimate: string, elapsed: string) =>
+    `Planificaciones (aparte): ${count} medida(s) · estimado ${estimate} · de inicio a fin ${elapsed}`,
   note: 'Abierto no siempre es trabajando: úsalo como referencia, no como cronómetro.',
 } as const;
 

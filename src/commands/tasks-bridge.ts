@@ -10,13 +10,18 @@ import {
   returnTo,
   startTask,
 } from '../refinement/execution';
-import { calibrate, measuresOf, type StoryMeasures } from '../refinement/calibration';
-import { loadPlan } from '../refinement/plan';
-import { createFileTransitionMemory } from '../refinement/transition-memory';
-import { isValidIssueKey, projectRoot } from '../refinement/state';
+import { defaultAssignee } from '../refinement/create';
+import { createPlanning, openPlanningOf, planningFailure } from '../refinement/planning';
+import { projectKeyOfStory } from '../refinement/repos';
+import { isValidIssueKey, projectRoot, readState } from '../refinement/state';
 import type { StoryStore } from '../refinement/story-store';
-import type { CalibrationModel, TasksBridge } from '../refinement/tasks-types';
+import type { PlanningInput, PlanningOutcome, TasksBridge } from '../refinement/tasks-types';
+import { createFileTransitionMemory } from '../refinement/transition-memory';
+import { configuredAssignee } from './assignee';
+import { loadCalibration, loadPlanningSuggestion } from './calibration-loader';
 import { openStory, listAllStories } from './story-resolver';
+
+const NO_ASSIGNEE = 'No encontré a quién asignarla en el proyecto.';
 
 const storeOf = (key: string): Promise<StoryStore> => openStory(projectRoot(), key).then((access) => access.store);
 
@@ -30,22 +35,26 @@ async function localStoryOf(parentKey: string | null): Promise<string | null> {
   }
 }
 
-// Todas las historias de esta carpeta; una que no se pueda leer se cuenta aparte y no frena el resto
-async function loadCalibration(now: Date = new Date()): Promise<CalibrationModel> {
-  const root = projectRoot();
-  const stories = await listAllStories(root);
-  const measured: StoryMeasures[] = [];
-  let unreadable = 0;
-  for (const state of stories) {
-    try {
-      const { store } = await openStory(root, state.key);
-      const plan = await loadPlan(store).catch(() => null);
-      measured.push(measuresOf(state, plan, now));
-    } catch {
-      unreadable += 1;
-    }
+// El responsable de siempre: el configurado en .jira.json o el primero asignable del proyecto
+async function planningAssignee(jira: JiraService, storyKey: string): Promise<string> {
+  const assignee = await defaultAssignee(jira, projectKeyOfStory(storyKey), await configuredAssignee());
+  if (!assignee) throw new Error(NO_ASSIGNEE);
+  return assignee.accountId;
+}
+
+async function startPlanning(
+  jira: JiraService,
+  transitionMemory: ReturnType<typeof createFileTransitionMemory>,
+  storyKey: string,
+  input: PlanningInput,
+): Promise<PlanningOutcome> {
+  try {
+    const store = await storeOf(storyKey);
+    const assigneeId = await planningAssignee(jira, storyKey);
+    return await createPlanning({ jira, store, assigneeId, transitionMemory }, storyKey, input);
+  } catch (err: unknown) {
+    return { ok: false, message: planningFailure((err as Error).message) };
   }
-  return calibrate(measured, unreadable);
 }
 
 export function createTasksBridge(getJira: () => JiraService): TasksBridge {
@@ -73,6 +82,9 @@ export function createTasksBridge(getJira: () => JiraService): TasksBridge {
     remove: async (storyKey, keys) => deleteTasks(await ctxOf(storyKey), storyKey, keys),
     myDay: () => loadMyDay(getJira()),
     calibration: () => loadCalibration(),
+    planningStatus: async (storyKey) => ({ open: openPlanningOf(await readState(await storeOf(storyKey), storyKey)) }),
+    planningSuggestion: () => loadPlanningSuggestion(),
+    createPlanning: (storyKey, input) => startPlanning(getJira(), transitionMemory, storyKey, input),
     openInBrowser: async (issueKey) => {
       await openBrowser(getJira().getBrowseUrl(issueKey));
     },

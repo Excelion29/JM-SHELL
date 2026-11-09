@@ -73,6 +73,9 @@ export function TaskEditForm({ task, previewEstimate, error, onSave, onCancel }:
       <Text color={COLORS.muted}>
         {PLAN_TEXTS.reference(formatDuration(task.recommendedSeconds), task.recommendedDate)}
       </Text>
+      {task.adjustedSeconds !== null && (
+        <Text color={COLORS.muted}>{PLAN_TEXTS.adjusted(formatDuration(task.adjustedSeconds))}</Text>
+      )}
       {!summaryValid && <Text color={COLORS.error}>{PLAN_TEXTS.emptySummary}</Text>}
       {error && <Text color={COLORS.error}>{error}</Text>}
       <Text color={COLORS.muted}>{FOOTER_HINTS.edit}</Text>

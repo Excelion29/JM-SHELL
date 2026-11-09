@@ -19,6 +19,7 @@ import {
   StorySummary,
   StoryUsage,
   TaskRun,
+  PlanningTask,
 } from './types';
 
 const PROJECT_CONFIG_NAME = '.jira.json';
@@ -169,6 +170,15 @@ function readTaskRuns(value: unknown): Record<string, TaskRun> {
   return runs;
 }
 
+function readPlanningTasks(value: unknown): PlanningTask[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw): PlanningTask[] => {
+    if (!isRecord(raw) || typeof raw.issueKey !== 'string' || !isValidIssueKey(raw.issueKey)) return [];
+    const createdAt = readTimestamp(raw.createdAt);
+    return [{ issueKey: raw.issueKey, estimateSeconds: readCount(raw.estimateSeconds), createdAt: createdAt ?? '' }];
+  });
+}
+
 export const emptyUsage = (): StoryUsage => ({
   inputTokens: 0,
   outputTokens: 0,
@@ -205,6 +215,7 @@ function normalize(raw: unknown, key: string, file: string, progressed: boolean)
     usage: readUsage(raw.usage),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date(0).toISOString(),
     ...(typeof raw.notesVersion === 'number' && raw.notesVersion > 0 ? { notesVersion: raw.notesVersion } : {}),
+    ...(Array.isArray(raw.planningTasks) ? { planningTasks: readPlanningTasks(raw.planningTasks) } : {}),
   };
 }
 
@@ -239,6 +250,7 @@ const indexSignature = (state: StoryState) =>
       .map((run) => `${run.issueKey}:${run.status}`)
       .join(','),
     state.notesVersion ?? 0,
+    (state.planningTasks ?? []).map((task) => task.issueKey).join(','),
   ].join('|');
 
 async function writeState(store: StoryStore, state: StoryState, previous: StoryState | null): Promise<void> {

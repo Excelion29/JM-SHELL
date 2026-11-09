@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { MAX_ATTACHMENT_BYTES, sanitizeFilename } from './attachments';
+import { adjustedSeconds, type EstimateFactors, factorFor, NO_FACTORS } from './calibration';
 import { parsePlan, validatePlan } from './plan';
 import {
   effectiveSeconds,
@@ -10,6 +11,7 @@ import {
   recommendedSeconds,
   stdDevSeconds,
 } from './pert';
+import { formatSeconds } from '../utils/time';
 import { DAILY_CAPACITY_SECONDS, daySeconds, parseDueDateInput, scheduleOf, todayIso } from './schedule';
 import type { EstimatePreview, ReviewFile, ReviewModel, TaskPatch } from './review-types';
 import { ATTACHMENTS_DIR, PLAN_FILE, readState, updateState } from './state';
@@ -149,6 +151,7 @@ function buildReview(
   plan: RefinementPlan,
   localFiles: string[],
   today: string,
+  factors: EstimateFactors,
 ): ReviewModel {
   const pendingPlan: RefinementPlan = {
     ...plan,
@@ -171,12 +174,16 @@ function buildReview(
     tasks: plan.tasks.map((task) => {
       const { optimistic, likely, pessimistic } = parseEstimate(task.estimate);
       const entry = schedule.get(task.id);
+      const recommended = recommendedSeconds(task);
+      const adjusted = adjustedSeconds(recommended, factorFor(factors, task.risk));
       return {
         ...task,
         expectedSeconds: Math.round(expectedSeconds(optimistic, likely, pessimistic)),
         stdDevSeconds: Math.round(stdDevSeconds(optimistic, pessimistic)),
-        recommendedSeconds: recommendedSeconds(task),
+        recommendedSeconds: recommended,
         effectiveSeconds: effectiveSeconds(task),
+        adjustedSeconds: adjusted,
+        adjustedEstimate: adjusted === null ? null : formatSeconds(adjusted),
         recommendedDate: entry?.recommended ?? null,
         effectiveDate: entry?.dueDate ?? null,
         dateManual: entry?.manual ?? false,
@@ -188,13 +195,19 @@ function buildReview(
     createdCount: plan.tasks.filter((t) => state.createdIssues[t.id]).length,
     daySeconds: daySeconds(pendingPlan, schedule),
     dailyCapacitySeconds: DAILY_CAPACITY_SECONDS,
+    history: factors.total,
   };
 }
 
-export async function loadReview(store: StoryStore, key: string, today: string = todayIso()): Promise<ReviewModel> {
+export async function loadReview(
+  store: StoryStore,
+  key: string,
+  today: string = todayIso(),
+  factors: EstimateFactors = NO_FACTORS,
+): Promise<ReviewModel> {
   const state = await requireState(store, key);
   const plan = await readPlan(store, key);
-  return buildReview(key, state, plan, await listLocalFiles(store), today);
+  return buildReview(key, state, plan, await listLocalFiles(store), today, factors);
 }
 
 function applyFinalEstimate(task: PlannedTask, value: string | null): void {
@@ -224,6 +237,7 @@ export async function updateTask(
   taskId: string,
   patch: TaskPatch,
   today: string = todayIso(),
+  factors: EstimateFactors = NO_FACTORS,
 ): Promise<ReviewModel> {
   const before = await requireState(store, key);
   assertReviewable(before);
@@ -249,7 +263,7 @@ export async function updateTask(
   if (patch.dueDate !== undefined) applyDueDate(task, patch.dueDate, today);
   await writePlan(store, plan);
   const state = await updateState(store, key, markReviewed);
-  return buildReview(key, state, plan, await listLocalFiles(store), today);
+  return buildReview(key, state, plan, await listLocalFiles(store), today, factors);
 }
 
 async function requireLocalFile(store: StoryStore, file: string): Promise<string[]> {
@@ -263,6 +277,7 @@ export async function setAttachmentPurpose(
   key: string,
   file: string,
   purpose: AttachmentPurpose,
+  factors: EstimateFactors = NO_FACTORS,
 ): Promise<ReviewModel> {
   assertReviewable(await requireState(store, key));
   if (!ATTACHMENT_PURPOSES.includes(purpose)) throw new Error(`Propósito desconocido: ${purpose}.`);
@@ -273,7 +288,7 @@ export async function setAttachmentPurpose(
     else s.attachments.push({ file, purpose, origin: 'local', taskIds: [], uploaded: {} });
     markReviewed(s);
   });
-  return buildReview(key, state, await readPlan(store, key), localFiles, todayIso());
+  return buildReview(key, state, await readPlan(store, key), localFiles, todayIso(), factors);
 }
 
 // La asignación vive en estado.json (taskIds) y se refleja en plan.json (attachments) para que ambos coincidan
@@ -282,6 +297,7 @@ export async function toggleAttachmentTask(
   key: string,
   file: string,
   taskId: string,
+  factors: EstimateFactors = NO_FACTORS,
 ): Promise<ReviewModel> {
   const before = await requireState(store, key);
   assertReviewable(before);
@@ -305,5 +321,5 @@ export async function toggleAttachmentTask(
     entry.taskIds = assigned ? entry.taskIds.filter((id) => id !== taskId) : [...new Set([...entry.taskIds, taskId])];
     markReviewed(s);
   });
-  return buildReview(key, state, plan, localFiles, todayIso());
+  return buildReview(key, state, plan, localFiles, todayIso(), factors);
 }

@@ -1,4 +1,5 @@
 // Contrato entre el puente (CJS) y las pantallas de revisión, creación y cierre (isla ESM): solo tipos
+import type { HistoryFactor } from './tasks-types';
 import type { AttachmentPurpose, Phase, PlannedTask, TaskEstimate } from './types';
 
 export interface ReviewTask extends PlannedTask {
@@ -7,6 +8,9 @@ export interface ReviewTask extends PlannedTask {
   // Recomendación (PERT redondeado a 5 min) y lo que realmente irá a Jira
   recommendedSeconds: number;
   effectiveSeconds: number;
+  // Sugerencia según el historial (recomendada × factor) y su texto para usarla como estimación; null sin medidas
+  adjustedSeconds: number | null;
+  adjustedEstimate: string | null;
   // Fechas YYYY-MM-DD; null en tareas sin marcar
   recommendedDate: string | null;
   effectiveDate: string | null;
@@ -40,6 +44,8 @@ export interface ReviewModel {
   // Carga por día (YYYY-MM-DD -> segundos) con las fechas efectivas, y capacidad para avisar al excederla
   daySeconds: Record<string, number>;
   dailyCapacitySeconds: number;
+  // Factor de todas las tareas medidas de la carpeta (de inicio a fin); null sin medidas
+  history: HistoryFactor | null;
 }
 
 export interface TaskPatch {

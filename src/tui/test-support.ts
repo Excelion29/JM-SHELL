@@ -34,6 +34,8 @@ import type {
   CalibrationModel,
   DeleteResult,
   MyDayModel,
+  PlanningInput,
+  PlanningOutcome,
   TaskRow,
   TasksBridge,
   TransitionOptions,
@@ -205,6 +207,8 @@ export const fakeTask = (id: string, patch: Partial<ReviewTask> = {}): ReviewTas
   stdDevSeconds: 900,
   recommendedSeconds: 3900,
   effectiveSeconds: 3900,
+  adjustedSeconds: null,
+  adjustedEstimate: null,
   recommendedDate: '2026-11-05',
   effectiveDate: '2026-11-05',
   dateManual: false,
@@ -243,6 +247,7 @@ export interface FakePlanOptions {
   closeResult?: CloseResult;
   assignees?: AssigneeView[];
   existing?: Record<string, ExistingMatch[]>;
+  history?: ReviewModel['history'];
 }
 
 export const FAKE_TARGET: CreationTarget = {
@@ -269,6 +274,7 @@ export function createFakePlan(options: FakePlanOptions = {}) {
     createdCount: 0,
     daySeconds: {},
     dailyCapacitySeconds: FAKE_CAPACITY_SECONDS,
+    history: options.history ?? null,
   });
   const calls = {
     updates: [] as Array<{ taskId: string; patch: TaskPatch }>,
@@ -394,6 +400,7 @@ export const EMPTY_CALIBRATION: CalibrationModel = {
   outliers: [],
   excludedDirect: 0,
   unreadable: 0,
+  planning: { count: 0, estimateSeconds: 0, elapsedSeconds: 0 },
 };
 
 export const fakeRow = (key: string, patch: Partial<TaskRow> = {}): TaskRow => ({
@@ -420,6 +427,9 @@ export interface FakeTasksOptions {
   removeResults?: Record<string, DeleteResult>;
   myDay?: MyDayModel;
   calibration?: CalibrationModel;
+  // Planificación al entrar a una historia; sin `planningOpen` no hay ninguna abierta
+  planningOpen?: string | null;
+  planningOutcome?: PlanningOutcome;
 }
 
 // Puente de tareas falso en memoria: registra lo que la pantalla pide, sin Jira ni disco
@@ -432,6 +442,7 @@ export function createFakeTasks(options: FakeTasksOptions = {}) {
     removed: [] as string[][],
     retried: 0,
     loads: 0,
+    planning: [] as Array<{ storyKey: string; input: PlanningInput }>,
   };
   const startOutcomes = [...(options.start ?? [])];
   const finishOutcomes = [...(options.finish ?? [])];
@@ -468,6 +479,12 @@ export function createFakeTasks(options: FakeTasksOptions = {}) {
     },
     myDay: async () => options.myDay ?? { rows: [], totalSeconds: 0, capacitySeconds: 8 * SECONDS_PER_HOUR },
     calibration: async () => options.calibration ?? EMPTY_CALIBRATION,
+    planningStatus: async () => ({ open: options.planningOpen ?? null }),
+    planningSuggestion: async () => ({ estimate: '1h', dueDate: 'hoy', measured: 0 }),
+    createPlanning: async (storyKey, input) => {
+      calls.planning.push({ storyKey, input });
+      return options.planningOutcome ?? { ok: true, issueKey: 'AQ-150', started: true };
+    },
     openInBrowser: async () => undefined,
   };
   return { tasks, calls };

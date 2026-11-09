@@ -17,6 +17,7 @@ import { KnowledgeScreen } from './screens/knowledge-screen.js';
 import { CalibrationScreen } from './screens/calibration-screen.js';
 import { MyDayScreen } from './screens/my-day-screen.js';
 import { PlanScreen } from './screens/plan-screen.js';
+import { PlanningScreen } from './screens/planning-screen.js';
 import { TaskFinishScreen } from './screens/task-finish-screen.js';
 import { TasksScreen } from './screens/tasks-screen.js';
 import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
@@ -66,6 +67,7 @@ type Stage =
   | 'knowledge'
   | 'knowledgeConfirm'
   | 'knowledgeSettings'
+  | 'planning'
   | 'chat'
   | 'review'
   | 'close'
@@ -113,6 +115,9 @@ export function App({
     unlocked ? (initialTaskFinish && tasks ? 'taskFinish' : initialChatKey ? 'routing' : 'home') : 'pin',
   );
   const [finishTarget, setFinishTarget] = useState(initialTaskFinish);
+  // Planificación abierta de la historia del chat: al salir se pregunta si terminó y se vuelve al inicio
+  const [planningKey, setPlanningKey] = useState<string | null>(null);
+  const [finishToHome, setFinishToHome] = useState(false);
   const [projectsReturnTo, setProjectsReturnTo] = useState<Stage>('home');
   const [projectKey, setProjectKey] = useState(initialProjectKey);
   const [stories, setStories] = useState(initialStories);
@@ -143,8 +148,11 @@ export function App({
     chat
       .knowledgeStatus()
       .catch((): KnowledgeStatus => 'set')
-      .then((status) => setStage(ROUTE_BY_STATUS[status]));
+      .then((status) => setStage(ROUTE_BY_STATUS[status] === 'chat' ? chatEntry : ROUTE_BY_STATUS[status]));
   }, [stage, chat]);
+
+  // Sin puente de tareas (p. ej. pruebas del chat) no hay Planificación que registrar
+  const chatEntry: Stage = tasks ? 'planning' : 'chat';
 
   const handleRefine = (key: string) => {
     setChatKey(key);
@@ -152,6 +160,14 @@ export function App({
   };
 
   const leaveChat = async () => {
+    if (planningKey && chatKey && tasks) {
+      setFinishTarget({ storyKey: chatKey, issueKey: planningKey });
+      setFinishToHome(true);
+      setPlanningKey(null);
+      setChatKey(null);
+      setStage('taskFinish');
+      return;
+    }
     setChatKey(null);
     setStories(await loadStories(projectKey));
     setStage('home');
@@ -183,7 +199,10 @@ export function App({
     queueMicrotask(() => setNotice(message));
     const target = finishTarget;
     setFinishTarget(null);
-    if (target?.storyKey) openStoryScreen(target.storyKey, 'tasks');
+    if (finishToHome) {
+      setFinishToHome(false);
+      void leaveStoryScreen();
+    } else if (target?.storyKey) openStoryScreen(target.storyKey, 'tasks');
     else void leaveStoryScreen();
   };
 
@@ -229,16 +248,28 @@ export function App({
         />
       )}
       {stage === 'knowledge' && (
-        <KnowledgePrompt chat={chat} onDone={() => setStage('chat')} onCancel={() => void leaveChat()} />
+        <KnowledgePrompt chat={chat} onDone={() => setStage(chatEntry)} onCancel={() => void leaveChat()} />
       )}
       {stage === 'knowledgeConfirm' && (
-        <KnowledgeConfirm chat={chat} onDone={() => setStage('chat')} onCancel={() => void leaveChat()} />
+        <KnowledgeConfirm chat={chat} onDone={() => setStage(chatEntry)} onCancel={() => void leaveChat()} />
       )}
       {stage === 'knowledgeSettings' && (
         <KnowledgeScreen
           chat={chat}
           onChanged={() => void loadStories(projectKey).then(setStories)}
           onBack={() => setStage('home')}
+        />
+      )}
+      {stage === 'planning' && chatKey && tasks && (
+        <PlanningScreen
+          storyKey={chatKey}
+          tasks={tasks}
+          onDone={(message, key) => {
+            setPlanningKey(key);
+            // Después de la tecla que respondió: el useInput global borra el aviso con cada pulsación
+            if (message) queueMicrotask(() => setNotice(message));
+            setStage('chat');
+          }}
         />
       )}
       {stage === 'chat' && chatKey && (

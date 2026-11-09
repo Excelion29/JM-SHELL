@@ -1,6 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calibrate, elapsedMsOf, measuresOf, OUTLIER_LIMIT, realTimesOf } from './calibration';
+import {
+  adjustedSeconds,
+  calibrate,
+  elapsedMsOf,
+  estimateFactors,
+  factorFor,
+  MAX_FACTOR,
+  measuresOf,
+  MIN_FACTOR,
+  OUTLIER_LIMIT,
+  realTimesOf,
+  type StoryMeasures,
+  type TaskMeasure,
+} from './calibration';
 import { task } from './test-support';
 import type { RefinementPlan, StoryState, TaskRun } from './types';
 
@@ -91,6 +104,7 @@ test('measuresOf toma solo finalizadas del plan iniciadas con jm y cuenta aparte
       title: 'Tarea T1',
       risk: 'medium',
       estimateSeconds: 7200,
+      recommendedSeconds: 3900,
       claudeSeconds: 3600,
       elapsedSeconds: 7200,
     },
@@ -104,6 +118,7 @@ test('calibrate suma por grupo, calcula real / estimado, separa por riesgo y ord
     title: key,
     risk,
     estimateSeconds: estimate,
+    recommendedSeconds: estimate,
     claudeSeconds: claude,
     elapsedSeconds: claude * 2,
   });
@@ -145,8 +160,63 @@ test('calibrate sin medidas devuelve totales en cero, sin ratios y como mucho OU
     title: `K${i}`,
     risk: 'low' as const,
     estimateSeconds: 60,
+    recommendedSeconds: 60,
     claudeSeconds: 60 * (i + 2),
     elapsedSeconds: 60,
   }));
   assert.equal(calibrate([{ measures: many, excludedDirect: 0 }]).outliers.length, OUTLIER_LIMIT);
+});
+
+// Medidas sintéticas: estimado 1h y real de inicio a fin dado (Claude no cuenta para el ajuste)
+const measure = (risk: TaskMeasure['risk'], elapsedHours: number): TaskMeasure => ({
+  key: 'AQ-1',
+  storyKey: 'AQ-45',
+  title: 'T',
+  risk,
+  estimateSeconds: 3600,
+  recommendedSeconds: 3600,
+  claudeSeconds: 60,
+  elapsedSeconds: elapsedHours * 3600,
+});
+const factorsOf = (...measures: TaskMeasure[]) => estimateFactors([{ measures, excludedDirect: 0 } satisfies StoryMeasures]);
+
+test('estimateFactors: sin medidas no hay factor ni ajustado', () => {
+  const factors = factorsOf();
+  assert.equal(factorFor(factors, 'medium'), null);
+  assert.equal(adjustedSeconds(3600, null), null);
+});
+
+test('estimateFactors: usa de inicio a fin y con pocas medidas se acerca a 1', () => {
+  // 1 medida al doble: (1 × 2 + 5) ÷ 6
+  const one = factorsOf(measure('medium', 2)).total;
+  assert.ok(one && Math.abs(one.factor - 7 / 6) < 1e-9 && one.count === 1);
+  // 20 medidas al doble: (20 × 2 + 5) ÷ 25 = 1,8
+  const many = factorsOf(...Array.from({ length: 20 }, () => measure('medium', 2))).total;
+  assert.ok(many && Math.abs(many.factor - 1.8) < 1e-9);
+});
+
+test('estimateFactors: el factor queda entre los topes', () => {
+  const slow = factorsOf(...Array.from({ length: 50 }, () => measure('high', 10))).total;
+  const fast = factorsOf(...Array.from({ length: 50 }, () => measure('low', 0.05))).total;
+  assert.equal(slow?.factor, MAX_FACTOR);
+  assert.equal(fast?.factor, MIN_FACTOR);
+});
+
+test('factorFor: el riesgo propio con 3 o más medidas; si no, el total', () => {
+  const factors = factorsOf(measure('high', 3), measure('high', 3), measure('high', 3), measure('low', 1));
+  assert.equal(factorFor(factors, 'high')?.count, 3);
+  assert.equal(factorFor(factors, 'low')?.count, 4, 'low tiene 1 medida: usa el total');
+  assert.equal(factorFor(factors, 'medium')?.count, 4);
+});
+
+test('adjustedSeconds: recomendada × factor redondeado a 5 minutos', () => {
+  assert.equal(adjustedSeconds(3600, { factor: 1.3, count: 8 }), 4800);
+  assert.equal(adjustedSeconds(600, { factor: 0.5, count: 8 }), 300);
+});
+
+test('estimateFactors: se mide contra la recomendada, así usar el ajustado no borra el factor', () => {
+  // Recomendada 1h, se envió el ajustado 2h y tomó 2h: sigue siendo el doble de lo recomendado
+  const used = { ...measure('medium', 2), estimateSeconds: 7200 };
+  const factor = factorsOf(...Array.from({ length: 20 }, () => used)).total;
+  assert.ok(factor && Math.abs(factor.factor - 1.8) < 1e-9);
 });

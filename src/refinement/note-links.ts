@@ -13,6 +13,7 @@ const SECTION_END = '<!-- /jm:tareas -->';
 const SECTION_TITLE = '## Tareas en Jira';
 const NOTE_EXTENSION = '.md';
 const FRONTMATTER_FENCE = '---';
+const PLANNING_LABEL = 'Planificación';
 const STATUS_LABELS: Record<TaskRun['status'], string> = { started: 'en curso', done: 'terminada' };
 
 export const wikiLink = (key: string): string => {
@@ -59,6 +60,12 @@ export function renderTasksSection(
   const lines = Object.entries(state.createdIssues).map(([taskId, key]) =>
     taskLine(state, plan, taskId, key, withNote),
   );
+  // Las Planificaciones no están en el plan: se listan con su propio nombre
+  for (const { issueKey } of state.planningTasks ?? []) {
+    const run = state.taskRuns[issueKey];
+    const parts = [taskRef(issueKey, withNote), PLANNING_LABEL, run ? STATUS_LABELS[run.status] : null];
+    lines.push(`- ${parts.filter(Boolean).join(' · ')}`);
+  }
   return [SECTION_START, SECTION_TITLE, '', ...(lines.length ? lines : ['_Sin tareas creadas._']), SECTION_END].join(
     '\n',
   );

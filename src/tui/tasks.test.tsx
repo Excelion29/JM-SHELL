@@ -368,6 +368,7 @@ test('c abre la calibración: ratios por medida y por riesgo, desviadas y exclui
   };
   const app = setup({
     calibration: {
+      planning: { count: 0, estimateSeconds: 0, elapsedSeconds: 0 },
       total: group,
       byRisk: [{ risk: 'low', ...group }],
       outliers: [

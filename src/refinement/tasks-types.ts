@@ -76,6 +76,12 @@ export interface TaskFinishTarget {
 // Calibración estimado vs. real: solo tareas finalizadas que se iniciaron con jm y están en el plan
 export type CalibrationRisk = 'low' | 'medium' | 'high';
 
+// real ≈ factor × recomendada, con cuántas tareas medidas sale
+export interface HistoryFactor {
+  factor: number;
+  count: number;
+}
+
 export interface CalibrationGroup {
   count: number;
   estimateSeconds: number;
@@ -103,6 +109,37 @@ export interface CalibrationModel {
   excludedDirect: number;
   // Historias que no se pudieron leer (p. ej. base sin conexión)
   unreadable: number;
+  // Planificaciones finalizadas: aparte, no tienen estimación de Claude con qué comparar
+  planning: PlanningGroup;
+}
+
+// Tarea de Planificación al entrar a una historia (parte 9)
+export interface PlanningStatus {
+  // Clave de una Planificación aún abierta en la historia; null si no hay
+  open: string | null;
+}
+
+export interface PlanningSuggestion {
+  // Textos listos para el formulario (1h, 1h30m; hoy) y cuántas Planificaciones finalizadas respaldan la estimación
+  estimate: string;
+  dueDate: string;
+  measured: number;
+}
+
+export interface PlanningInput {
+  // Como la estimación propia (3h, 45m) y la fecha de la revisión (AAAA-MM-DD, hoy, mañana, +N)
+  estimate: string;
+  dueDate: string;
+}
+
+export type PlanningOutcome =
+  | { ok: true; issueKey: string; started: boolean }
+  | { ok: false; message: string };
+
+export interface PlanningGroup {
+  count: number;
+  estimateSeconds: number;
+  elapsedSeconds: number;
 }
 
 export interface TasksBridge {
@@ -117,5 +154,8 @@ export interface TasksBridge {
   remove: (storyKey: string, keys: string[]) => Promise<DeleteResult[]>;
   myDay: () => Promise<MyDayModel>;
   calibration: () => Promise<CalibrationModel>;
+  planningStatus: (storyKey: string) => Promise<PlanningStatus>;
+  planningSuggestion: () => Promise<PlanningSuggestion>;
+  createPlanning: (storyKey: string, input: PlanningInput) => Promise<PlanningOutcome>;
   openInBrowser: (issueKey: string) => Promise<void>;
 }

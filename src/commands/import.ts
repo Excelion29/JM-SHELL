@@ -10,7 +10,7 @@ import { projectKeyOfStory } from '../refinement/repos';
 import type { AskReason, CreationTarget, ParentOutcome } from '../refinement/review-types';
 import { assertKey, isValidIssueKey, projectRoot, readState } from '../refinement/state';
 import { refreshDashboard } from './dashboard';
-import { configuredAssignee } from './plan-bridge';
+import { configuredAssignee } from './assignee';
 import { openStory } from './story-resolver';
 
 const ASK_REASONS: Record<AskReason, string> = {

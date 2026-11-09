@@ -13,3 +13,8 @@ export function formatDuration(seconds: number): string {
 export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}${ELLIPSIS}` : text;
 }
+
+const RATIO_DECIMALS = 2;
+
+// Coma decimal, como lo lee el dev: 0,75
+export const formatRatio = (ratio: number): string => ratio.toFixed(RATIO_DECIMALS).replace('.', ',');

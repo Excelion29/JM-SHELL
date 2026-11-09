@@ -1,6 +1,13 @@
 // Estimado vs. real con lo que jm guarda por tarea: sin IA ni llamadas a Jira
-import { effectiveSeconds } from './pert';
-import type { CalibrationGroup, CalibrationModel, CalibrationOutlier, CalibrationRisk } from './tasks-types';
+import { effectiveSeconds, estimateForJira, recommendedSeconds } from './pert';
+import type {
+  CalibrationGroup,
+  CalibrationModel,
+  CalibrationOutlier,
+  CalibrationRisk,
+  HistoryFactor,
+  PlanningGroup,
+} from './tasks-types';
 import { RISKS, type RefinementPlan, type StoryState, type TaskRun } from './types';
 
 export const OUTLIER_LIMIT = 5;
@@ -41,6 +48,8 @@ export interface TaskMeasure {
   title: string;
   risk: CalibrationRisk;
   estimateSeconds: number;
+  // La recomendada (PERT): el ajuste se mide contra ella porque es lo que corrige
+  recommendedSeconds: number;
   claudeSeconds: number;
   elapsedSeconds: number;
 }
@@ -73,6 +82,7 @@ export function measuresOf(state: StoryState, plan: RefinementPlan | null, now: 
       title: task.summary,
       risk: task.risk,
       estimateSeconds: effectiveSeconds(task),
+      recommendedSeconds: recommendedSeconds(task),
       claudeSeconds: real.claudeSeconds,
       elapsedSeconds: real.elapsedSeconds,
     });
@@ -104,7 +114,13 @@ function outlierOf(m: TaskMeasure): CalibrationOutlier {
   return { key, storyKey, title, estimateSeconds, claudeSeconds, elapsedSeconds };
 }
 
-export function calibrate(stories: StoryMeasures[], unreadable = 0): CalibrationModel {
+export const EMPTY_PLANNING: PlanningGroup = { count: 0, estimateSeconds: 0, elapsedSeconds: 0 };
+
+export function calibrate(
+  stories: StoryMeasures[],
+  unreadable = 0,
+  planning: PlanningGroup = EMPTY_PLANNING,
+): CalibrationModel {
   const measures = stories.flatMap((story) => story.measures);
   return {
     total: groupOf(measures),
@@ -117,5 +133,49 @@ export function calibrate(stories: StoryMeasures[], unreadable = 0): Calibration
       .map(outlierOf),
     excludedDirect: stories.reduce((total, story) => total + story.excludedDirect, 0),
     unreadable,
+    planning,
   };
 }
+
+// ── Ajuste de la estimación con el historial (punto 3): fórmula propia, sin IA ──
+// Medida: de inicio a fin, lo que de verdad tomó la tarea (con Claude abierto o no)
+export const PRIOR_WEIGHT = 5;
+export const MIN_RISK_MEASURES = 3;
+export const MIN_FACTOR = 0.5;
+export const MAX_FACTOR = 2;
+
+export interface EstimateFactors {
+  total: HistoryFactor | null;
+  byRisk: Partial<Record<CalibrationRisk, HistoryFactor>>;
+}
+
+export const NO_FACTORS: EstimateFactors = { total: null, byRisk: {} };
+
+// Real de inicio a fin ÷ recomendada (no ÷ lo enviado a Jira: si ya se usó el ajustado, el factor se borraría solo).
+// Con pocas medidas el factor se acerca a 1 (vale como PRIOR_WEIGHT medidas exactas) y queda entre los topes
+function factorOf(measures: TaskMeasure[]): HistoryFactor | null {
+  const recommended = measures.reduce((total, m) => total + m.recommendedSeconds, 0);
+  if (measures.length === 0 || recommended <= 0) return null;
+  const real = measures.reduce((total, m) => total + m.elapsedSeconds, 0);
+  const count = measures.length;
+  const shrunk = (count * (real / recommended) + PRIOR_WEIGHT) / (count + PRIOR_WEIGHT);
+  return { factor: Math.min(MAX_FACTOR, Math.max(MIN_FACTOR, shrunk)), count };
+}
+
+export function estimateFactors(stories: StoryMeasures[]): EstimateFactors {
+  const measures = stories.flatMap((story) => story.measures);
+  const byRisk: EstimateFactors['byRisk'] = {};
+  for (const risk of RISKS) {
+    const ofRisk = measures.filter((m) => m.risk === risk);
+    const factor = ofRisk.length >= MIN_RISK_MEASURES ? factorOf(ofRisk) : null;
+    if (factor) byRisk[risk] = factor;
+  }
+  return { total: factorOf(measures), byRisk };
+}
+
+// El factor del mismo riesgo si hay medidas suficientes; si no, el de todas
+export const factorFor = (factors: EstimateFactors, risk: CalibrationRisk): HistoryFactor | null =>
+  factors.byRisk[risk] ?? factors.total;
+
+export const adjustedSeconds = (recommended: number, factor: HistoryFactor | null): number | null =>
+  factor ? estimateForJira(recommended * factor.factor) : null;

@@ -7,7 +7,8 @@ const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const RELATIVE_DAYS = /^\+(\d{1,3})$/;
 const SUNDAY = 0;
 const SATURDAY = 6;
-const TODAY_WORDS = ['hoy'];
+export const TODAY_WORD = 'hoy';
+const TODAY_WORDS = [TODAY_WORD];
 const TOMORROW_WORDS = ['mañana', 'manana'];
 
 export interface ScheduleItem {

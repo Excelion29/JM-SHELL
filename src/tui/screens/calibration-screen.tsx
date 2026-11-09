@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, Text, useInput } from 'ink';
 // Solo tipos: se borra al compilar
 import type { CalibrationModel, TasksBridge } from '../../refinement/tasks-types.js';
-import { formatDuration, truncate } from '../components/duration.js';
+import { formatDuration, formatRatio, truncate } from '../components/duration.js';
 import { LoadGate } from '../components/load-gate.js';
 import { useLoad } from '../components/use-load.js';
 import { CALIBRATION_TEXTS as T, COLORS, FOOTER_HINTS, KEYS, RISK_LABELS } from '../texts.js';
@@ -12,12 +12,9 @@ interface CalibrationScreenProps {
   onBack: () => void;
 }
 
-const RATIO_DECIMALS = 2;
 const OUTLIER_TITLE_MAX = 40;
 
-// Coma decimal, como lo lee el dev: 0,75
-const ratioText = (ratio: number | null): string =>
-  ratio === null ? T.noRatio : ratio.toFixed(RATIO_DECIMALS).replace('.', ',');
+const ratioText = (ratio: number | null): string => (ratio === null ? T.noRatio : formatRatio(ratio));
 
 export function CalibrationScreen({ tasks, onBack }: CalibrationScreenProps) {
   const { state, retry } = useLoad(() => tasks.calibration());
@@ -88,6 +85,15 @@ function CalibrationBody({
             </Text>
           ))}
         </Box>
+      )}
+      {model.planning.count > 0 && (
+        <Text>
+          {T.planning(
+            model.planning.count,
+            formatDuration(model.planning.estimateSeconds),
+            formatDuration(model.planning.elapsedSeconds),
+          )}
+        </Text>
       )}
       {model.excludedDirect > 0 && <Text color={COLORS.muted}>{T.excludedDirect(model.excludedDirect)}</Text>}
       {model.unreadable > 0 && <Text color={COLORS.error}>{T.unreadable(model.unreadable)}</Text>}

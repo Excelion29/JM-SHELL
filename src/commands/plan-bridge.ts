@@ -1,5 +1,4 @@
 import openBrowser from 'open';
-import { loadProjectConfig } from '../config/loader';
 import { JiraService } from '../services/jira';
 import { executeClose, prepareClose } from '../refinement/close';
 import {
@@ -19,33 +18,36 @@ import {
   toggleAttachmentTask,
   updateTask,
 } from '../refinement/review';
+import type { EstimateFactors } from '../refinement/calibration';
 import type { PlanBridge } from '../refinement/review-types';
 import { projectKeyOfStory } from '../refinement/repos';
 import { projectRoot } from '../refinement/state';
 import type { StoryStore } from '../refinement/story-store';
 import { workDirFor } from '../refinement/workdir';
+import { configuredAssignee } from './assignee';
+import { loadEstimateFactors } from './calibration-loader';
 import { refreshDashboard } from './dashboard';
 import { openStory } from './story-resolver';
-
-export async function configuredAssignee(): Promise<string | null> {
-  try {
-    return (await loadProjectConfig()).defaultAssignee || null;
-  } catch {
-    return null; // sin .jira.json se usa al usuario actual
-  }
-}
 
 // Dónde vive la historia (base o .jm): lo decide el resolvedor y se reutiliza durante la sesión
 const storeOf = (key: string): Promise<StoryStore> => openStory(projectRoot(), key).then((access) => access.store);
 
 export function createPlanBridge(getJira: () => JiraService): PlanBridge {
+  // El historial se lee al abrir la revisión y se reutiliza en cada cambio (no cambia mientras se revisa)
+  let factors: Promise<EstimateFactors> | null = null;
+  const history = (): Promise<EstimateFactors> => (factors ??= loadEstimateFactors());
   return {
-    load: async (key) => loadReview(await storeOf(key), key),
+    load: async (key) => {
+      factors = loadEstimateFactors();
+      return loadReview(await storeOf(key), key, undefined, await factors);
+    },
     previewEstimate,
-    updateTask: async (key, taskId, patch) => updateTask(await storeOf(key), key, taskId, patch),
-    setAttachmentPurpose: async (key, file, purpose) => setAttachmentPurpose(await storeOf(key), key, file, purpose),
+    updateTask: async (key, taskId, patch) =>
+      updateTask(await storeOf(key), key, taskId, patch, undefined, await history()),
+    setAttachmentPurpose: async (key, file, purpose) =>
+      setAttachmentPurpose(await storeOf(key), key, file, purpose, await history()),
     toggleAttachmentTask: async (key, file, taskId) =>
-      toggleAttachmentTask(await storeOf(key), key, file, taskId),
+      toggleAttachmentTask(await storeOf(key), key, file, taskId, await history()),
     openAttachment: async (key, file) => {
       assertSafeToOpen(file);
       const workDir = workDirFor(projectRoot());

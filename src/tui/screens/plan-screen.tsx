@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { PlanBridge, ReviewModel, ReviewTask } from '../../refinement/review-types.js';
 import { AttachmentsView } from '../components/attachments-view.js';
-import { formatDuration } from '../components/duration.js';
+import { formatDuration, formatRatio } from '../components/duration.js';
 import { LoadGate } from '../components/load-gate.js';
 import { buildTaskCells, COLUMN_GAP, TaskCells } from '../components/task-table.js';
 import { useTerminalSize } from '../components/terminal-size.js';
@@ -103,7 +103,9 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished, readOnly }: R
       else if (input === KEYS.toggle && current) {
         void save(plan.updateTask(storyKey, current.id, { include: !current.include }));
       } else if (input === KEYS.edit && current) setView({ name: 'edit', taskId: current.id });
-      else if (input === KEYS.create) {
+      else if (input === KEYS.useAdjusted && current?.adjustedEstimate) {
+        void save(plan.updateTask(storyKey, current.id, { finalEstimate: current.adjustedEstimate }));
+      } else if (input === KEYS.create) {
         if (model.totals.taskCount === 0) setError(PLAN_TEXTS.noneIncluded);
         else setView({ name: 'create' });
       }
@@ -166,7 +168,7 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished, readOnly }: R
   const allCreated = model.tasks.length > 0 && pending.length === 0;
   const visibleRows = Math.max(
     REVIEW_MIN_VISIBLE_ROWS,
-    (size.rows ?? CHAT_DEFAULT_TERMINAL_ROWS) - REVIEW_CHROME_ROWS - overloaded.length,
+    (size.rows ?? CHAT_DEFAULT_TERMINAL_ROWS) - REVIEW_CHROME_ROWS - overloaded.length - (model.history ? 1 : 0),
   );
   const first = Math.max(0, selected - visibleRows + 1);
 
@@ -203,6 +205,9 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished, readOnly }: R
             {PLAN_TEXTS.overload(date, formatDuration(seconds), formatDuration(model.dailyCapacitySeconds))}
           </Text>
         ))}
+        {model.history && !readOnly && (
+          <Text color={COLORS.muted}>{PLAN_TEXTS.history(formatRatio(model.history.factor), model.history.count)}</Text>
+        )}
         {model.createdCount > 0 && <Text color={COLORS.muted}>{PLAN_TEXTS.createdCount(model.createdCount)}</Text>}
         {error && <Text color={COLORS.error}>{error}</Text>}
         <Text color={COLORS.muted}>{allCreated ? PLAN_TEXTS.allCreated : PLAN_TEXTS.nextStep}</Text>
