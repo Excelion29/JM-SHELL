@@ -279,6 +279,26 @@ Plan técnico 10A (aprobado 2026-11-09):
    `observaciones_funcional_tecnico.md` (qué pasa hoy / qué vamos a hacer) y `resumen_observaciones.md` (cliente, sin
    términos técnicos).
 
+Plan técnico 10B (aprobado 2026-11-09), en dos commits:
+- **10B-1 (sin IA):** el análisis es un tipo propio, no una historia: carpeta `NN-JM-ADR/analisis/an-<n>/` (id en
+  minúsculas para no confundirse con una clave de Jira) con `estado.json`, `fuentes/`, `bitacora.md`. En el inicio, `a`
+  → "Nuevo análisis": nombre, rutas de archivos (`.md .txt .pdf .eml .png .jpg .jpeg`, con tope de tamaño también para el texto pegado) y texto pegado;
+  `jm` los copia a `fuentes/` (texto en `fuentes/texto.md`) y se pueden agregar más después. Aparece en la lista del
+  inicio con la marca `[análisis]`. Al entrar (primera vez y al volver) pregunta por la tarea `Análisis · <nombre> ·
+  AAAA-MM-DD`: con gestión va ahí; sin gestión pregunta dónde (épica de la lista o clave con `k`) o no registrarla;
+  queda En curso, al salir pregunta si terminó y la calibración la muestra junto a las Planificaciones.
+- **10B-2 (con IA):** skill `analizar`: lee fuentes y código real, identifica y debate los puntos, guarda `puntos.json`
+  (título, análisis, propuesta, estimación PERT, fuera de alcance) y al cerrar escribe los 3 documentos con Sonnet
+  (modo profundo con Opus si el dev lo pide). Permisos de Claude propios del análisis, sin tocar los de historias.
+
+Ajustes 10B-2 tras la prueba de 10B-1 (2026-11-09):
+- Fuentes desde la base: "Agregar notas de la base" con el navegador de carpetas existente; las notas quedan
+  **referenciadas** (no se copian) y Claude las lee directo del vault, siempre al día.
+- Continuar una sesión de Claude Code (terminal o VS Code comparten el historial por carpeta): `jm` lista las sesiones
+  de la carpeta del proyecto (fecha, primer mensaje, tamaño); al elegir una, el chat del análisis la continúa como
+  copia (*fork*, la original queda intacta) con la skill `analizar` encima. Si es muy larga, avisa del costo y ofrece
+  importarla como fuente (`fuentes/sesion-<fecha>.md`, conversación limpia).
+
 **C. Vincular después (manual)**
 1. "Vincular" en el análisis: el dev asigna cada punto a una historia de Jira (todos a una, uno a uno o por grupos).
 2. Cada historia vinculada arranca con su parte del análisis y su estimación como contexto de `/refinar`.
@@ -422,6 +442,10 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Accept plan técnico 10A (gestión por tablero) | Marcello Cano | 2026-11-09 | aprobado ("okey genial si"); si la de gestión no sirve, se crea en la historia actual y avisa |
 | Prueba real parte 10A (tras review 2 revisores aplicada) | Marcello Cano | 2026-11-09 | exitosa ("genial quedó") |
 | Commit parte 10A | Marcello Cano | 2026-11-09 | aprobado ("si") |
+| Accept plan técnico 10B (análisis tipo propio, fuentes copiadas, tecla a, 2 commits) | Marcello Cano | 2026-11-09 | aprobado ("okey si me agrada"); documentos con Sonnet (recomendado) |
+| Prueba real 10B-1 (tras review 2 revisores aplicada) | Marcello Cano | 2026-11-09 | exitosa ("todo genial"); pide notas del vault y continuar sesión |
+| Commit 10B-1 | Marcello Cano | 2026-11-09 | aprobado ("si lo apruebo") |
+| Accept ajustes 10B-2 (notas del vault referenciadas, continuar sesión de Claude Code con fork) | Marcello Cano | 2026-11-09 | aprobado ("si referenciadas"; sesión de VS Code continuada) |
 | Accept parte 5 (reconfigurar base, opción A ahora, B después) | Marcello Cano | 2026-11-06 | aprobado ("por ahorita vamos con la …, la B en otra actualización") |
 | Accept "Mi día" en parte 4 | Marcello Cano | 2026-11-05 | aprobado: vista de tareas propias que vencen hoy o vencidas, de cualquier historia |
 | Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |

@@ -1,4 +1,11 @@
 import type {
+  AnalysisBridge,
+  AnalysisDetail,
+  NewAnalysisInput,
+  SourceResult,
+  SourcesInput,
+} from '../refinement/analysis-types.js';
+import type {
   ChatBridge,
   ChatHeader,
   ChatLine,
@@ -516,4 +523,52 @@ export function createFakeManagement(options: FakeManagementOptions = {}) {
     },
   };
   return { management, calls };
+}
+
+export interface FakeAnalysisOptions {
+  detail?: Partial<AnalysisDetail>;
+  // Tarea de análisis ya abierta al entrar; sin ella no hay ninguna
+  trackingOpen?: string | null;
+  managementKey?: string;
+  // Respuestas sucesivas de createTracking; al agotarse, éxito
+  trackingOutcomes?: PlanningOutcome[];
+  createError?: string;
+  addError?: string;
+  results?: SourceResult[];
+}
+
+// Puente de análisis falso en memoria: registra lo que la pantalla pide, sin disco ni Jira
+export function createFakeAnalysis(options: FakeAnalysisOptions = {}) {
+  const detail: AnalysisDetail = { id: 'an-1', name: 'Observaciones', sources: [], tracking: [], ...options.detail };
+  const calls = {
+    created: [] as NewAnalysisInput[],
+    added: [] as Array<{ id: string; input: SourcesInput }>,
+    tracking: [] as Array<{ id: string; input: PlanningInput; whereKey: string | null }>,
+  };
+  const outcomes = [...(options.trackingOutcomes ?? [])];
+  const analysis: AnalysisBridge = {
+    create: async (input) => {
+      if (options.createError) return { ok: false, message: options.createError };
+      calls.created.push(input);
+      detail.name = input.name;
+      return { ok: true, id: detail.id, results: options.results ?? [] };
+    },
+    load: async () => ({ ...detail, sources: [...detail.sources] }),
+    addSources: async (id, input) => {
+      if (options.addError) return { ok: false, message: options.addError };
+      calls.added.push({ id, input });
+      const now = new Date().toISOString();
+      if (input.paths.trim()) detail.sources.push({ file: input.paths.trim(), origin: 'file', addedAt: now });
+      return { ok: true, results: options.results ?? [] };
+    },
+    trackingStatus: async () => ({ open: options.trackingOpen ?? null, managementKey: options.managementKey ?? null }),
+    trackingSuggestion: async () => ({ estimate: '1h', dueDate: 'hoy', measured: 0 }),
+    createTracking: async (id, input, whereKey) => {
+      calls.tracking.push({ id, input, whereKey });
+      const outcome = outcomes.shift() ?? { ok: true as const, issueKey: 'AQ-160', started: true };
+      if (outcome.ok) detail.tracking.push({ issueKey: outcome.issueKey, status: 'started' });
+      return outcome;
+    },
+  };
+  return { analysis, calls, detail };
 }

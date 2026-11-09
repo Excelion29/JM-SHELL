@@ -10,11 +10,11 @@ import {
   type StoryMeasures,
 } from '../refinement/calibration';
 import { loadPlan } from '../refinement/plan';
-import { planningGroupOf, suggestPlanning } from '../refinement/planning';
+import { type PlanningSource, planningGroupOf, suggestPlanning } from '../refinement/planning';
 import { projectRoot } from '../refinement/state';
 import type { CalibrationModel, PlanningSuggestion } from '../refinement/tasks-types';
 import type { StoryState } from '../refinement/types';
-import { listAllStories, openStory } from './story-resolver';
+import { listAllAnalyses, listAllStories, openStory } from './story-resolver';
 
 interface FolderMeasures {
   measured: StoryMeasures[];
@@ -42,9 +42,25 @@ async function folderMeasures(now: Date): Promise<FolderMeasures> {
   return { measured, states, unreadable };
 }
 
+// Las tareas de los análisis sin historia se miden junto a las Planificaciones; los que no se pueden leer se cuentan
+// aparte (como las historias) y no frenan el resto
+async function analysisSources(): Promise<{ sources: PlanningSource[]; unreadable: number }> {
+  try {
+    const analyses = await listAllAnalyses(projectRoot());
+    const readable = analyses.filter((a) => !a.unreadable);
+    return {
+      sources: readable.map((a) => ({ planningTasks: a.trackingTasks, taskRuns: a.taskRuns })),
+      unreadable: analyses.length - readable.length,
+    };
+  } catch {
+    return { sources: [], unreadable: 1 };
+  }
+}
+
 export async function loadCalibration(now: Date = new Date()): Promise<CalibrationModel> {
   const { measured, states, unreadable } = await folderMeasures(now);
-  return calibrate(measured, unreadable, planningGroupOf(states));
+  const analyses = await analysisSources();
+  return calibrate(measured, unreadable + analyses.unreadable, planningGroupOf([...states, ...analyses.sources]));
 }
 
 // La sugerencia es opcional: sin poder leer el historial la revisión sigue igual, solo sin el ajustado
@@ -60,7 +76,7 @@ export async function loadEstimateFactors(): Promise<EstimateFactors> {
 // defecto: el dev la puede cambiar en el formulario
 export async function loadPlanningSuggestion(): Promise<PlanningSuggestion> {
   try {
-    return suggestPlanning(planningGroupOf(await listAllStories(projectRoot())));
+    return suggestPlanning(planningGroupOf([...(await listAllStories(projectRoot())), ...(await analysisSources()).sources]));
   } catch {
     return suggestPlanning(EMPTY_PLANNING);
   }

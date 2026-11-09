@@ -148,7 +148,7 @@ const readCount = (value: unknown): number =>
 const readTimestamp = (value: unknown): string | null =>
   typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null;
 
-function readTaskRuns(value: unknown): Record<string, TaskRun> {
+export function readTaskRuns(value: unknown): Record<string, TaskRun> {
   if (!isRecord(value)) return {};
   const runs: Record<string, TaskRun> = {};
   for (const [issueKey, raw] of Object.entries(value)) {
@@ -170,7 +170,7 @@ function readTaskRuns(value: unknown): Record<string, TaskRun> {
   return runs;
 }
 
-function readPlanningTasks(value: unknown): PlanningTask[] {
+export function readPlanningTasks(value: unknown): PlanningTask[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((raw): PlanningTask[] => {
     if (!isRecord(raw) || typeof raw.issueKey !== 'string' || !isValidIssueKey(raw.issueKey)) return [];

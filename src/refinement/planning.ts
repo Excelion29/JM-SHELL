@@ -21,7 +21,7 @@ import type {
   PlanningSuggestion,
 } from './tasks-types';
 import type { TransitionMemory } from './transition-memory';
-import type { StoryState } from './types';
+import type { PlanningTask, StoryState, TaskRun } from './types';
 
 export const DEFAULT_PLANNING_SECONDS = 3600;
 const MS_PER_SECOND = 1000;
@@ -43,8 +43,14 @@ export function openPlanningOf(state: StoryState | null): string | null {
   return open.length > 0 ? open[open.length - 1].issueKey : null;
 }
 
+// Lo que mide la calibración de las tareas de seguimiento: una historia (Planificaciones) o un análisis sin historia
+export interface PlanningSource {
+  planningTasks?: PlanningTask[];
+  taskRuns: Record<string, TaskRun>;
+}
+
 // Planificaciones finalizadas tras iniciarlas: estimado y real de inicio a fin
-export function planningGroupOf(states: StoryState[]): PlanningGroup {
+export function planningGroupOf(states: PlanningSource[]): PlanningGroup {
   const group: PlanningGroup = { ...EMPTY_PLANNING };
   for (const state of states) {
     for (const task of state.planningTasks ?? []) {
@@ -93,6 +99,48 @@ async function resolveManagement(
   return { target: null, fallback: { key: deps.management, reason: resolved.reason, message: resolved.message } };
 }
 
+export interface TrackingIssueInput {
+  target: CreationTarget;
+  summary: string;
+  description: string;
+  estimateSeconds: number;
+  dueDate: string;
+}
+
+// La tarea de seguimiento en Jira (Planificación o análisis): hija de la épica o subtarea de la historia del destino
+export async function createTrackingIssue(
+  deps: Pick<PlanningDeps, 'jira' | 'assigneeId'>,
+  input: TrackingIssueInput,
+): Promise<string> {
+  const { target } = input;
+  const { key } = await deps.jira.createIssue({
+    projectKey: projectKeyOfStory(target.parentKey),
+    summary: input.summary,
+    issueTypeName: target.issueTypeName,
+    issueTypeId: target.issueTypeId,
+    assigneeId: deps.assigneeId,
+    estimateSeconds: input.estimateSeconds,
+    dueDate: input.dueDate,
+    parentKey: target.parentKey,
+    description: markdownToAdf(input.description),
+  });
+  return key;
+}
+
+// Sin almacén: solo se mueve en Jira y el registro lo hace quien llama (no cambia la fase de la historia).
+// Si la transición falla, la tarea queda creada y su tiempo corre igual en jm; devuelve si quedó En curso
+export async function startInJira(
+  deps: Pick<PlanningDeps, 'jira' | 'transitionMemory'>,
+  key: string,
+): Promise<boolean> {
+  const transition = await startTask(
+    { jira: deps.jira, store: null, transitionMemory: deps.transitionMemory },
+    null,
+    key,
+  ).catch(() => null);
+  return transition?.kind === 'ok';
+}
+
 export async function createPlanning(
   deps: PlanningDeps,
   storyKey: string,
@@ -115,16 +163,12 @@ export async function createPlanning(
       target = parent.target;
     }
     await ensureState(deps, storyKey);
-    const { key } = await deps.jira.createIssue({
-      projectKey: projectKeyOfStory(target.parentKey),
+    const key = await createTrackingIssue(deps, {
+      target,
       summary: managed.target ? managementPlanningSummary(storyKey, today) : planningSummary(today),
-      issueTypeName: target.issueTypeName,
-      issueTypeId: target.issueTypeId,
-      assigneeId: deps.assigneeId,
+      description: PLANNING_DESCRIPTION,
       estimateSeconds,
       dueDate,
-      parentKey: target.parentKey,
-      description: markdownToAdf(PLANNING_DESCRIPTION),
     });
     // Una clave anómala se descartaría al releer el estado: mejor avisar ahora que perder el registro en silencio
     if (!isValidIssueKey(key)) return { ok: false, message: planningFailure(`Jira devolvió una clave inesperada (${key}).`) };
@@ -144,13 +188,7 @@ async function recordPlanning(
   now: Date,
   fallback?: PlanningFallback,
 ): Promise<PlanningOutcome> {
-  // Sin almacén: solo se mueve en Jira; el registro se hace aquí para no cambiar la fase de la historia.
-  // Si la transición falla, la tarea queda creada y su tiempo corre igual en jm
-  const transition = await startTask(
-    { jira: deps.jira, store: null, transitionMemory: deps.transitionMemory },
-    null,
-    key,
-  ).catch(() => null);
+  const started = await startInJira(deps, key);
   try {
     await updateState(deps.store, storyKey, (state) => {
       state.planningTasks = [
@@ -166,7 +204,7 @@ async function recordPlanning(
         status: 'started',
       };
     });
-    return { ok: true, issueKey: key, started: transition?.kind === 'ok', ...(fallback ? { fallback } : {}) };
+    return { ok: true, issueKey: key, started, ...(fallback ? { fallback } : {}) };
   } catch (err: unknown) {
     return {
       ok: false,

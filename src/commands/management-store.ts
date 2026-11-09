@@ -25,3 +25,9 @@ export async function saveManagement(root: string, projectKey: string, value: Ma
     `${JSON.stringify(withManagement(project, projectKey, value), null, 2)}\n`,
   );
 }
+
+// La clave de gestión del proyecto; si está sin responder o ilegible se trata como sin gestión
+export async function readManagementKey(root: string, projectKey: string): Promise<string | null> {
+  const status = await readManagement(root, projectKey).catch(() => null);
+  return typeof status === 'object' && status ? status.key : null;
+}

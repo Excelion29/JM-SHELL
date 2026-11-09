@@ -36,6 +36,8 @@ export const KEYS = {
   calibration: 'c',
   useAdjusted: 'u',
   management: 'g',
+  newAnalysis: 'a',
+  addSources: 'a',
 } as const;
 
 // Palabra que hay que escribir completa para borrar subtareas de Jira
@@ -71,6 +73,8 @@ export const HOME_TEXTS = {
   listNextStep: 'Siguiente paso: elige una historia y pulsa Enter para continuar.',
   selectedMarker: '>',
   blockLabel: 'bloque',
+  analysisMarker: '[análisis]',
+  needsProjectForAnalysis: 'Primero elige un proyecto con p; el análisis queda en el proyecto actual.',
 } as const;
 
 export const MANUAL_KEY_TEXTS = {
@@ -169,7 +173,7 @@ export const CHAT_TEXTS = {
 
 export const FOOTER_HINTS = {
   pin: 'Enter confirmar · Ctrl+C salir',
-  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.calibration} calibración · ${KEYS.management} gestión · ${KEYS.quit} salir`,
+  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.calibration} calibración · ${KEYS.management} gestión · ${KEYS.newAnalysis} nuevo análisis · ${KEYS.quit} salir`,
   picker: `↑↓ elegir · Enter abrir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · ${KEYS.changeProject} proyecto · Esc volver`,
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
@@ -510,6 +514,55 @@ const MANAGEMENT_PROBLEM_REASONS = {
   subtask: 'es una subtarea',
 } as const;
 
+export const ANALYSIS_TEXTS = {
+  newTitle: 'Nuevo análisis',
+  fields: {
+    name: 'Nombre',
+    paths: 'Archivos (rutas completas separadas por coma o ;)',
+    text: 'Texto pegado (opcional)',
+  },
+  nameRequired: 'El análisis necesita un nombre.',
+  formHint: '↑↓ o Tab cambiar de campo · Enter siguiente o guardar · Esc cancelar',
+  sourcesHint: 'Tipos admitidos: .md .txt .pdf .eml .png .jpg · hasta 20 MB por archivo.',
+  saving: 'Guardando las fuentes...',
+  created: (id: string, name: string) => `Análisis ${id} creado: ${name}`,
+  added: 'Fuentes agregadas',
+  resultOk: (source: string, file: string) => `  listo: ${source} -> fuentes/${file}`,
+  resultFailed: (source: string, message: string) => `  no se copió: ${source}: ${message}`,
+  noSources: 'Sin fuentes por ahora: puedes agregarlas al entrar al análisis.',
+  resultsHint: 'Enter continuar',
+  loading: 'Leyendo el análisis...',
+  title: (id: string, name: string) => `Análisis ${id} · ${name}`,
+  sourcesTitle: (count: number) => `Fuentes (${count}):`,
+  noSourcesYet: `Aún no hay fuentes. Pulsa ${KEYS.addSources} para agregarlas.`,
+  sourceLine: (file: string, pasted: boolean) => `  ${file}${pasted ? ' (texto pegado)' : ''}`,
+  trackingTitle: 'Tarea de análisis:',
+  noTracking: 'Sin tarea de análisis registrada.',
+  trackingLine: (key: string, status: string) => `  ${key} · ${status}`,
+  trackingStatus: { started: 'En curso', done: 'Finalizada' },
+  nextStep: `Siguiente paso: ${KEYS.addSources} para agregar fuentes. El debate con Claude llega en la próxima parte.`,
+  detailHint: `${KEYS.addSources} agregar fuentes · Esc inicio`,
+  addTitle: 'Agregar fuentes',
+  tracking: {
+    question: (name: string, managementKey: string | null) =>
+      `¿Registro una tarea de análisis para "${name}"${managementKey ? ` en ${managementKey} (gestión)` : ''}? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+    why: 'El análisis también es trabajo: queda en Jira y se mide su tiempo de inicio a fin.',
+    whyManagement: (managementKey: string) =>
+      `El análisis también es trabajo: queda en Jira bajo ${managementKey} (gestión) y se mide su tiempo de inicio a fin.`,
+    formTitle: (name: string) => `Tarea de análisis de "${name}"`,
+    continueHint: 'Enter o Esc seguir al análisis',
+    stillOpen: (key: string) => `Sigues en la tarea de análisis ${key}; al salir te pregunto si terminaste.`,
+    created: (key: string) => `${key} creada y En curso. Al salir del análisis te pregunto si terminaste.`,
+    createdNotStarted: (key: string) =>
+      `${key} creada, pero no pude pasarla a En curso en Jira; su tiempo ya corre en jm.`,
+    whereTitle: '¿Dónde registro la tarea de análisis?',
+    whereEmpty: `No encontré épicas en el proyecto. Pulsa ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
+    whereNextStep: `Siguiente paso: elige una épica y pulsa Enter, o ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
+    whereHint: `↑↓ elegir · Enter elegir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc no registrar`,
+    whereProblem: (message: string) => `No pude usar ese destino: ${message}`,
+  },
+} as const;
+
 export const MANAGEMENT_TEXTS = {
   title: 'Gestión del tablero',
   needsProject: 'Primero elige un proyecto con p; la gestión se configura por proyecto.',
@@ -571,7 +624,7 @@ export const CALIBRATION_TEXTS = {
   excludedDirect: (count: number) => `${count} finalizada(s) con ${KEYS.finishDirect} quedan fuera: no tienen inicio medido.`,
   unreadable: (count: number) => `${count} historia(s) no se pudieron leer (¿base sin conexión?).`,
   planning: (count: number, estimate: string, elapsed: string) =>
-    `Planificaciones (aparte): ${count} medida(s) · estimado ${estimate} · de inicio a fin ${elapsed}`,
+    `Planificaciones y análisis (aparte): ${count} medida(s) · estimado ${estimate} · de inicio a fin ${elapsed}`,
   note: 'Abierto no siempre es trabajando: úsalo como referencia, no como cronómetro.',
 } as const;
 

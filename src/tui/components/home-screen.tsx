@@ -16,6 +16,8 @@ interface HomeScreenProps {
   onKnowledge: () => void;
   onCalibration: () => void;
   onManagement?: () => void;
+  onNewAnalysis?: () => void;
+  onAnalysis?: (id: string) => void;
   onQuit: () => void;
 }
 
@@ -36,6 +38,8 @@ export function HomeScreen({
   onKnowledge,
   onCalibration,
   onManagement,
+  onNewAnalysis,
+  onAnalysis,
   onQuit,
 }: HomeScreenProps) {
   const [selected, setSelected] = useState(0);
@@ -52,9 +56,13 @@ export function HomeScreen({
     else if (input === KEYS.knowledgeBase) onKnowledge();
     else if (input === KEYS.calibration) onCalibration();
     else if (input === KEYS.management) onManagement?.();
+    else if (input === KEYS.newAnalysis) onNewAnalysis?.();
     else if (key.upArrow) setSelected((i) => Math.max(0, i - 1));
     else if (key.downArrow) setSelected((i) => Math.min(stories.length - 1, i + 1));
-    else if (key.return && stories[selected]) onRefine(stories[selected].key);
+    else if (key.return && current) {
+      if (current.kind === 'analysis') onAnalysis?.(current.key);
+      else onRefine(current.key);
+    }
   });
 
   return (
@@ -76,6 +84,13 @@ export function HomeScreen({
 
 function StoryRow({ story, active }: { story: StorySummary; active: boolean }) {
   const marker = active ? HOME_TEXTS.selectedMarker : ' ';
+  if (story.kind === 'analysis') {
+    return (
+      <Text color={active ? COLORS.brand : undefined}>
+        {marker} {HOME_TEXTS.analysisMarker} {story.key} · {story.summary} · {story.phase}
+      </Text>
+    );
+  }
   return (
     <Text color={active ? COLORS.brand : undefined}>
       {marker} {story.key} · {story.summary} · {story.phase} · {HOME_TEXTS.blockLabel}: {story.block}

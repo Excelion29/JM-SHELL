@@ -10,19 +10,18 @@ import {
   returnTo,
   startTask,
 } from '../refinement/execution';
-import { defaultAssignee } from '../refinement/create';
 import { createPlanning, openPlanningOf, planningFailure } from '../refinement/planning';
 import { projectKeyOfStory } from '../refinement/repos';
 import { isValidIssueKey, projectRoot, readState } from '../refinement/state';
 import type { StoryStore } from '../refinement/story-store';
 import type { PlanningInput, PlanningOutcome, TasksBridge } from '../refinement/tasks-types';
 import { createFileTransitionMemory } from '../refinement/transition-memory';
-import { configuredAssignee } from './assignee';
-import { readManagement } from './management-store';
+import { isValidAnalysisId } from '../refinement/analysis';
+import { projectAssigneeId } from './assignee';
+import { finishAnalysisTracking } from './analysis-bridge';
+import { readManagementKey } from './management-store';
 import { loadCalibration, loadPlanningSuggestion } from './calibration-loader';
 import { openStory, listAllStories } from './story-resolver';
-
-const NO_ASSIGNEE = 'No encontré a quién asignarla en el proyecto.';
 
 const storeOf = (key: string): Promise<StoryStore> => openStory(projectRoot(), key).then((access) => access.store);
 
@@ -36,18 +35,8 @@ async function localStoryOf(parentKey: string | null): Promise<string | null> {
   }
 }
 
-// El responsable de siempre: el configurado en .jira.json o el primero asignable del proyecto
-async function planningAssignee(jira: JiraService, storyKey: string): Promise<string> {
-  const assignee = await defaultAssignee(jira, projectKeyOfStory(storyKey), await configuredAssignee());
-  if (!assignee) throw new Error(NO_ASSIGNEE);
-  return assignee.accountId;
-}
-
-// La gestión del proyecto de la historia: si está leída pero ilegible, se trata como sin gestión
-async function managementKeyOf(storyKey: string): Promise<string | null> {
-  const status = await readManagement(projectRoot(), projectKeyOfStory(storyKey)).catch(() => null);
-  return typeof status === 'object' && status ? status.key : null;
-}
+const managementKeyOf = (storyKey: string): Promise<string | null> =>
+  readManagementKey(projectRoot(), projectKeyOfStory(storyKey));
 
 async function startPlanning(
   jira: JiraService,
@@ -57,7 +46,7 @@ async function startPlanning(
 ): Promise<PlanningOutcome> {
   try {
     const store = await storeOf(storyKey);
-    const assigneeId = await planningAssignee(jira, storyKey);
+    const assigneeId = await projectAssigneeId(jira, projectKeyOfStory(storyKey));
     const management = await managementKeyOf(storyKey);
     return await createPlanning({ jira, store, assigneeId, transitionMemory, management }, storyKey, input);
   } catch (err: unknown) {
@@ -79,7 +68,10 @@ export function createTasksBridge(getJira: () => JiraService): TasksBridge {
       const storyKey = await localStoryOf(parentKey);
       return startTask(await ctxOf(storyKey), storyKey, issueKey, options);
     },
-    finish: async ({ storyKey, issueKey }, options) => finishTask(await ctxOf(storyKey), storyKey, issueKey, options),
+    finish: async ({ storyKey, issueKey }, options) =>
+      storyKey && isValidAnalysisId(storyKey)
+        ? finishAnalysisTracking(getJira(), transitionMemory, storyKey, issueKey, options)
+        : finishTask(await ctxOf(storyKey), storyKey, issueKey, options),
     finishMyDay: async (issueKey, parentKey, options) => {
       const storyKey = await localStoryOf(parentKey);
       return finishTask(await ctxOf(storyKey), storyKey, issueKey, options);

@@ -12,7 +12,17 @@ import { ensureStory, readState, updateState } from '../refinement/state';
 import { TEST_CERT_A } from '../refinement/test-certs';
 import { clearSession, setSessionPin } from '../utils/session';
 import { refreshDashboard } from './dashboard';
-import { closeStoryStores, listAllStories, openStory, PENDING_MOVE_SUFFIX } from './story-resolver';
+import { createAnalysis, readAnalysis } from '../refinement/analysis';
+import {
+  closeStoryStores,
+  invalidateAnalysisListing,
+  listAllAnalyses,
+  listAllStories,
+  listAnalysisIds,
+  openAnalysis,
+  openStory,
+  PENDING_MOVE_SUFFIX,
+} from './story-resolver';
 
 const PIN = '1234';
 const API_KEY = 'fake-key-for-resolver-tests';
@@ -220,4 +230,62 @@ test('al reabrir una historia en caché se vuelve a comprobar la confianza de la
   await fs.remove(path.join(secrets, 'knowledge-trust.json'));
   await fs.emptyDir(secrets);
   await assert.rejects(openStory(root, KEY, { secretsDir: secrets }), /aún no está confirmada/);
+});
+
+test('análisis con base local: viven en <JM-ADR>/analisis/<id>, se listan y no se confunden con historias', async () => {
+  const kb = await localKb();
+  const root = await projectWith({ type: 'local', root: kb, baseFolder: 'PROY' });
+  const options = { secretsDir: secrets };
+  const store = await openAnalysis(root, 'an-1', options);
+  await createAnalysis(store, 'an-1', 'Observaciones', 'AQ');
+  await ensureStory((await openStory(root, KEY, options)).store, KEY, 'Login', null);
+  const adr = path.join(kb, 'PROY', '02-JM-ADR');
+  for (const file of ['estado.json', 'bitacora.md']) {
+    assert.ok(await fs.pathExists(path.join(adr, 'analisis', 'an-1', file)), file);
+  }
+  assert.ok(!(await fs.pathExists(path.join(root, '.jm'))));
+  assert.deepEqual(await listAnalysisIds(root, options), ['an-1']);
+  assert.deepEqual((await listAllAnalyses(root, options)).map((a) => a.name), ['Observaciones']);
+  assert.deepEqual((await listAllStories(root, options)).map((s) => s.key), [KEY], 'el análisis no aparece como historia');
+});
+
+test('análisis con MCP: estado y fuentes quedan en la bóveda', async () => {
+  setSessionPin(PIN);
+  // La prueba anterior vacía los secretos
+  await saveKnowledgeKey(mcpUrl, API_KEY, PIN, secrets);
+  await saveKnowledgeCert(mcpUrl, TEST_CERT_A, secrets);
+  seedVaultBase();
+  const root = await projectWith(mcpConfig());
+  const options = { secretsDir: secrets };
+  const store = await openAnalysis(root, 'an-1', options);
+  await createAnalysis(store, 'an-1', 'Observaciones', 'AQ');
+  await store.writeBinary('fuentes/a.png', Buffer.from([1, 2]));
+  const dir = 'PROY/02-JM-ADR/analisis/an-1';
+  assert.ok(vault.files.has(`${dir}/estado.json`));
+  assert.ok(vault.files.has(`${dir}/fuentes/a.png`));
+  invalidateAnalysisListing(root);
+  assert.deepEqual((await listAllAnalyses(root, options)).map((a) => a.id), ['an-1']);
+  assert.equal((await readAnalysis(store, 'an-1'))?.projectKey, 'AQ');
+});
+
+test('análisis sin base: viven en .jm/analisis/<id> y un id inválido no abre nada', async () => {
+  const root = await projectWith(undefined);
+  const store = await openAnalysis(root, 'an-2');
+  await createAnalysis(store, 'an-2', 'Suelto', 'AQ');
+  assert.ok(await fs.pathExists(path.join(root, '.jm', 'analisis', 'an-2', 'estado.json')));
+  assert.deepEqual(await listAnalysisIds(root), ['an-2']);
+  assert.deepEqual((await listAllAnalyses(root)).map((a) => a.id), ['an-2']);
+  await assert.rejects(openAnalysis(root, 'AQ-45'), /inválido/);
+  await assert.rejects(openAnalysis(root, '../x'), /inválido/);
+});
+
+test('el listado de análisis sin base también se guarda en la sesión y invalidateAnalysisListing lo renueva', async () => {
+  const root = await projectWith(undefined);
+  await createAnalysis(await openAnalysis(root, 'an-1'), 'an-1', 'Uno', 'AQ');
+  invalidateAnalysisListing(root);
+  assert.equal((await listAllAnalyses(root)).length, 1);
+  await createAnalysis(await openAnalysis(root, 'an-2'), 'an-2', 'Dos', 'AQ');
+  assert.equal((await listAllAnalyses(root)).length, 1, 'sirve la caché');
+  invalidateAnalysisListing(root);
+  assert.equal((await listAllAnalyses(root)).length, 2);
 });

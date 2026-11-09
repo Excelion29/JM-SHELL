@@ -100,8 +100,12 @@ export interface PlanningTask {
   createdAt: string;
 }
 
+export type SummaryKind = 'story' | 'analysis';
+
 export interface StorySummary {
   key: string;
+  // Sin valor es una historia; un análisis sin historia lleva su id local (an-1)
+  kind?: SummaryKind;
   summary: string;
   phase: string;
   // Fase sin traducir: la app decide con ella qué atajos admite la historia

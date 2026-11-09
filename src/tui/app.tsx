@@ -3,6 +3,7 @@ import { render, Text, useApp, useInput } from 'ink';
 import { Frame } from './components/frame.js';
 import { HomeScreen } from './components/home-screen.js';
 // Solo tipos: se borra al compilar
+import type { AnalysisBridge } from '../refinement/analysis-types.js';
 import type { ChatBridge, KnowledgeStatus } from '../refinement/chat-types.js';
 import type { ManagementBridge, ManagementStatus } from '../refinement/management-types.js';
 import type { PlanBridge } from '../refinement/review-types.js';
@@ -15,6 +16,9 @@ import { BrowseScreen } from './screens/browse-screen.js';
 import { ChatScreen } from './screens/chat-screen.js';
 import { CloseScreen } from './screens/close-screen.js';
 import { KnowledgeScreen } from './screens/knowledge-screen.js';
+import { AnalysisScreen } from './screens/analysis-screen.js';
+import { AnalysisTrackingScreen } from './screens/analysis-tracking-screen.js';
+import { NewAnalysisScreen } from './screens/analysis-new-screen.js';
 import { CalibrationScreen } from './screens/calibration-screen.js';
 import { ManagementScreen } from './screens/management-screen.js';
 import { MyDayScreen } from './screens/my-day-screen.js';
@@ -27,6 +31,7 @@ import {
   COLORS,
   FOOTER_HINTS,
   KNOWLEDGE_SETTINGS_TEXTS,
+  HOME_TEXTS,
   KNOWLEDGE_TEXTS,
   MANAGEMENT_TEXTS,
   PIN_TEXTS,
@@ -59,6 +64,7 @@ export interface AppProps {
   plan: PlanBridge;
   tasks?: TasksBridge;
   management?: ManagementBridge;
+  analysis?: AnalysisBridge;
   initialTaskFinish?: TaskFinishTarget | null;
   initialChatKey?: string | null;
   notice?: string | null;
@@ -88,9 +94,14 @@ type Stage =
   | 'tasks'
   | 'taskFinish'
   | 'myDay'
-  | 'calibration';
+  | 'calibration'
+  | 'newAnalysis'
+  | 'analysisTracking'
+  | 'analysisDetail';
 
-const NOTICE_STAGES: readonly Stage[] = ['home', 'chat', 'tasks', 'myDay'];
+const NOTICE_STAGES: readonly Stage[] = ['home', 'chat', 'tasks', 'myDay', 'analysisDetail'];
+// Único destino de entrar a un análisis tras preguntar por su tarea: 10B-2 lo cambia por el chat del análisis
+const ANALYSIS_DESTINATION: Stage = 'analysisDetail';
 
 // La clave de la historia es PROYECTO-NÚMERO
 const projectOfKey = (key: string): string => key.slice(0, key.lastIndexOf('-'));
@@ -120,6 +131,7 @@ export function App({
   plan,
   tasks,
   management,
+  analysis,
   initialTaskFinish = null,
   initialChatKey = null,
   notice: initialNotice = null,
@@ -138,6 +150,9 @@ export function App({
   // Planificación abierta de la historia del chat: al salir se pregunta si terminó y se vuelve al inicio
   const [planningKey, setPlanningKey] = useState<string | null>(null);
   const [finishToHome, setFinishToHome] = useState(false);
+  // Análisis abierto y su tarea de seguimiento abierta: al salir se pregunta si terminó y se vuelve al inicio
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [analysisTaskKey, setAnalysisTaskKey] = useState<string | null>(null);
   const [projectsReturnTo, setProjectsReturnTo] = useState<Stage>('home');
   const [managementNext, setManagementNext] = useState<Stage>('home');
   // Proyecto por el que se pregunta: el de la historia al entrar, el de la app al cambiar de proyecto o con g
@@ -213,6 +228,33 @@ export function App({
     setStage('home');
   };
 
+  const handleAnalysis = (id: string) => {
+    setAnalysisId(id);
+    setAnalysisTaskKey(null);
+    if (tasks && analysis) void askManagementThen(projectKey, 'analysisTracking');
+    else setStage(ANALYSIS_DESTINATION);
+  };
+
+  const leaveAnalysis = async () => {
+    if (analysisTaskKey && analysisId && tasks) {
+      setFinishTarget({ storyKey: analysisId, issueKey: analysisTaskKey });
+      setFinishToHome(true);
+      setAnalysisTaskKey(null);
+      setAnalysisId(null);
+      setStage('taskFinish');
+      return;
+    }
+    setAnalysisId(null);
+    setStories(await loadStories(projectKey));
+    setStage('home');
+  };
+
+  const openNewAnalysis = () => {
+    if (!analysis) return;
+    if (projectKey) setStage('newAnalysis');
+    else queueMicrotask(() => setNotice(HOME_TEXTS.needsProjectForAnalysis));
+  };
+
   const leaveStoryScreen = async () => {
     setStoryKey(null);
     setStories(await loadStories(projectKey));
@@ -284,18 +326,43 @@ export function App({
           onKnowledge={openKnowledgeSettings}
           onCalibration={() => tasks && setStage('calibration')}
           onManagement={openManagement}
+          onNewAnalysis={openNewAnalysis}
+          onAnalysis={handleAnalysis}
           onQuit={exit}
         />
       )}
       {stage === 'browse' && (
         <BrowseScreen
-          localStories={stories}
+          localStories={stories.filter((story) => story.kind !== 'analysis')}
           fetchEpics={fetchEpics}
           fetchStories={fetchStories}
           onRefine={handleRefine}
           onChangeProject={() => openProjects('browse')}
           onBack={() => setStage('home')}
         />
+      )}
+      {stage === 'newAnalysis' && analysis && (
+        <NewAnalysisScreen
+          analysis={analysis}
+          onDone={() => void loadStories(projectKey).then(setStories).then(() => setStage('home'))}
+        />
+      )}
+      {stage === 'analysisTracking' && analysisId && analysis && (
+        <AnalysisTrackingScreen
+          id={analysisId}
+          name={stories.find((story) => story.key === analysisId)?.summary ?? analysisId}
+          analysis={analysis}
+          fetchEpics={fetchEpics}
+          onDone={(message, key) => {
+            setAnalysisTaskKey(key);
+            // Después de la tecla que respondió: el useInput global borra el aviso con cada pulsación
+            if (message) queueMicrotask(() => setNotice(message));
+            setStage(ANALYSIS_DESTINATION);
+          }}
+        />
+      )}
+      {stage === 'analysisDetail' && analysisId && analysis && (
+        <AnalysisScreen id={analysisId} analysis={analysis} onBack={() => void leaveAnalysis()} />
       )}
       {stage === 'knowledge' && (
         <KnowledgePrompt chat={chat} onDone={() => setStage(entryRoute)} onCancel={() => void leaveChat()} />

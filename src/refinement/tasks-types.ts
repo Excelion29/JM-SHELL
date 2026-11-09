@@ -143,8 +143,10 @@ export interface PlanningFallback {
   message: string;
 }
 
+// askWhere: el destino no sirvió (análisis sin historia): hay que elegir otro, aún no se creó nada en Jira
 export type PlanningOutcome =
-  { ok: true; issueKey: string; started: boolean; fallback?: PlanningFallback } | { ok: false; message: string };
+  | { ok: true; issueKey: string; started: boolean; fallback?: PlanningFallback }
+  | { ok: false; message: string; askWhere?: boolean };
 
 export interface PlanningGroup {
   count: number;

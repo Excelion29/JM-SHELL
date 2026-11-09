@@ -3,12 +3,12 @@ import { Box, Text } from 'ink';
 // Solo tipos: se borra al compilar
 import type { ManagementBridge, ManagementStatus } from '../../refinement/management-types.js';
 import type { BrowseItem } from '../../refinement/types.js';
+import { EpicPicker } from '../components/epic-picker.js';
 import { LoadGate } from '../components/load-gate.js';
 import { ManualKeyInput } from '../components/manual-key-input.js';
-import { PickerList } from '../components/picker-list.js';
 import { YesNoPrompt } from '../components/task-prompts.js';
 import { useLoad } from '../components/use-load.js';
-import { BROWSE_LIMIT, BROWSE_TEXTS, COLORS, KEYS, MANAGEMENT_TEXTS as T } from '../texts.js';
+import { COLORS, MANAGEMENT_TEXTS as T } from '../texts.js';
 
 interface ManagementScreenProps {
   projectKey: string;
@@ -69,7 +69,7 @@ function ManagementFlow({ projectKey, status, management, fetchEpics, onDone }: 
     return (
       <Box flexDirection="column">
         <EpicPicker
-          projectKey={projectKey}
+          texts={{ title: T.pickTitle(projectKey), empty: T.noEpics, nextStep: T.pickNextStep, hint: T.pickHint }}
           fetchEpics={fetchEpics}
           onChoose={(key) => void save(key)}
           onManual={() => setStep('manual')}
@@ -91,34 +91,5 @@ function ManagementFlow({ projectKey, status, management, fetchEpics, onDone }: 
       <Text color={COLORS.muted}>{T.askHint}</Text>
       {errorLine}
     </Box>
-  );
-}
-
-interface EpicPickerProps {
-  projectKey: string;
-  fetchEpics: () => Promise<BrowseItem[]>;
-  onChoose: (key: string) => void;
-  onManual: () => void;
-  onBack: () => void;
-}
-
-function EpicPicker({ projectKey, fetchEpics, onChoose, onManual, onBack }: EpicPickerProps) {
-  const { state, retry } = useLoad(fetchEpics);
-  return (
-    <LoadGate state={state} loadingText={BROWSE_TEXTS.loadingEpics} onRetry={retry} onBack={onBack}>
-      {(epics) => (
-        <PickerList
-          title={T.pickTitle(projectKey)}
-          items={epics.map((epic) => ({ id: epic.key, label: `${epic.key} ${epic.summary}`, detail: epic.status }))}
-          emptyText={T.noEpics}
-          limitReached={epics.length >= BROWSE_LIMIT}
-          nextStep={T.pickNextStep}
-          hint={T.pickHint}
-          shortcuts={{ [KEYS.manualKey]: onManual, [KEYS.manualKeyAlt]: onManual }}
-          onSelect={onChoose}
-          onBack={onBack}
-        />
-      )}
-    </LoadGate>
   );
 }

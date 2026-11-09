@@ -2,16 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 // Solo tipos: se borra al compilar
-import type { PlanningSuggestion, TasksBridge } from '../../refinement/tasks-types.js';
+import type {
+  PlanningInput,
+  PlanningOutcome,
+  PlanningStatus,
+  PlanningSuggestion,
+  TasksBridge,
+} from '../../refinement/tasks-types.js';
+import type { BrowseItem } from '../../refinement/types.js';
+import { EpicPicker } from '../components/epic-picker.js';
+import { ManualKeyInput } from '../components/manual-key-input.js';
 import { YesNoPrompt } from '../components/task-prompts.js';
-import { COLORS, MANAGEMENT_TEXTS, PLANNING_TEXTS as T } from '../texts.js';
+import { ANALYSIS_TEXTS, COLORS, MANAGEMENT_TEXTS, PLANNING_TEXTS as T } from '../texts.js';
 
-interface PlanningScreenProps {
-  storyKey: string;
-  tasks: TasksBridge;
-  // Sigue al chat: con un aviso para mostrar y la Planificación abierta (para preguntar al salir), si las hay
-  onDone: (notice: string | null, planningKey: string | null) => void;
-}
+// Sigue al chat (o al análisis): con un aviso para mostrar y la tarea abierta (para preguntar al salir), si las hay
+type OnDone = (notice: string | null, taskKey: string | null) => void;
 
 type Field = 'estimate' | 'dueDate';
 const FIELD_ORDER: Field[] = ['estimate', 'dueDate'];
@@ -21,39 +26,75 @@ const NO_SUGGESTION: PlanningSuggestion = { estimate: '', dueDate: '', measured:
 type Step =
   | { name: 'checking' }
   | { name: 'ask' }
+  | { name: 'where' }
+  | { name: 'manual' }
   | { name: 'suggesting' }
   | { name: 'form' }
   | { name: 'creating' }
   | { name: 'failed'; message: string };
 
-// Antes del chat, sin IA: ¿registro una Planificación? Un fallo nunca impide entrar al chat
-export function PlanningScreen({ storyKey, tasks, onDone }: PlanningScreenProps) {
+// De dónde salen los datos de la tarea: una historia (Planificación) o un análisis sin historia
+export interface PlanningFlowSource {
+  status: () => Promise<PlanningStatus>;
+  suggest: () => Promise<PlanningSuggestion>;
+  // whereKey: destino elegido a mano; null = el de siempre (gestión o la misma historia)
+  create: (input: PlanningInput, whereKey: string | null) => Promise<PlanningOutcome>;
+}
+
+export interface PlanningFlowLabels {
+  question: string;
+  why: string;
+  formTitle: string;
+  continueHint: string;
+  stillOpen: (key: string) => string;
+  created: (key: string) => string;
+  createdNotStarted: (key: string) => string;
+}
+
+// Solo el análisis sin historia pregunta dónde: no hay una historia donde caer por defecto
+export interface PlanningWhere {
+  fetchEpics: () => Promise<BrowseItem[]>;
+}
+
+interface PlanningFlowProps {
+  source: PlanningFlowSource;
+  labels: (managementKey: string | null) => PlanningFlowLabels;
+  where?: PlanningWhere;
+  onDone: OnDone;
+}
+
+// Sin IA: ¿registro la tarea? Un fallo nunca impide seguir adelante
+export function PlanningFlow({ source, labels, where, onDone }: PlanningFlowProps) {
   const [step, setStep] = useState<Step>({ name: 'checking' });
   const [suggestion, setSuggestion] = useState<PlanningSuggestion>(NO_SUGGESTION);
   const [values, setValues] = useState<Record<Field, string>>({ estimate: '', dueDate: '' });
   const [focus, setFocus] = useState(0);
   // Dónde irá la tarea: null = en la misma historia
   const [managementKey, setManagementKey] = useState<string | null>(null);
+  const [whereKey, setWhereKey] = useState<string | null>(null);
+  const [whereProblem, setWhereProblem] = useState<string | null>(null);
+  const [formFilled, setFormFilled] = useState(false);
+  const text = labels(managementKey);
 
   useEffect(() => {
     let alive = true;
-    tasks
-      .planningStatus(storyKey)
+    source
+      .status()
       .then((status) => {
         if (!alive) return;
-        if (status.open) onDone(T.stillOpen(status.open), status.open);
+        if (status.open) onDone(labels(status.managementKey).stillOpen(status.open), status.open);
         else {
           setManagementKey(status.managementKey);
           setStep({ name: 'ask' });
         }
       })
-      // Sin poder leer la historia no se pregunta: el chat reporta el problema al abrir
+      // Sin poder leer el estado no se pregunta: quien sigue reporta el problema al abrir
       .catch(() => alive && onDone(null, null));
     return () => {
       alive = false;
     };
-    // Solo al entrar a la historia
-  }, [storyKey]);
+    // Solo al entrar
+  }, []);
 
   useInput(
     (_input, key) => {
@@ -71,24 +112,41 @@ export function PlanningScreen({ storyKey, tasks, onDone }: PlanningScreenProps)
   // La sugerencia solo se calcula si el dev decide registrarla
   const openForm = async () => {
     setStep({ name: 'suggesting' });
-    const value = await tasks.planningSuggestion().catch(() => NO_SUGGESTION);
+    const value = await source.suggest().catch(() => NO_SUGGESTION);
     setSuggestion(value);
     setValues({ estimate: value.estimate, dueDate: value.dueDate });
+    setFormFilled(true);
     setStep({ name: 'form' });
+  };
+
+  const accept = () => {
+    if (where && !managementKey) setStep({ name: 'where' });
+    else void openForm();
+  };
+
+  const chooseWhere = (key: string) => {
+    setWhereKey(key);
+    setWhereProblem(null);
+    // Si ya tecleó la estimación (el destino falló), no se la pedimos otra vez
+    if (formFilled) setStep({ name: 'form' });
+    else void openForm();
   };
 
   const create = async () => {
     setStep({ name: 'creating' });
-    const outcome = await tasks
-      .createPlanning(storyKey, values)
-      .catch((err: unknown) => ({ ok: false as const, message: (err as Error).message }));
-    if (!outcome.ok) setStep({ name: 'failed', message: outcome.message });
-    else {
-      const created = outcome.started ? T.created(outcome.issueKey) : T.createdNotStarted(outcome.issueKey);
+    const outcome = await source
+      .create(values, whereKey)
+      .catch((err: unknown): PlanningOutcome => ({ ok: false, message: (err as Error).message }));
+    if (outcome.ok) {
+      const created = outcome.started ? text.created(outcome.issueKey) : text.createdNotStarted(outcome.issueKey);
       const { fallback } = outcome;
       const warning = fallback ? ` ${MANAGEMENT_TEXTS.fallback(fallback.key, fallback.reason, fallback.message)}` : '';
       onDone(`${created}${warning}`, outcome.issueKey);
-    }
+    } else if (outcome.askWhere && where) {
+      setWhereKey(null);
+      setWhereProblem(outcome.message);
+      setStep({ name: 'where' });
+    } else setStep({ name: 'failed', message: outcome.message });
   };
 
   const submit = () => {
@@ -103,26 +161,40 @@ export function PlanningScreen({ storyKey, tasks, onDone }: PlanningScreenProps)
     return (
       <Box flexDirection="column">
         <Text color={COLORS.error}>{step.message}</Text>
-        <Text color={COLORS.muted}>{T.continueHint}</Text>
+        <Text color={COLORS.muted}>{text.continueHint}</Text>
+      </Box>
+    );
+  }
+  if (step.name === 'manual') {
+    return <ManualKeyInput onSubmit={chooseWhere} onCancel={() => setStep({ name: 'where' })} />;
+  }
+  if (step.name === 'where' && where) {
+    const W = ANALYSIS_TEXTS.tracking;
+    return (
+      <Box flexDirection="column">
+        {whereProblem && <Text color={COLORS.error}>{W.whereProblem(whereProblem)}</Text>}
+        <EpicPicker
+          texts={{ title: W.whereTitle, empty: W.whereEmpty, nextStep: W.whereNextStep, hint: W.whereHint }}
+          fetchEpics={where.fetchEpics}
+          onChoose={chooseWhere}
+          onManual={() => setStep({ name: 'manual' })}
+          onBack={() => onDone(null, null)}
+        />
       </Box>
     );
   }
   if (step.name === 'ask') {
     return (
       <Box flexDirection="column">
-        <Text color={COLORS.muted}>{managementKey ? T.whyManagement(managementKey, storyKey) : T.why}</Text>
-        <YesNoPrompt
-          question={T.question(storyKey, managementKey)}
-          onYes={() => void openForm()}
-          onNo={() => onDone(null, null)}
-        />
+        <Text color={COLORS.muted}>{text.why}</Text>
+        <YesNoPrompt question={text.question} onYes={accept} onNo={() => onDone(null, null)} />
       </Box>
     );
   }
   return (
     <Box flexDirection="column">
       <Text bold color={COLORS.accent}>
-        {T.formTitle(storyKey)}
+        {text.formTitle}
       </Text>
       {FIELD_ORDER.map((field, index) => (
         <Box key={field}>
@@ -139,4 +211,29 @@ export function PlanningScreen({ storyKey, tasks, onDone }: PlanningScreenProps)
       <Text color={COLORS.muted}>{T.formHint}</Text>
     </Box>
   );
+}
+
+interface PlanningScreenProps {
+  storyKey: string;
+  tasks: TasksBridge;
+  onDone: OnDone;
+}
+
+// Antes del chat: ¿registro una Planificación en la historia?
+export function PlanningScreen({ storyKey, tasks, onDone }: PlanningScreenProps) {
+  const source: PlanningFlowSource = {
+    status: () => tasks.planningStatus(storyKey),
+    suggest: () => tasks.planningSuggestion(),
+    create: (input) => tasks.createPlanning(storyKey, input),
+  };
+  const labels = (managementKey: string | null): PlanningFlowLabels => ({
+    question: T.question(storyKey, managementKey),
+    why: managementKey ? T.whyManagement(managementKey, storyKey) : T.why,
+    formTitle: T.formTitle(storyKey),
+    continueHint: T.continueHint,
+    stillOpen: T.stillOpen,
+    created: T.created,
+    createdNotStarted: T.createdNotStarted,
+  });
+  return <PlanningFlow key={storyKey} source={source} labels={labels} onDone={onDone} />;
 }

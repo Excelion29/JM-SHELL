@@ -3,6 +3,8 @@ import * as path from 'path';
 import { isKnowledgeTrusted } from '../config/knowledge-trust';
 import { warn } from '../utils/format';
 import { getSessionPin } from '../utils/session';
+import { ANALYSIS_DIR, assertAnalysisId, isValidAnalysisId, listAnalysesFrom } from '../refinement/analysis';
+import type { AnalysisState } from '../refinement/analysis-types';
 import { createIndexUpdater } from '../refinement/adr-index';
 import { joinKnowledgePath, KnowledgeConfig, resolveAdrFolder } from '../refinement/knowledge';
 import { createRestClient } from '../refinement/knowledge-rest';
@@ -10,7 +12,7 @@ import { createLocalStore } from '../refinement/local-store';
 import { migrateLocalStory } from '../refinement/migrate';
 import { linkStoryNote, NOTES_VERSION, repairStoryNotes, taskNoteKeys } from '../refinement/note-links';
 import { loadPlan } from '../refinement/plan';
-import { createProjectStore } from '../refinement/project-store';
+import { createAnalysisProjectStore, createProjectStore } from '../refinement/project-store';
 import { JM_DIR } from '../refinement/safe-fs';
 import { assertKey, isValidIssueKey, listStoriesFrom, readState, STORIES_DIR, updateState } from '../refinement/state';
 import type { StoryStore } from '../refinement/story-store';
@@ -33,6 +35,8 @@ interface KnowledgeFolders {
   // Almacén de la carpeta JM-ADR (índice) y fábrica del almacén de cada historia
   adrStore: StoryStore;
   storeFor: (key: string) => StoryStore;
+  // Almacén de cada análisis sin historia: <JM-ADR>/analisis/<id>
+  analysisStoreFor: (id: string) => StoryStore;
   close: () => void;
 }
 
@@ -44,6 +48,8 @@ const closers: Array<() => void> = [];
 export function closeStoryStores(): void {
   cache.clear();
   listingCache.clear();
+  analysisCache.clear();
+  analysisListingCache.clear();
   while (closers.length) closers.pop()?.();
 }
 
@@ -79,6 +85,7 @@ async function mcpFolders(
   return {
     adrStore: storeAt(adrDir),
     storeFor: (key) => storeAt(joinKnowledgePath(adrDir, key)),
+    analysisStoreFor: (id) => storeAt(joinKnowledgePath(adrDir, ANALYSIS_DIR, id)),
     close: () => client.close(),
   };
 }
@@ -105,7 +112,12 @@ async function localFolders(config: Extract<KnowledgeConfig, { type: 'local' }>)
   await fs.ensureDir(adrDir);
   await assertInsideRoot(config.root, adrDir);
   const storeAt = (dir: string) => createLocalStore({ kind: 'local', anchor: adrDir, dir });
-  return { adrStore: storeAt(adrDir), storeFor: (key) => storeAt(path.join(adrDir, key)), close: () => undefined };
+  return {
+    adrStore: storeAt(adrDir),
+    storeFor: (key) => storeAt(path.join(adrDir, key)),
+    analysisStoreFor: (id) => storeAt(path.join(adrDir, ANALYSIS_DIR, id)),
+    close: () => undefined,
+  };
 }
 
 export interface ResolverOptions {
@@ -284,4 +296,103 @@ export async function listAllStories(root: string, options: ResolverOptions = {}
   const listing = await listUncached(root, options);
   if (listing.complete) listingCache.set(root, { at: Date.now(), states: listing.states });
   return [...listing.states];
+}
+
+// --- Análisis sin historia (10B-1): mismo almacén que las historias, en la subcarpeta analisis/ ---
+
+const analysisCache = new Map<string, Promise<StoryStore>>();
+const analysisListingCache = new Map<string, { at: number; states: AnalysisState[] }>();
+
+// Cualquier cambio propio invalida el listado: el inicio debe verlo de inmediato
+export function invalidateAnalysisListing(root: string): void {
+  analysisListingCache.delete(root);
+}
+
+async function openAnalysisUncached(root: string, id: string, options: ResolverOptions): Promise<StoryStore> {
+  const config = await readKnowledgeConfig(root);
+  const folders = config ? await knowledgeFoldersOf(root, config, options.secretsDir) : null;
+  if (!folders) return createAnalysisProjectStore(root, id);
+  closers.push(folders.close);
+  return folders.analysisStoreFor(id);
+}
+
+export async function openAnalysis(root: string, id: string, options: ResolverOptions = {}): Promise<StoryStore> {
+  assertAnalysisId(id);
+  const config = await readKnowledgeConfig(root);
+  const cacheKey = `${root}
+${id}
+${configSignature(config)}`;
+  const cached = analysisCache.get(cacheKey);
+  if (cached) {
+    if (config && config.type !== 'none') await assertTrusted(root, config, options.secretsDir);
+    return cached;
+  }
+  const opening = openAnalysisUncached(root, id, options);
+  analysisCache.set(cacheKey, opening);
+  opening.catch(() => analysisCache.delete(cacheKey));
+  return opening;
+}
+
+async function localAnalysisIds(root: string): Promise<string[]> {
+  const names = await fs.promises.readdir(path.join(root, JM_DIR, ANALYSIS_DIR)).catch(() => [] as string[]);
+  return names.filter(isValidAnalysisId);
+}
+
+const knowledgeAnalysisIds = async (folders: KnowledgeFolders): Promise<string[]> =>
+  (await folders.adrStore.list(ANALYSIS_DIR)).filter((e) => !e.isFile && isValidAnalysisId(e.name)).map((e) => e.name);
+
+// Con base conectada se usa solo la base; sin ella (o sin PIN para una base MCP), .jm del proyecto
+interface AnalysisSources {
+  folders: KnowledgeFolders | null;
+  ids: string[];
+  // false si la base falló y solo se leyó .jm: ese listado no se guarda en la caché
+  complete: boolean;
+}
+
+async function analysisSources(root: string, options: ResolverOptions): Promise<AnalysisSources> {
+  const config = await readKnowledgeConfig(root);
+  const useKnowledge = config !== null && config.type !== 'none' && (config.type === 'local' || getSessionPin() !== null);
+  if (!useKnowledge) return { folders: null, ids: await localAnalysisIds(root), complete: true };
+  try {
+    const folders = await knowledgeFoldersOf(root, config, options.secretsDir);
+    if (!folders) return { folders: null, ids: await localAnalysisIds(root), complete: true };
+    try {
+      return { folders, ids: await knowledgeAnalysisIds(folders), complete: true };
+    } catch (err: unknown) {
+      folders.close();
+      throw err;
+    }
+  } catch (err: unknown) {
+    warn(`No pude listar los análisis de la base de conocimiento; muestro solo lo que hay en .jm. ${(err as Error).message}`);
+    return { folders: null, ids: await localAnalysisIds(root), complete: false };
+  }
+}
+
+// Ids de los análisis existentes (para numerar el siguiente)
+export async function listAnalysisIds(root: string, options: ResolverOptions = {}): Promise<string[]> {
+  const { folders, ids } = await analysisSources(root, options);
+  folders?.close();
+  return ids;
+}
+
+export async function listAllAnalyses(root: string, options: ResolverOptions = {}): Promise<AnalysisState[]> {
+  const cached = analysisListingCache.get(root);
+  if (cached && Date.now() - cached.at < LISTING_TTL_MS) return [...cached.states];
+  const { folders, ids, complete } = await analysisSources(root, options);
+  try {
+    const states: AnalysisState[] = [];
+    for (let start = 0; start < ids.length; start += LISTING_CONCURRENCY) {
+      const batch = ids.slice(start, start + LISTING_CONCURRENCY);
+      states.push(
+        ...(await listAnalysesFrom(
+          batch.map((id) => ({ id, store: folders ? folders.analysisStoreFor(id) : createAnalysisProjectStore(root, id) })),
+        )),
+      );
+    }
+    states.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    if (complete) analysisListingCache.set(root, { at: Date.now(), states });
+    return [...states];
+  } finally {
+    folders?.close();
+  }
 }

@@ -22,7 +22,9 @@ import {
   isValidProjectKey,
   toBrowseItem,
 } from '../refinement/browse';
-import { BrowseItem, ProjectItem } from '../refinement/types';
+import { BrowseItem, ProjectItem, StorySummary } from '../refinement/types';
+import { analysisSummary, filterAnalysesByProject } from '../refinement/analysis';
+import { createAnalysisBridge } from './analysis-bridge';
 import { createChatBridge } from './chat-bridge';
 import { createManagementBridge } from './management-bridge';
 import type { TaskFinishTarget } from '../refinement/tasks-types';
@@ -30,7 +32,7 @@ import { runTaskSession } from './execute';
 import { createPlanBridge } from './plan-bridge';
 import { createTasksBridge } from './tasks-bridge';
 import { runRefine } from './refine';
-import { closeStoryStores, listAllStories } from './story-resolver';
+import { closeStoryStores, listAllAnalyses, listAllStories } from './story-resolver';
 
 const BACK_NOTICE = 'Volviste de Claude Code.';
 
@@ -45,15 +47,30 @@ async function readProjectKey(): Promise<string | null> {
   }
 }
 
-// Las historias viven en la base conectada o, sin base, en la carpeta donde se abrió jm
-async function loadSummaries(projectKey: string | null) {
+async function loadStorySummaries(projectKey: string | null): Promise<StorySummary[]> {
   try {
     const stories = await listAllStories(projectRoot());
-    return filterByProject(stories.map(toSummary), projectKey).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return filterByProject(stories.map(toSummary), projectKey);
   } catch (err: unknown) {
     error(`No pude leer tus historias: ${(err as Error).message}`);
     return [];
   }
+}
+
+// Un fallo al leer los análisis no debe esconder las historias
+async function loadAnalysisSummaries(projectKey: string | null): Promise<StorySummary[]> {
+  try {
+    return filterAnalysesByProject(await listAllAnalyses(projectRoot()), projectKey).map(analysisSummary);
+  } catch (err: unknown) {
+    error(`No pude leer tus análisis: ${(err as Error).message}`);
+    return [];
+  }
+}
+
+// Las historias y los análisis sin historia viven en la base conectada o, sin base, en la carpeta donde se abrió jm
+async function loadSummaries(projectKey: string | null): Promise<StorySummary[]> {
+  const [stories, analyses] = await Promise.all([loadStorySummaries(projectKey), loadAnalysisSummaries(projectKey)]);
+  return [...stories, ...analyses].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 function sessionJira(): JiraService {
@@ -134,6 +151,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
   const plan = createPlanBridge(sessionJira);
   const tasks = createTasksBridge(sessionJira);
   const management = createManagementBridge(sessionJira);
+  const analysis = createAnalysisBridge(sessionJira, () => projectKey);
   let initialTaskFinish: TaskFinishTarget | null = null;
 
   try {
@@ -147,6 +165,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
         plan,
         tasks,
         management,
+        analysis,
         initialTaskFinish,
         initialChatKey,
         notice,
