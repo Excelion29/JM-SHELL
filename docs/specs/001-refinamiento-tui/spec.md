@@ -299,10 +299,55 @@ Ajustes 10B-2 tras la prueba de 10B-1 (2026-11-09):
   copia (*fork*, la original queda intacta) con la skill `analizar` encima. Si es muy larga, avisa del costo y ofrece
   importarla como fuente (`fuentes/sesion-<fecha>.md`, conversación limpia).
 
+Plan técnico 10B-2 (aprobado 2026-11-09), en dos commits:
+- **10B-2a:** chat del análisis (mismo chat que historias, Sonnet; Ctrl+O profundo) con skill `analizar`: lee fuentes
+  y código real, debate por bloques, guarda `puntos.json` y bitácora; escritura limitada a la carpeta del análisis.
+  Atajo de cierre (o "cerramos") → Claude escribe los 3 documentos y el análisis queda "documentado". Esc sale y
+  pregunta por la tarea de análisis; Ctrl+T (Claude completo) desactivado en análisis. **Notas de la base, para
+  historias y análisis:** atajo en el chat que abre el navegador de la base con selección de notas; quedan
+  referenciadas en el estado (no se copian) y se le pide a Claude que las lea del vault.
+- **10B-2b, para historias y análisis:** "Continuar una sesión de Claude Code": lista primero las sesiones de la
+  carpeta donde se abrió `jm`; si no está, el dev escribe la carpeta que abre en VS Code. Se continúa como copia
+  (fork) en la carpeta original de esa sesión; la original queda intacta. En una historia con chat propio, el chat
+  pasa a seguir desde la sesión elegida (bitácora y decisiones viven en la base). Sesión muy larga → aviso de costo y
+  opción de importarla como fuente limpia.
+
+**Borrar un análisis libre (agregado 2026-11-09):** en el inicio, `x` (o Supr) sobre un `[análisis]` lo borra tras
+escribir BORRAR: su carpeta completa (estado, fuentes, bitácora, puntos, documentos, chat) en la ubicación que tenga
+(proyecto, carpeta local o vault) y las copias en `adjuntos/analisis/<id>`. Las notas del vault referenciadas no se
+tocan. Un análisis con tarea de seguimiento en Jira no se borra (avisa con la clave). Las historias no se borran
+(viven en Jira): Supr sobre una historia avisa. Confirmación con la palabra `borrar`. Un análisis con `estado.json` ilegible o con
+archivos de nombre no permitido no se borra desde jm (avisa; se quita a mano). Las copias de trabajo se borran primero.
+
+**Corrección (prueba real 2026-11-09):** con base MCP el inicio se cargaba antes del PIN y guardaba en caché un listado
+de análisis vacío; tras desbloquear, los análisis de la bóveda no aparecían. Ese listado ya no se guarda.
+
+**Base de conocimiento: raíz de la bóveda y pregunta al conectar (2026-11-10):**
+- Se puede elegir la raíz como carpeta base (s sin entrar a ninguna carpeta, con confirmación). Con raíz, Claude lee
+  toda la bóveda pero solo escribe dentro de la carpeta JM-ADR; carpetas que empiezan por "." siguen fuera.
+- Pantalla de `b` sin base: solo "2 Conectar una base"; 1, 3 y 4 aparecen con una base conectada.
+- Al conectar un tablero con `p` o crear un análisis con `a`, si la carpeta no tiene base respondida, jm la pregunta
+  primero (MCP, carpeta o ninguna); "ninguna" no vuelve a preguntar.
+
 **C. Vincular después (manual)**
+0. (2026-11-09, pedido del dev) Antes de vincular, los puntos del análisis se trabajan como **tareas solo de jm, sin
+   Jira**: se inician y finalizan uno por uno y jm mide su tiempo. Al vincular, se registran en la historia de Jira.
+   Plan aprobado: `t` sobre el análisis lista los puntos en alcance (estado, estimado, real); `i` inicia (reloj + Claude
+   con el punto: análisis y propuesta, sin commits), `f` finaliza, `b` devuelve; estado y tiempo en estado.json del
+   análisis (puntos.json sigue siendo de Claude); calibración con línea "Puntos de análisis"; un análisis con puntos
+   iniciados no se borra. El match (10C) va después.
+   Barrera blanda (igual que tareas de historia): deny de Write/Edit sobre estado.json y fuentes/; Bash queda permitido,
+   así que Claude podría escribirlos por consola. Commits y push bloqueados con TASK_DENIED_COMMANDS.
 1. "Vincular" en el análisis: el dev asigna cada punto a una historia de Jira (todos a una, uno a uno o por grupos).
 2. Cada historia vinculada arranca con su parte del análisis y su estimación como contexto de `/refinar`.
 3. Vincular no registra tiempo: ya quedó en la tarea de análisis.
+Plan técnico 10C (aprobado 2026-11-10): `v` sobre el análisis → épica del análisis opcional (lista o `k`; muestra
+"an-N → CLAVE" y da el análisis como contexto al refinar historias de esa épica) → destino por punto (marcar con
+espacio + `e`: la épica, una historia de la épica o otra clave con `k`; grupos a historias distintas) → `c` con
+resumen y confirmación crea tarea (destino épica) o subtarea (destino historia) con estimación PERT, fecha,
+asignado y análisis+propuesta en la descripción. Estado del punto en jm pasa a Jira (en curso / finalizada); el
+tiempo medido queda en jm. Luego `t` muestra la clave y `i`/`f` mueven también la tarea en Jira. Repetir `v` solo
+crea lo que falta; un punto ya creado no cambia de destino desde jm; un análisis vinculado no se borra.
 
 ### Parte 4 — Ejecución tarea por tarea (idea registrada 2026-11-05, por diseñar)
 
@@ -446,6 +491,11 @@ Unitarios: cálculo PERT, validación de `plan.json`, transiciones de fase, idem
 | Prueba real 10B-1 (tras review 2 revisores aplicada) | Marcello Cano | 2026-11-09 | exitosa ("todo genial"); pide notas del vault y continuar sesión |
 | Commit 10B-1 | Marcello Cano | 2026-11-09 | aprobado ("si lo apruebo") |
 | Accept ajustes 10B-2 (notas del vault referenciadas, continuar sesión de Claude Code con fork) | Marcello Cano | 2026-11-09 | aprobado ("si referenciadas"; sesión de VS Code continuada) |
+| Accept plan técnico 10B-2 (2a chat+documentos+notas; 2b sesiones; ambos también en historias) | Marcello Cano | 2026-11-09 | aprobado ("si va asi"); sesiones: primero la carpeta de jm, luego carpeta escrita |
+| Accept borrar análisis libre (BORRAR; con tarea en Jira no se borra) | Marcello Cano | 2026-11-09 | aprobado ("a") |
+| Accept tareas de análisis sin Jira (puntos con i/f/b, Claude al iniciar) | Marcello Cano | 2026-11-09 | aprobado ("a") |
+| Accept raíz de la bóveda como base (escritura solo en JM-ADR), pantalla b sin base, pregunta de base en p y a | Marcello Cano | 2026-11-10 | aprobado ("si") |
+| Accept plan 10C (épica del análisis + destino por punto, tarea/subtarea, estado a Jira) | Marcello Cano | 2026-11-10 | aprobado ("si"); ejemplo épica PM-2117 |
 | Accept parte 5 (reconfigurar base, opción A ahora, B después) | Marcello Cano | 2026-11-06 | aprobado ("por ahorita vamos con la …, la B en otra actualización") |
 | Accept "Mi día" en parte 4 | Marcello Cano | 2026-11-05 | aprobado: vista de tareas propias que vencen hoy o vencidas, de cualquier historia |
 | Accept parte 4 (ejecución, opción B + registro en JM-ADR) | Marcello Cano | 2026-11-05 | aprobado ("todo del plan me agrada, continúa") |

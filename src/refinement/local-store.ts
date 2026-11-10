@@ -8,10 +8,17 @@ const OPEN_FLAGS = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
 const NOT_FOUND = 'ENOENT';
 const BYTES_PER_MB = 1024 * 1024;
 const MAX_TEXT_BYTES = 50 * BYTES_PER_MB;
-const APPEND_FLAGS = fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW ?? 0);
+const APPEND_FLAGS =
+  fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW ?? 0);
 
 // Abre sin seguir enlaces y valida el descriptor: entre comprobar y leer nadie puede cambiar el archivo
-function withRegularFile<T>(file: string, name: string, flags: number, maxBytes: number, use: (fd: number, size: number) => T): T {
+function withRegularFile<T>(
+  file: string,
+  name: string,
+  flags: number,
+  maxBytes: number,
+  use: (fd: number, size: number) => T,
+): T {
   const fd = fs.openSync(file, flags);
   try {
     const stat = fs.fstatSync(fd);
@@ -77,14 +84,12 @@ export function createLocalStore({ kind, anchor, dir, prepare }: LocalStoreOptio
     async list(listDir) {
       const folder = target(listDir, true);
       if (!lexists(folder)) return [];
-      return fs
-        .readdirSync(folder, { withFileTypes: true })
-        .map((entry): StoreEntry => {
-          const isFile = entry.isFile();
-          return isFile
-            ? { name: entry.name, isFile, size: fs.lstatSync(path.join(folder, entry.name)).size }
-            : { name: entry.name, isFile };
-        });
+      return fs.readdirSync(folder, { withFileTypes: true }).map((entry): StoreEntry => {
+        const isFile = entry.isFile();
+        return isFile
+          ? { name: entry.name, isFile, size: fs.lstatSync(path.join(folder, entry.name)).size }
+          : { name: entry.name, isFile };
+      });
     },
     async exists(name) {
       return lexists(target(name));
@@ -93,6 +98,14 @@ export function createLocalStore({ kind, anchor, dir, prepare }: LocalStoreOptio
       const file = target(name);
       try {
         fs.rmSync(file);
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code !== NOT_FOUND) throw err;
+      }
+    },
+    async removeFolder(folderName) {
+      const folder = target(folderName, true);
+      try {
+        fs.rmdirSync(folder);
       } catch (err: unknown) {
         if ((err as NodeJS.ErrnoException).code !== NOT_FOUND) throw err;
       }

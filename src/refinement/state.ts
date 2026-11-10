@@ -7,6 +7,7 @@ import { assertNoLinks, JM_DIR, lexists, safeEnsureDir, safeWriteFile } from './
 import type { StoryStore } from './story-store';
 import { stripControlChars } from './text';
 import { SESSION_ID_PATTERN } from './claude';
+import { readReferencedNotes } from './referenced-notes';
 import {
   ATTACHMENT_PURPOSES,
   AttachmentPurpose,
@@ -148,13 +149,17 @@ const readCount = (value: unknown): number =>
 const readTimestamp = (value: unknown): string | null =>
   typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null;
 
-export function readTaskRuns(value: unknown): Record<string, TaskRun> {
+// isValidKey: las tareas de Jira usan la clave de Jira; los puntos de un análisis, su id (P1)
+export function readTaskRuns(
+  value: unknown,
+  isValidKey: (key: string) => boolean = isValidIssueKey,
+): Record<string, TaskRun> {
   if (!isRecord(value)) return {};
   const runs: Record<string, TaskRun> = {};
   for (const [issueKey, raw] of Object.entries(value)) {
     const startedAt = isRecord(raw) ? readTimestamp(raw.startedAt) : null;
     const direct = isRecord(raw) && raw.finishedDirect === true;
-    if (!isRecord(raw) || !isValidIssueKey(issueKey) || (startedAt === null && !direct)) continue;
+    if (!isRecord(raw) || !isValidKey(issueKey) || (startedAt === null && !direct)) continue;
     runs[issueKey] = {
       issueKey,
       claudeSessionId: readSessionId(raw.claudeSessionId),
@@ -164,6 +169,7 @@ export function readTaskRuns(value: unknown): Record<string, TaskRun> {
       status: raw.status === 'done' ? 'done' : 'started',
       ...(raw.pendingDone === true ? { pendingDone: true } : {}),
       ...(direct ? { finishedDirect: true } : {}),
+      ...(raw.returned === true ? { returned: true } : {}),
       ...(readCount(raw.priorElapsedMs) > 0 ? { priorElapsedMs: readCount(raw.priorElapsedMs) } : {}),
     };
   }
@@ -187,7 +193,7 @@ export const emptyUsage = (): StoryUsage => ({
   turns: 0,
 });
 
-function readUsage(value: unknown): StoryUsage {
+export function readUsage(value: unknown): StoryUsage {
   if (!isRecord(value)) return emptyUsage();
   return {
     inputTokens: readCount(value.inputTokens),
@@ -202,6 +208,7 @@ function readUsage(value: unknown): StoryUsage {
 function normalize(raw: unknown, key: string, file: string, progressed: boolean): StoryState {
   if (!isRecord(raw)) throw new Error('el contenido no es un objeto JSON');
   const block = readBlock(raw, file);
+  const referencedNotes = readReferencedNotes(raw.referencedNotes);
   return {
     key,
     summary: typeof raw.summary === 'string' ? stripControlChars(raw.summary) : '',
@@ -215,6 +222,7 @@ function normalize(raw: unknown, key: string, file: string, progressed: boolean)
     usage: readUsage(raw.usage),
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date(0).toISOString(),
     ...(typeof raw.notesVersion === 'number' && raw.notesVersion > 0 ? { notesVersion: raw.notesVersion } : {}),
+    ...(referencedNotes.length > 0 ? { referencedNotes } : {}),
     ...(Array.isArray(raw.planningTasks) ? { planningTasks: readPlanningTasks(raw.planningTasks) } : {}),
   };
 }

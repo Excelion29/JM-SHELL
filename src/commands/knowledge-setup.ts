@@ -145,7 +145,6 @@ async function toConfig(
   verifyMcp: McpVerifier,
 ): Promise<KnowledgeConfig> {
   assertValidFolder(baseFolder);
-  if (baseFolder === '') throw new Error('Elige una carpeta dentro de la bóveda como base, no la raíz.');
   if (connection.type === 'local') {
     assertSafeRoot(connection.root);
     return { type: 'local', root: connection.root, baseFolder };
@@ -163,7 +162,6 @@ async function toConfig(
 // Misma conexión de la carpeta con otra carpeta base: no se toca la key ni el certificado
 async function keepConnection(root: string, baseFolder: string): Promise<KnowledgeConfig> {
   assertValidFolder(baseFolder);
-  if (baseFolder === '') throw new Error('Elige una carpeta dentro de la bóveda como base, no la raíz.');
   const config = await configToConfirm(root);
   return { ...config, baseFolder };
 }

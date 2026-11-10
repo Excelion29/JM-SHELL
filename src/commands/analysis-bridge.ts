@@ -7,11 +7,24 @@ import {
   readAnalysis,
 } from '../refinement/analysis';
 import type { AnalysisBridge, AnalysisState, SourceResult } from '../refinement/analysis-types';
+import {
+  createLinkedPoints,
+  finishLinkedNotice,
+  linkedIssueOf,
+  resolveLinkTarget,
+  returnLinked,
+  setAnalysisEpic,
+  startLinked,
+} from '../refinement/analysis-link';
+import { removeAnalysis } from '../refinement/analysis-remove';
+import { finishPoint, giveBackPoint, loadPointsModel, startPoint } from '../refinement/analysis-point-runs';
 import { addSources } from '../refinement/analysis-sources';
 import { createAnalysisTracking, finishAnalysisTask } from '../refinement/analysis-tracking';
+import { returnOptions } from '../refinement/execution';
 import type { TransitionOptions, TransitionOutcome } from '../refinement/tasks-types';
 import { createFileTransitionMemory, type TransitionMemory } from '../refinement/transition-memory';
 import { projectRoot } from '../refinement/state';
+import { workDirFor } from '../refinement/workdir';
 import { projectAssigneeId } from './assignee';
 import { loadPlanningSuggestion } from './calibration-loader';
 import { readManagementKey } from './management-store';
@@ -49,7 +62,81 @@ export async function finishAnalysisTracking(
 // getProjectKey: el proyecto de la app al momento de crear el análisis (queda guardado en él)
 export function createAnalysisBridge(getJira: () => JiraService, getProjectKey: () => string | null): AnalysisBridge {
   const transitionMemory = createFileTransitionMemory();
+  const storeOf = (id: string) => openAnalysis(projectRoot(), id);
+  // Un punto vinculado también mueve su tarea en Jira: si falla, el punto ya cambió en jm y solo se avisa
+  const withLinked = async (
+    id: string,
+    pointId: string,
+    move: (issueKey: string) => Promise<string | null>,
+  ): Promise<string | null> => {
+    try {
+      const issueKey = await linkedIssueOf(await storeOf(id), id, pointId);
+      return issueKey ? await move(issueKey) : null;
+    } catch (err: unknown) {
+      return messageOf(err);
+    }
+  };
+  const jiraDeps = () => ({ jira: getJira(), transitionMemory });
+  // Los puntos cambian el estado.json del análisis: el inicio debe releerlo
+  const afterChange = async <T>(change: Promise<T>): Promise<T> => {
+    try {
+      return await change;
+    } finally {
+      invalidateAnalysisListing(projectRoot());
+    }
+  };
   return {
+    points: {
+      load: async (id) => loadPointsModel(await storeOf(id), id),
+      start: async (id, pointId, options) => {
+        const outcome = await afterChange(startPoint(await storeOf(id), id, pointId, options));
+        if (outcome.kind !== 'ok') return outcome;
+        const notice = await withLinked(id, pointId, (key) => startLinked(jiraDeps(), key));
+        return notice ? { kind: 'ok', notice } : outcome;
+      },
+      finish: async (id, pointId) => {
+        await afterChange(finishPoint(await storeOf(id), id, pointId));
+        return withLinked(id, pointId, (key) => finishLinkedNotice(jiraDeps(), key));
+      },
+      returnOptions: async (id, pointId) => {
+        try {
+          const issueKey = await linkedIssueOf(await storeOf(id), id, pointId);
+          return issueKey ? await returnOptions(getJira(), issueKey) : [];
+        } catch {
+          return []; // sin las transiciones el punto se devuelve solo en jm y la pantalla avisa
+        }
+      },
+      giveBack: async (id, pointId, transitionName) => {
+        await afterChange(giveBackPoint(await storeOf(id), id, pointId));
+        if (!transitionName) return null;
+        return withLinked(id, pointId, (key) => returnLinked(getJira(), key, transitionName));
+      },
+    },
+    link: {
+      load: async (id) => {
+        const state = await stateOf(id);
+        return { epicKey: state.link?.epicKey ?? null, points: await loadPointsModel(await storeOf(id), id) };
+      },
+      resolveTarget: async (id, key, mustBeEpic) =>
+        resolveLinkTarget(getJira(), (await stateOf(id)).projectKey, key, mustBeEpic),
+      setEpic: async (id, epicKey) => afterChange(setAnalysisEpic(await storeOf(id), id, epicKey)),
+      create: async (id, targets) => {
+        const jira = getJira();
+        const state = await stateOf(id);
+        return afterChange(
+          createLinkedPoints(
+            {
+              jira,
+              store: await storeOf(id),
+              assigneeId: await projectAssigneeId(jira, state.projectKey),
+              transitionMemory,
+            },
+            id,
+            targets,
+          ),
+        );
+      },
+    },
     create: async (input) => {
       try {
         const projectKey = getProjectKey();
@@ -78,6 +165,7 @@ export function createAnalysisBridge(getJira: () => JiraService, getProjectKey: 
         id,
         name: state.name,
         sources: state.sources,
+        documented: state.phase === 'documented',
         tracking: state.trackingTasks.map((task) => ({
           issueKey: task.issueKey,
           status: state.taskRuns[task.issueKey]?.status ?? 'started',
@@ -91,6 +179,17 @@ export function createAnalysisBridge(getJira: () => JiraService, getProjectKey: 
         return { ok: true, results };
       } catch (err: unknown) {
         return { ok: false, message: messageOf(err) };
+      }
+    },
+    remove: async (id) => {
+      const root = projectRoot();
+      try {
+        return await removeAnalysis(await openAnalysis(root, id), workDirFor(root), id);
+      } catch (err: unknown) {
+        return { ok: false, message: messageOf(err) };
+      } finally {
+        // También tras un fallo a medias: el inicio debe ver lo que quedó
+        invalidateAnalysisListing(root);
       }
     },
     trackingStatus: async (id) => {

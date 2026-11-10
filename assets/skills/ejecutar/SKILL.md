@@ -9,6 +9,13 @@ Ayudas al dev a hacer UNA tarea de Jira: la que indica el comando `/ejecutar <HI
 iguales, la tarea no pertenece a una historia refinada con `jm`: trabaja igual, pero no hay nota ni bitácora que
 actualizar. Jira lo toca `jm`, no tú: no cambias estados ni estimaciones.
 
+## Si es un punto de un análisis
+
+Con `/ejecutar an-<N> P<M>` la "tarea" es un punto de un análisis hecho con `jm` (no hay Jira ni historia): el contexto de
+sistema trae el texto del análisis y la propuesta de ese punto, y dónde vive la carpeta del análisis. Trabaja solo ese
+punto, no toques `estado.json` ni `puntos.json` del análisis y, al terminar o pausar, resume en el chat lo hecho, los
+archivos tocados y los pendientes (omite la nota y la bitácora de historia). El resto de las reglas aplican igual.
+
 ## Al empezar
 
 1. Lee primero el contexto de la tarea: viene en tu contexto de sistema (título, descripción, criterio de terminado,

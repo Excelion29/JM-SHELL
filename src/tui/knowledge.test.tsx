@@ -3,8 +3,15 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { App } from './app.js';
-import { createFakeChat, createFakePlan, FakeKnowledge, waitFor } from './test-support.js';
-import { CHAT_TEXTS, HOME_TEXTS, KNOWLEDGE_TEXTS } from './texts.js';
+import {
+  createFakeAnalysis,
+  createFakeChat,
+  createFakeManagement,
+  createFakePlan,
+  FakeKnowledge,
+  waitFor,
+} from './test-support.js';
+import { ANALYSIS_TEXTS, CHAT_TEXTS, HOME_TEXTS, KNOWLEDGE_TEXTS, MANAGEMENT_TEXTS, PROJECT_TEXTS } from './texts.js';
 
 const ENTER = '\r';
 const DOWN = '[B';
@@ -12,6 +19,8 @@ const UP = '[A';
 const BACKSPACE = '';
 const ESC = '';
 const TICK_MS = 30;
+// El aviso se parte en líneas dentro del marco: se espera solo su comienzo
+const ROOT_CONFIRM_START = 'Usarás toda la bóveda';
 const FAKE_KEY = 'fake-key-for-tests';
 const FAKE_FINGERPRINT = 'AA:BB:CC';
 
@@ -148,6 +157,25 @@ test('carpeta local: navega el explorador (entrar, subir, vista previa) y elige 
   ]);
 });
 
+test('la raíz de la bóveda como base pide confirmación y se guarda con baseFolder vacío', async () => {
+  const { fake, type, waitText } = openApp({ status: 'unset', listings: LISTINGS });
+  await waitText(KNOWLEDGE_TEXTS.question);
+  await type(DOWN);
+  await type(ENTER);
+  await waitText(KNOWLEDGE_TEXTS.rootLabel);
+  await type('C:\\notas');
+  await type(ENTER);
+  await waitText(KNOWLEDGE_TEXTS.browseTitle(''));
+  await waitText('PROYECTOS/');
+  await type('s');
+  await waitText(ROOT_CONFIRM_START);
+  await type('s');
+  await waitFor(() => fake.calls.opened.length > 0);
+  assert.deepEqual(fake.calls.saved, [
+    { type: 'connect', baseFolder: '', connection: { type: 'local', root: 'C:\\notas' } },
+  ]);
+});
+
 test('MCP con certificado propio: muestra la huella, pide confianza y guarda el certificado', async () => {
   const inspection = { tls: 'untrusted', pem: 'PEM-DE-PRUEBA', fingerprint: FAKE_FINGERPRINT } as const;
   const { fake, type, waitText, frame } = openApp({ status: 'unset', inspection, listings: LISTINGS });
@@ -165,8 +193,9 @@ test('MCP con certificado propio: muestra la huella, pide confianza y guarda el 
   await waitText(KNOWLEDGE_TEXTS.browseTitle(''));
   await waitText('PROYECTOS/');
   await type('s');
-  await waitText(KNOWLEDGE_TEXTS.rootNotAllowed);
+  await waitText(ROOT_CONFIRM_START);
   assert.equal(fake.calls.saved.length, 0);
+  await type('n');
   await type(ENTER);
   await waitText(KNOWLEDGE_TEXTS.browseTitle('PROYECTOS'));
   await type('s');
@@ -274,4 +303,91 @@ test('pasar por "routing" no apaga el modo raw: las flechas y el chat siguen res
   await press('hola');
   assert.ok(frame().includes('hola'));
   assert.ok(!rawCalls.includes(false), 'setRawMode(false) no debe llamarse durante la transición');
+});
+
+function openHome(knowledge: FakeKnowledge, projectKey: string | null) {
+  const fake = createFakeChat({}, [], knowledge);
+  const management = createFakeManagement();
+  const view = render(
+    <App
+      projectKey={projectKey}
+      stories={[]}
+      unlocked
+      {...baseProps}
+      fetchProjects={async () => [{ key: 'AQ', name: 'Aquí' }]}
+      chat={fake.chat}
+      management={management.management}
+      analysis={createFakeAnalysis().analysis}
+    />,
+  );
+  const type = async (text: string) => {
+    await settle();
+    view.stdin.write(text);
+    await tick();
+  };
+  const waitText = async (text: string) => {
+    await waitFor(() => (view.lastFrame() ?? '').includes(text), `"${text}"`);
+    await settle();
+  };
+  return { fake, type, waitText, frame: () => view.lastFrame() ?? '' };
+}
+
+test('p en una carpeta sin base la pregunta y después sigue con la gestión', async () => {
+  const { type, waitText } = openHome({ status: 'unset' }, null);
+  await waitText(HOME_TEXTS.title);
+  await type('p');
+  await waitText(PROJECT_TEXTS.title);
+  await type(ENTER);
+  await waitText(KNOWLEDGE_TEXTS.question);
+  await type('3');
+  await waitText(MANAGEMENT_TEXTS.question);
+});
+
+test('p: cancelar la pregunta de la base sigue con la gestión sin configurar nada', async () => {
+  const { fake, type, waitText } = openHome({ status: 'unset' }, null);
+  await waitText(HOME_TEXTS.title);
+  await type('p');
+  await waitText(PROJECT_TEXTS.title);
+  await type(ENTER);
+  await waitText(KNOWLEDGE_TEXTS.question);
+  await type(ESC);
+  await waitText(MANAGEMENT_TEXTS.question);
+  assert.equal(fake.calls.saved.length, 0);
+});
+
+test('p en una carpeta con la base ya configurada sigue directo con la gestión', async () => {
+  const { type, waitText, frame } = openHome({ status: 'set' }, null);
+  await waitText(HOME_TEXTS.title);
+  await type('p');
+  await waitText(PROJECT_TEXTS.title);
+  await type(ENTER);
+  await waitText(MANAGEMENT_TEXTS.question);
+  assert.ok(!frame().includes(KNOWLEDGE_TEXTS.question));
+});
+
+test('a en una carpeta sin base la pregunta y después abre el formulario del análisis', async () => {
+  const { type, waitText } = openHome({ status: 'unset' }, 'AQ');
+  await waitText(HOME_TEXTS.title);
+  await type('a');
+  await waitText(KNOWLEDGE_TEXTS.question);
+  await type('3');
+  await waitText(ANALYSIS_TEXTS.newTitle);
+});
+
+test('a: una base por confirmar muestra la confirmación y al cancelar abre el formulario', async () => {
+  const summary = { type: 'local', target: 'C:\\notas', baseFolder: 'PROY' } as const;
+  const { type, waitText } = openHome({ status: 'untrusted', summary }, 'AQ');
+  await waitText(HOME_TEXTS.title);
+  await type('a');
+  await waitText(KNOWLEDGE_TEXTS.confirmTitle);
+  await type(ESC);
+  await waitText(ANALYSIS_TEXTS.newTitle);
+});
+
+test('a en una carpeta con la base configurada abre el formulario sin preguntar', async () => {
+  const { type, waitText, frame } = openHome({ status: 'set' }, 'AQ');
+  await waitText(HOME_TEXTS.title);
+  await type('a');
+  await waitText(ANALYSIS_TEXTS.newTitle);
+  assert.ok(!frame().includes(KNOWLEDGE_TEXTS.question));
 });

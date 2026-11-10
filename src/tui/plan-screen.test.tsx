@@ -59,6 +59,8 @@ async function openReview(planOptions: FakePlanOptions = {}) {
   const app = setup(planOptions);
   await app.press('r');
   await app.has(PLAN_TEXTS.title('AQ-45', 'Login social'));
+  // El título se pinta antes de que la revisión tome el teclado: un tick evita perder la primera tecla
+  await tick();
   return app;
 }
 
@@ -404,6 +406,9 @@ test('las tareas se alinean en columnas y la elegida lleva el marcador', async (
 test('con muchas tareas la lista se desplaza y el pie con el total sigue visible', async () => {
   const tasks = Array.from({ length: 40 }, (_, index) => fakeTask(`T${index + 1}`));
   const app = await openReview({ tasks });
+  // La primera flecha se perdía si llegaba antes de que la lista tomara el teclado: se espera la fila marcada
+  await app.has('> [x] T1 ');
+  await tick();
   for (let i = 0; i < 35; i++) await app.press(DOWN);
   // Bajo carga las 35 flechas pueden tardar más que el tick fijo: se espera a que se vea la fila
   await waitFor(() => app.frame().includes('T36'), '"T36"');
@@ -438,6 +443,7 @@ test('con historial se ve el factor; u usa el ajustado como estimación y e lo m
   assert.ok(app.frame().includes(PLAN_TEXTS.adjusted('1h25m')));
   await app.press(ESC);
   await app.has(PLAN_TEXTS.title('AQ-45', 'Login social'));
+  await tick();
   await app.press('u');
   await waitFor(() => app.calls.updates.length === 1);
   assert.equal(app.calls.updates[0].patch.finalEstimate, '1h25m');

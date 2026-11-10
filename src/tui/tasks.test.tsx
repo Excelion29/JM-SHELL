@@ -369,6 +369,7 @@ test('c abre la calibración: ratios por medida y por riesgo, desviadas y exclui
   const app = setup({
     calibration: {
       planning: { count: 0, estimateSeconds: 0, elapsedSeconds: 0 },
+      analysisPoints: { count: 2, estimateSeconds: 7200, elapsedSeconds: 5400 },
       total: group,
       byRisk: [{ risk: 'low', ...group }],
       outliers: [
@@ -393,6 +394,7 @@ test('c abre la calibración: ratios por medida y por riesgo, desviadas y exclui
   assert.ok(frame.includes(CALIBRATION_TEXTS.riskLine('bajo', 2, '0,75', '2,00')));
   assert.ok(frame.includes(CALIBRATION_TEXTS.outlierLine('AQ-101', 'Login', '1h', '30m', '2h')));
   assert.ok(frame.includes(CALIBRATION_TEXTS.excludedDirect(1)));
+  assert.ok(frame.includes(CALIBRATION_TEXTS.analysisPoints(2, '2h', '1h30m')), frame);
   await app.press(ESC);
   await app.has(HOME_TEXTS.title);
 });

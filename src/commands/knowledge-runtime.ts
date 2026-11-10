@@ -6,10 +6,20 @@ import { PROJECT_CONFIG_NAME } from '../config/loader';
 import { getSessionPin } from '../utils/session';
 import type { ChatKnowledge } from '../refinement/chat-types';
 import { writeKnowledgeContext, writeMcpConfig } from '../refinement/chat-store';
-import { isSafeAddDirPath, resetTrustedAddDirs, trustAddDir, workFilesOf } from '../refinement/claude';
+import {
+  ANALYSIS_DIR_NAME,
+  ANALYSIS_SOURCES_NAME,
+  ANALYSIS_STATE_NAME,
+  isAnalysisKey,
+  isSafeAddDirPath,
+  resetTrustedAddDirs,
+  trustAddDir,
+  workFilesOf,
+} from '../refinement/claude';
 import { startKbProxy } from '../refinement/kb-proxy';
 import {
   adrNotePath,
+  analysisContextLine,
   chooseStartMessage,
   joinKnowledgePath,
   KnowledgeConfig,
@@ -22,7 +32,7 @@ import {
 import { verifyMcpEndpoint } from '../refinement/knowledge-rest';
 import { createLocalSource, createRestSource, KnowledgeSource } from '../refinement/knowledge-source';
 import { assertLocalRootAllowed } from '../refinement/local-root';
-import { safeEnsureDirIn } from '../refinement/safe-fs';
+import { JM_DIR, safeEnsureDirIn } from '../refinement/safe-fs';
 import { workDirFor } from '../refinement/workdir';
 
 // Reglas de permisos de Claude: estos caracteres rompen la sintaxis de Write(<ruta>/**)
@@ -33,6 +43,8 @@ export interface KnowledgeRuntime {
   kb: ChatKnowledge | null;
   proxyUrl: string | null;
   context: string | null;
+  // Carpeta del análisis `id` según dónde vive la base (para darlo como contexto de solo lectura)
+  analysisFolderOf: (id: string) => string;
   startMessage: StartMessage;
   close: () => Promise<void>;
 }
@@ -51,6 +63,7 @@ const NO_KNOWLEDGE: Omit<KnowledgeRuntime, 'startMessage'> = {
   kb: null,
   proxyUrl: null,
   context: null,
+  analysisFolderOf: (id) => `${JM_DIR}/${ANALYSIS_DIR_NAME}/${id}`,
   close: async () => undefined,
 };
 
@@ -112,15 +125,18 @@ async function openMcp(
 ): Promise<KnowledgeRuntime> {
   const { host, origin, apiKey, ca } = await resolveMcpAccess(config, input.secretsDir);
   const source = createRestSource({ origin, apiKey, ca });
-  let notePath: string;
+  const analysis = isAnalysisKey(input.key);
+  let notePath = '';
   let adrFolder: string;
-  let noteExists: boolean;
+  let noteExists = false;
   try {
     const folders = folderNames(await listEntries(source, config.baseFolder, host));
     adrFolder = resolveAdrFolder(folders);
-    notePath = adrNotePath(config.baseFolder, adrFolder, input.key);
+    // Un análisis no tiene nota en la raíz de JM-ADR
+    if (!analysis) notePath = adrNotePath(config.baseFolder, adrFolder, input.key);
     // Se mira el listado de la carpeta JM-ADR en vez de descargar la nota
     noteExists =
+      !analysis &&
       folders.includes(adrFolder) &&
       (await listEntries(source, joinKnowledgePath(config.baseFolder, adrFolder), host)).some(
         (entry) => entry.name === `${input.key}.md`,
@@ -140,21 +156,46 @@ async function openMcp(
     apiKey,
     ca,
     baseFolder: config.baseFolder,
+    ...writeScopeFor(config.baseFolder, adrFolder, input),
   }).catch((err: unknown) => {
     throw new Error(`No pude abrir el intermediario local de la base de conocimiento: ${(err as Error).message}`);
   });
   return {
     kb: { type: 'mcp' },
     proxyUrl: proxy.url,
-    context: knowledgeContextLine(
-      config,
-      notePath,
-      joinKnowledgePath(config.baseFolder, adrFolder, input.key),
-      workFilesOf(workDirFor(input.root), input.key).attachments,
-    ),
+    context: analysis
+      ? analysisContextLine(
+          config,
+          analysisFolder(config.baseFolder, adrFolder, input.key),
+          workFilesOf(workDirFor(input.root), input.key).attachments,
+        )
+      : knowledgeContextLine(
+          config,
+          notePath,
+          joinKnowledgePath(config.baseFolder, adrFolder, input.key),
+          workFilesOf(workDirFor(input.root), input.key).attachments,
+        ),
+    analysisFolderOf: (id) => analysisFolder(config.baseFolder, adrFolder, id),
     startMessage,
     close: proxy.close,
   };
+}
+
+const analysisFolder = (baseFolder: string, adrFolder: string, id: string): string =>
+  joinKnowledgePath(baseFolder, adrFolder, ANALYSIS_DIR_NAME, id);
+
+// Claude escribe en la carpeta del análisis, salvo el estado de jm y las fuentes
+const analysisWriteScope = (folder: string) => ({
+  writeFolder: folder,
+  writeDenied: [`${folder}/${ANALYSIS_STATE_NAME}`, `${folder}/${ANALYSIS_SOURCES_NAME}`],
+});
+
+// Con la raíz de la bóveda como base las escrituras se acotan a JM-ADR; con una carpeta base basta la propia base
+function writeScopeFor(baseFolder: string, adrFolder: string, input: OpenKnowledgeInput) {
+  if (isAnalysisKey(input.key)) return analysisWriteScope(analysisFolder(baseFolder, adrFolder, input.key));
+  // Una historia no toca los análisis (su estado y fuentes son de jm)
+  const writeDenied = [joinKnowledgePath(baseFolder, adrFolder, ANALYSIS_DIR_NAME)];
+  return baseFolder === '' ? { writeFolder: adrFolder, writeDenied } : { writeDenied };
 }
 
 function startMessageFor(input: OpenKnowledgeInput, noteExists: boolean): StartMessage {
@@ -186,12 +227,15 @@ async function openLocal(
       `La ruta "${ruleDir}" tiene caracteres que no puedo usar en un permiso de Claude: ( ) * ? [ ] { }.`,
     );
   await fs.ensureDir(adrDir);
-  const notePath = adrNotePath(ruleDir, '', input.key);
-  const noteExists = await fs.pathExists(path.join(adrDir, `${input.key}.md`));
+  const analysis = isAnalysisKey(input.key);
+  const noteExists = !analysis && (await fs.pathExists(path.join(adrDir, `${input.key}.md`)));
   return {
     kb: { type: 'local', root: config.root, adrDir: ruleDir },
     proxyUrl: null,
-    context: knowledgeContextLine(config, notePath, `${ruleDir}/${input.key}`),
+    context: analysis
+      ? analysisContextLine(config, analysisFolder(ruleDir, '', input.key))
+      : knowledgeContextLine(config, adrNotePath(ruleDir, '', input.key), `${ruleDir}/${input.key}`),
+    analysisFolderOf: (id) => analysisFolder(ruleDir, '', id),
     startMessage: startMessageFor(input, noteExists),
     close: async () => undefined,
   };
@@ -203,7 +247,9 @@ export async function openKnowledge(input: OpenKnowledgeInput): Promise<Knowledg
   const config = await readKnowledgeConfig(input.root);
   if (!config || config.type === 'none') return { ...NO_KNOWLEDGE, startMessage: startMessageFor(input, false) };
   if (!(await isKnowledgeTrusted(input.root, config, input.secretsDir)))
-    throw new Error('La base de conocimiento de este .jira.json aún no está confirmada. Vuelve a entrar a la historia.');
+    throw new Error(
+      'La base de conocimiento de este .jira.json aún no está confirmada. Vuelve a entrar a la historia.',
+    );
   return config.type === 'mcp' ? openMcp(config, input) : openLocal(config, input);
 }
 

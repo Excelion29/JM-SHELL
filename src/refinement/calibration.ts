@@ -120,6 +120,7 @@ export function calibrate(
   stories: StoryMeasures[],
   unreadable = 0,
   planning: PlanningGroup = EMPTY_PLANNING,
+  analysisPoints: PlanningGroup = EMPTY_PLANNING,
 ): CalibrationModel {
   const measures = stories.flatMap((story) => story.measures);
   return {
@@ -134,6 +135,7 @@ export function calibrate(
     excludedDirect: stories.reduce((total, story) => total + story.excludedDirect, 0),
     unreadable,
     planning,
+    analysisPoints,
   };
 }
 

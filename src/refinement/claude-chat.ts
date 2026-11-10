@@ -2,11 +2,14 @@ import { randomUUID } from 'crypto';
 import * as path from 'path';
 import type { ChatKnowledge, ChatModel } from './chat-types';
 import {
+  ANALYSIS_KEY_SOURCE,
+  analysisDenyRules,
   assertSafeArgs,
   CHAT_DISALLOWED_TOOLS,
   CHAT_KEY_SOURCE,
   CHAT_MODEL_NAMES,
   chatAllowedTools,
+  isAnalysisKey,
   scopedKnowledgeRules,
   SESSION_ID_PATTERN,
   spawnClaude,
@@ -27,7 +30,7 @@ const SESSION_NOT_FOUND_PATTERN = /No conversation found|session .{0,60}not foun
 const CLOSE_GRACE_MS = 60_000;
 const TARGET_MAX_CHARS = 80;
 const STDERR_TAIL_CHARS = 300;
-const KEY_PATTERN = new RegExp(`^${CHAT_KEY_SOURCE}$`);
+const KEY_PATTERN = new RegExp(`^(${CHAT_KEY_SOURCE}|${ANALYSIS_KEY_SOURCE})$`);
 // Una línea sin salto de línea más larga que esto es basura o un fallo: se descarta
 const NDJSON_BUFFER_MAX_CHARS = 8 * 1024 * 1024;
 const SUBAGENT_TOOLS = new Set(['Agent', 'Task']);
@@ -48,6 +51,16 @@ export const CHAT_MESSAGES = {
   withUserText: (recovery: string, text: string) => `${recovery}
 
 Mensaje del dev: ${text}`,
+} as const;
+
+export const ANALYSIS_MESSAGES = {
+  first: (id: string, name: string, context: string | null = null) =>
+    withContext(`Sigue la skill analizar para el análisis ${id} (${name}).`, context),
+  fromLog: (id: string, context: string | null = null) =>
+    withContext(
+      `Esta es una sesión nueva del análisis ${id}. Retoma desde bitacora.md y estado.json: resume en 2 líneas lo decidido y sigue en el bloque actual.`,
+      context,
+    ),
 } as const;
 
 export const EXPLORER_AGENTS = {
@@ -181,12 +194,12 @@ export function createNdjsonParser(onEvent: (event: ChatEvent) => void): NdjsonP
 
 // Ajustes que jm le pasa a claude: sin hooks y con los mismos permisos que el allowlist de argv
 export function buildChatSettings(key: string, kb: ChatKnowledge | null = null): Record<string, unknown> {
-  if (!KEY_PATTERN.test(key)) throw new Error(`Clave de historia inválida para el chat: "${key}".`);
+  if (!KEY_PATTERN.test(key)) throw new Error(`Clave inválida para el chat: "${key}".`);
   return {
     disableAllHooks: true,
     permissions: {
       allow: [...chatAllowedTools(key, kb).split(','), ...scopedKnowledgeRules(kb, key)],
-      deny: CHAT_DISALLOWED_TOOLS.split(','),
+      deny: [...CHAT_DISALLOWED_TOOLS.split(','), ...analysisDenyRules(kb, key)],
     },
   };
 }
@@ -226,7 +239,7 @@ export function buildChatArgs({
   mcpFile,
   attachmentsDir,
 }: ChatArgsInput): string[] {
-  if (!KEY_PATTERN.test(key)) throw new Error(`Clave de historia inválida para el chat: "${key}".`);
+  if (!KEY_PATTERN.test(key)) throw new Error(`Clave inválida para el chat: "${key}".`);
   if (!CHAT_MODEL_NAMES.includes(model)) throw new Error(`Modelo no permitido para el chat: "${model}".`);
   if (!SESSION_ID_PATTERN.test(sessionId)) throw new Error('Id de sesión inválido para el chat.');
   return [
@@ -304,6 +317,8 @@ export interface ChatSessionOptions {
   kb?: ChatKnowledge | null;
   mcpFile?: string;
   attachmentsDir?: string;
+  // Nombre del análisis: solo lo usa el mensaje inicial de un análisis
+  subjectName?: string;
   // Línea de contexto de la base de conocimiento que acompaña a los mensajes iniciales
   kbContext?: string | null;
   spawner?: ChatSpawner;
@@ -383,7 +398,7 @@ export class ChatSession {
   async startFromLog(): Promise<void> {
     this.detach(true);
     this.awaitingFirstMessage = false;
-    await this.startFresh(CHAT_MESSAGES.fromLog(this.key, this.context));
+    await this.startFresh(this.fromLogMessage());
   }
 
   send(text: string): void {
@@ -428,9 +443,17 @@ export class ChatSession {
   }
 
   private messageFor(startMessage: 'first' | 'fromLog' | 'fromNote'): string {
-    if (startMessage === 'fromLog') return CHAT_MESSAGES.fromLog(this.key, this.context);
+    if (startMessage === 'fromLog') return this.fromLogMessage();
+    if (isAnalysisKey(this.key))
+      return ANALYSIS_MESSAGES.first(this.key, this.options.subjectName ?? this.key, this.context);
     if (startMessage === 'fromNote' && this.context) return CHAT_MESSAGES.fromNote(this.key, this.context);
     return CHAT_MESSAGES.first(this.key, this.context);
+  }
+
+  private fromLogMessage(): string {
+    return isAnalysisKey(this.key)
+      ? ANALYSIS_MESSAGES.fromLog(this.key, this.context)
+      : CHAT_MESSAGES.fromLog(this.key, this.context);
   }
 
   private openWith(text: string): void {
@@ -470,11 +493,7 @@ export class ChatSession {
     setTimeout(() => current.kill(), CLOSE_GRACE_MS).unref();
   }
 
-  private launch(
-    resume: boolean,
-    firstMessage: string | null,
-    fallbackMessage = CHAT_MESSAGES.fromLog(this.key, this.context),
-  ): void {
+  private launch(resume: boolean, firstMessage: string | null, fallbackMessage = this.fromLogMessage()): void {
     const args = buildChatArgs({
       key: this.key,
       model: this.model,

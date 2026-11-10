@@ -30,7 +30,7 @@ Dentro de la carpeta de la historia:
 |---|---|
 | `historia.md` | La historia tal como vino de Jira. Solo lectura. |
 | `adjuntos/` | Mockups, capturas, PDFs. Léelos (imágenes y PDF los puedes ver). |
-| `estado.json` | Fase y bloque actual. Tú solo cambias `phase` y `block`; el resto es de `jm`. |
+| `estado.json` | Fase y bloque actual, y `referencedNotes` si el dev referenció notas de la base. Tú solo cambias `phase` y `block`; el resto es de `jm`. |
 | `bitacora.md` | Tus notas por bloque. La escribes tú. |
 | `plan.json` | El resultado. Lo escribes tú al final. |
 
@@ -41,17 +41,20 @@ credenciales (`~/.jira-tool/`, `.env*`).
 
 1. Lee `estado.json`, `historia.md` y `bitacora.md`. De `adjuntos/` mira solo la lista de nombres: abre una imagen o PDF
    únicamente cuando el bloque en curso lo necesite (son caros de leer).
-2. **Si la bitácora ya tiene bloques cerrados, estás retomando.** Resume en dos líneas lo decidido y sigue en el bloque de
+2. **Notas referenciadas:** si `estado.json` trae `referencedNotes` (rutas de la base relativas a la bóveda), léelas
+   también: el dev las eligió como contexto y siempre están al día. Con una base local usa Read con la ruta absoluta que
+   indique el mensaje; con MCP, `vault_read` con esa ruta. Cuando el dev referencie más, `jm` te lo pide en un mensaje.
+3. **Si la bitácora ya tiene bloques cerrados, estás retomando.** Resume en dos líneas lo decidido y sigue en el bloque de
    `estado.json` ("Íbamos en riesgos; ya cerramos alcance y dependencias. Sigamos.").
-3. Si es nueva: necesitas contexto del proyecto para hablar con evidencia. **No explores el código tú mismo:** si está
+4. Si es nueva: necesitas contexto del proyecto para hablar con evidencia. **No explores el código tú mismo:** si está
    disponible el subagente `explorador`, pídele un mapa corto (archivos clave con `archivo:línea`, patrón a seguir, cómo
    son los tests del módulo que toca la historia). Trabaja con ese mapa y pídele más solo cuando una pregunta concreta lo
    requiera. Si no está disponible, haz búsquedas puntuales, no un recorrido completo. **Espera el mapa antes de
    escribirle al dev:** tu primer mensaje ya llega con evidencia.
-4. Si el mapa muestra que el código de la historia no está en este repo, dilo en tu primer mensaje y ofrece dos opciones:
+5. Si el mapa muestra que el código de la historia no está en este repo, dilo en tu primer mensaje y ofrece dos opciones:
    abrir `jm` en el repo correcto, o refinar sin código marcando las estimaciones como supuestos.
-5. En ese primer mensaje pregunta quién la va a hacer (normalmente el dev mismo) y qué tan conocida le es esa parte.
-6. Pon `phase: "debate"` y `block: "scope"` en `estado.json`.
+6. En ese primer mensaje pregunta quién la va a hacer (normalmente el dev mismo) y qué tan conocida le es esa parte.
+7. Pon `phase: "debate"` y `block: "scope"` en `estado.json`.
 
 ## Base de conocimiento
 

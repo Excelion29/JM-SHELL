@@ -20,7 +20,7 @@ import { ensureSkill } from './refine';
 import { applyKnowledgeFiles, KnowledgeRuntime, openKnowledge } from './knowledge-runtime';
 import { openStory } from './story-resolver';
 
-const CLAUDE_INSTALL_HINT = 'Instálalo con `npm install -g @anthropic-ai/claude-code` y vuelve a intentar.';
+export const CLAUDE_INSTALL_HINT = 'Instálalo con `npm install -g @anthropic-ai/claude-code` y vuelve a intentar.';
 
 interface TaskSession {
   jira: JiraService;

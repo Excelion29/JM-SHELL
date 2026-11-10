@@ -73,6 +73,8 @@ export interface TaskRun {
   priorElapsedMs?: number;
   // Se terminó pero Jira no respondió: se reintenta con `r`
   pendingDone?: boolean;
+  // Punto de análisis devuelto a pendiente: conserva el tiempo acumulado hasta que se inicie de nuevo
+  returned?: boolean;
 }
 
 export interface StoryState {
@@ -92,6 +94,8 @@ export interface StoryState {
   notesVersion?: number;
   // Tareas de Planificación registradas al entrar a la historia (su tiempo vive en taskRuns, como las demás)
   planningTasks?: PlanningTask[];
+  // Notas de la base (ruta relativa a la bóveda, .md) que Claude lee directo; no se copian
+  referencedNotes?: string[];
 }
 
 export interface PlanningTask {
@@ -113,6 +117,8 @@ export interface StorySummary {
   block: string;
   nextStep: string;
   updatedAt: string;
+  // Épica de Jira vinculada al análisis (10C)
+  linkedEpicKey?: string;
 }
 
 export interface BrowseItem {

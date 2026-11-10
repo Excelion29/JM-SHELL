@@ -9,12 +9,14 @@ import {
   NO_FACTORS,
   type StoryMeasures,
 } from '../refinement/calibration';
+import { loadPoints } from '../refinement/analysis-points';
+import { type PointsCalibrationSource, pointsGroupOf } from '../refinement/analysis-point-runs';
 import { loadPlan } from '../refinement/plan';
 import { type PlanningSource, planningGroupOf, suggestPlanning } from '../refinement/planning';
 import { projectRoot } from '../refinement/state';
 import type { CalibrationModel, PlanningSuggestion } from '../refinement/tasks-types';
 import type { StoryState } from '../refinement/types';
-import { listAllAnalyses, listAllStories, openStory } from './story-resolver';
+import { listAllAnalyses, listAllStories, openAnalysis, openStory } from './story-resolver';
 
 interface FolderMeasures {
   measured: StoryMeasures[];
@@ -44,23 +46,47 @@ async function folderMeasures(now: Date): Promise<FolderMeasures> {
 
 // Las tareas de los análisis sin historia se miden junto a las Planificaciones; los que no se pueden leer se cuentan
 // aparte (como las historias) y no frenan el resto
-async function analysisSources(): Promise<{ sources: PlanningSource[]; unreadable: number }> {
+interface AnalysisSources {
+  sources: PlanningSource[];
+  points: PointsCalibrationSource[];
+  unreadable: number;
+}
+
+// Los puntos de un análisis cuyo puntos.json no se puede leer simplemente no se miden
+async function pointsSourceOf(id: string, runs: PointsCalibrationSource['runs']): Promise<PointsCalibrationSource | null> {
+  if (Object.keys(runs).length === 0) return null;
+  try {
+    const points = await loadPoints(await openAnalysis(projectRoot(), id));
+    return points ? { points, runs } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function analysisSources(): Promise<AnalysisSources> {
   try {
     const analyses = await listAllAnalyses(projectRoot());
     const readable = analyses.filter((a) => !a.unreadable);
+    const points = await Promise.all(readable.map((a) => pointsSourceOf(a.id, a.pointRuns)));
     return {
       sources: readable.map((a) => ({ planningTasks: a.trackingTasks, taskRuns: a.taskRuns })),
+      points: points.filter((source): source is PointsCalibrationSource => source !== null),
       unreadable: analyses.length - readable.length,
     };
   } catch {
-    return { sources: [], unreadable: 1 };
+    return { sources: [], points: [], unreadable: 1 };
   }
 }
 
 export async function loadCalibration(now: Date = new Date()): Promise<CalibrationModel> {
   const { measured, states, unreadable } = await folderMeasures(now);
   const analyses = await analysisSources();
-  return calibrate(measured, unreadable + analyses.unreadable, planningGroupOf([...states, ...analyses.sources]));
+  return calibrate(
+    measured,
+    unreadable + analyses.unreadable,
+    planningGroupOf([...states, ...analyses.sources]),
+    pointsGroupOf(analyses.points),
+  );
 }
 
 // La sugerencia es opcional: sin poder leer el historial la revisión sigue igual, solo sin el ajustado

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 // Solo tipos: se borra al compilar, la isla ESM no importa código CJS
-import type { ChatBridge, ChatHeader, ChatLine, ChatUiEvent } from '../../refinement/chat-types.js';
+import type { ChatBridge, ChatHeader, ChatLine, ChatUiEvent, KnowledgeTarget } from '../../refinement/chat-types.js';
+import { KnowledgeBrowser } from '../components/knowledge-browser.js';
 import { MdRow, renderMarkdown, Span } from '../components/markdown.js';
 import { useTerminalSize } from '../components/terminal-size.js';
 import { clipRows, expandTabs, wrapText } from '../components/wrap-text.js';
@@ -38,6 +39,9 @@ const WRITE_TOOLS = ['Write', 'Edit'];
 const SUBAGENT_TOOLS = ['Agent', 'Task'];
 const EXPLORER_NAME = 'explorador';
 const PLAN_PHASE = 'plan';
+const ANALYSIS_KIND = 'analysis';
+// Objeto estable: el navegador relee la carpeta cada vez que cambia la conexión
+const CURRENT_KNOWLEDGE: KnowledgeTarget = { type: 'current' };
 const CHOICE_DIGIT = /^[1-9]$/;
 const INDENT: Span = { text: ' '.repeat(MESSAGE_INDENT) };
 
@@ -85,6 +89,7 @@ function HeaderLine({ header }: { header: ChatHeader }) {
       {header.key} · {header.phaseLabel} · {headerBlock}: {header.blockLabel} · {CHAT_MODEL_LABELS[header.model]} ·{' '}
       {contextPart}
       {cost(header.costUsd)}
+      {header.detail ? ` · ${header.detail}` : ''}
     </Text>
   );
 }
@@ -115,6 +120,7 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
   const [scroll, setScroll] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
+  const [pickingNotes, setPickingNotes] = useState<string | null>(null);
   const ready = header !== null;
   const closing = useRef(false);
   const pendingText = useRef('');
@@ -215,28 +221,69 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
     setMessage(null);
   };
 
-  useInput((typed, key) => {
-    if (key.escape) onBack();
-    else if (key.pageUp) setScroll((s) => Math.min(maxScroll, s + visibleRows - 1));
-    else if (key.pageDown) setScroll((s) => Math.max(0, s - (visibleRows - 1)));
-    else if (key.upArrow && input === '') setScroll((s) => Math.min(maxScroll, s + 1));
-    else if (key.downArrow && input === '') setScroll((s) => Math.max(0, s - 1));
-    else if (!ready) return;
-    else if (key.ctrl && typed === CHAT_KEYS.deepModel) {
-      if (!busy) chat.toggleDeep();
-    } else if (key.ctrl && typed === CHAT_KEYS.newSession) {
-      if (header?.tooLong && !busy) {
-        chat.newSession();
+  const isAnalysis = header?.kind === ANALYSIS_KIND;
+
+  const openNotesBrowser = () => {
+    if (busy) return;
+    chat
+      .knowledgeSettings()
+      .then((settings) => {
+        if (settings.type === 'none') setMessage(CHAT_TEXTS.notesNoKnowledge);
+        else setPickingNotes(settings.baseFolder ?? '');
+      })
+      .catch((err: unknown) => setMessage(CHAT_TEXTS.notesError((err as Error).message)));
+  };
+
+  const referenceNotes = (notes: string[]) => {
+    setPickingNotes(null);
+    chat
+      .referenceNotes(notes)
+      .then((added) => {
+        if (added === 0) {
+          setMessage(CHAT_TEXTS.notesAlready);
+          return;
+        }
+        setLines((all) => capLines([...all, { role: 'user', text: CHAT_TEXTS.notesSent(added), at: '' }]));
         setBusy(true);
-      }
-    } else if (key.ctrl && typed === CHAT_KEYS.fullClaude) onHandoff();
-    else if ((key.ctrl && typed === CHAT_KEYS.newline) || (key.return && key.shift)) setInput((text) => `${text}\n`);
-    else if (key.return) sendText(input);
-    else if (key.backspace || key.delete) setInput((text) => text.slice(0, -1));
-    else if (CHOICE_DIGIT.test(typed) && input === '' && !busy && choices[Number(typed) - 1] !== undefined) {
-      sendText(`${typed}. ${choices[Number(typed) - 1]}`);
-    } else if (typed && !key.ctrl && !key.meta) setInput((text) => text + typed.replace(/\r/g, ''));
-  });
+        setScroll(0);
+        setMessage(null);
+      })
+      .catch((err: unknown) => setMessage(CHAT_TEXTS.notesError((err as Error).message)));
+  };
+
+  useInput(
+    (typed, key) => {
+      if (key.escape) onBack();
+      else if (key.pageUp) setScroll((s) => Math.min(maxScroll, s + visibleRows - 1));
+      else if (key.pageDown) setScroll((s) => Math.max(0, s - (visibleRows - 1)));
+      else if (key.upArrow && input === '') setScroll((s) => Math.min(maxScroll, s + 1));
+      else if (key.downArrow && input === '') setScroll((s) => Math.max(0, s - 1));
+      else if (!ready) return;
+      else if (key.ctrl && typed === CHAT_KEYS.deepModel) {
+        if (!busy) chat.toggleDeep();
+      } else if (key.ctrl && typed === CHAT_KEYS.newSession) {
+        if (header?.tooLong && !busy) {
+          chat.newSession();
+          setBusy(true);
+        }
+      } else if (key.ctrl && typed === CHAT_KEYS.referenceNotes) openNotesBrowser();
+      else if (key.ctrl && typed === CHAT_KEYS.closeAnalysis) {
+        if (!isAnalysis) return;
+        if (busy) setMessage(CHAT_TEXTS.closeBusy);
+        else sendText(CHAT_TEXTS.closeAnalysisMessage);
+      } else if (key.ctrl && typed === CHAT_KEYS.fullClaude) {
+        // Claude completo no sabe de análisis: sin sesión de historia que abrir
+        if (!isAnalysis) onHandoff();
+      } else if ((key.ctrl && typed === CHAT_KEYS.newline) || (key.return && key.shift))
+        setInput((text) => `${text}\n`);
+      else if (key.return) sendText(input);
+      else if (key.backspace || key.delete) setInput((text) => text.slice(0, -1));
+      else if (CHOICE_DIGIT.test(typed) && input === '' && !busy && choices[Number(typed) - 1] !== undefined) {
+        sendText(`${typed}. ${choices[Number(typed) - 1]}`);
+      } else if (typed && !key.ctrl && !key.meta) setInput((text) => text + typed.replace(/\r/g, ''));
+    },
+    { isActive: pickingNotes === null },
+  );
 
   if (openError) {
     return (
@@ -247,6 +294,18 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
     );
   }
   if (!header) return <Text>{CHAT_TEXTS.preparing}</Text>;
+  if (pickingNotes !== null) {
+    return (
+      <KnowledgeBrowser
+        chat={chat}
+        connection={CURRENT_KNOWLEDGE}
+        initialDir={pickingNotes}
+        onSelect={() => undefined}
+        onNotes={referenceNotes}
+        onCancel={() => setPickingNotes(null)}
+      />
+    );
+  }
 
   const { shown: inputRows, hidden: hiddenInputRows } = clipRows(
     wrapText(expandTabs(`${CHAT_TEXTS.inputPrompt}${input}${CURSOR}`, TAB_WIDTH), width),

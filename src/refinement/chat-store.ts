@@ -69,8 +69,8 @@ export function writeAgentsFile(workDir: string): string {
 }
 
 // La skill viaja desde la carpeta de trabajo: su ruta de instalación puede tener tildes o paréntesis que argv no admite
-export function writeSkillCopy(workDir: string, skillSource: string): string {
-  return writeWorkFile(workDir, CHAT_FILES.skill, fs.readFileSync(skillSource, 'utf8'));
+export function writeSkillCopy(workDir: string, skillSource: string, fileName: string = CHAT_FILES.skill): string {
+  return writeWorkFile(workDir, fileName, fs.readFileSync(skillSource, 'utf8'));
 }
 
 // Se regenera en cada arranque: refleja la clave de la historia y no depende de lo que haya en disco

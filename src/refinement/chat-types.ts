@@ -1,4 +1,5 @@
 // Contrato entre el puente (CJS) y la pantalla de chat (isla ESM): solo tipos, sin código en ejecución
+import type { AnalysisPhase } from './analysis-types';
 import type { Phase } from './types';
 
 export type ChatModel = 'sonnet' | 'haiku' | 'opus';
@@ -9,9 +10,13 @@ export type ChatKnowledge =
   // adrDir: ruta absoluta con "/" de la carpeta JM-ADR, la única donde Claude escribe por su cuenta
   | { type: 'local'; root: string; adrDir: string };
 
+// Sin valor es una historia; el chat de un análisis sin historia lleva 'analysis'
+export type ChatKind = 'story' | 'analysis';
+
 export interface ChatHeader {
   key: string;
-  phase: Phase;
+  kind?: ChatKind;
+  phase: Phase | AnalysisPhase;
   phaseLabel: string;
   blockLabel: string;
   model: ChatModel;
@@ -19,6 +24,8 @@ export interface ChatHeader {
   contextTokens: number;
   costUsd: number;
   tooLong: boolean;
+  // Dato extra del encabezado (p. ej. los puntos del análisis y su total esperado)
+  detail?: string;
 }
 
 export interface ChatLine {
@@ -103,6 +110,8 @@ export interface ChatBridge {
   send: (text: string) => void;
   toggleDeep: () => void;
   newSession: () => void;
+  // Guarda las notas como referenciadas y le pide a Claude que las lea; devuelve cuántas eran nuevas
+  referenceNotes: (notes: string[]) => Promise<number>;
   close: () => Promise<void>;
   knowledgeStatus: () => Promise<KnowledgeStatus>;
   inspectServer: (url: string) => Promise<ServerInspection>;

@@ -52,8 +52,8 @@ export function parseKnowledgeConfig(value: unknown): KnowledgeConfig | null {
   if (!isRecord(value)) return null;
   if (value.type === 'none') return { type: 'none' };
   const { baseFolder } = value;
-  // Sin carpeta base Claude podría escribir en toda la bóveda: la raíz no es una base válida
-  if (typeof baseFolder !== 'string' || baseFolder === '' || !isValidBaseFolder(baseFolder)) return null;
+  // baseFolder '' = raíz de la bóveda: Claude la lee entera pero solo escribe en la carpeta JM-ADR
+  if (typeof baseFolder !== 'string' || !isValidBaseFolder(baseFolder)) return null;
   if (value.type === 'mcp') {
     const { url, tls } = value;
     if (typeof url !== 'string' || !isHttpsUrl(url) || (tls !== 'system' && tls !== 'pinned')) return null;
@@ -101,6 +101,16 @@ export function chooseStartMessage({ hasSession, hasLocalLog, noteExists }: Star
   return noteExists ? 'fromNote' : 'first';
 }
 
+const knowledgeWhere = (config: Exclude<KnowledgeConfig, { type: 'none' }>): string =>
+  config.type === 'mcp'
+    ? `por el MCP ${KB_SERVER_NAME} (carpeta base \`${config.baseFolder || '/'}\`)`
+    : `en la carpeta local \`${config.root}\` (carpeta base \`${config.baseFolder || '/'}\`)`;
+
+const copyHint = (attachmentsCopy?: string): string =>
+  attachmentsCopy
+    ? ` Los adjuntos binarios (imágenes, PDF) los abres desde la copia de solo lectura \`${attachmentsCopy}\`.`
+    : '';
+
 // Texto que viaja por stdin al arrancar: ubica la base, la carpeta de la historia y la nota de la historia
 export function knowledgeContextLine(
   config: KnowledgeConfig,
@@ -109,17 +119,37 @@ export function knowledgeContextLine(
   attachmentsCopy?: string,
 ): string {
   if (config.type === 'none') return '';
-  const where =
-    config.type === 'mcp'
-      ? `por el MCP ${KB_SERVER_NAME} (carpeta base \`${config.baseFolder || '/'}\`)`
-      : `en la carpeta local \`${config.root}\` (carpeta base \`${config.baseFolder || '/'}\`)`;
-  const copy = attachmentsCopy
-    ? ` Los adjuntos binarios (imágenes, PDF) los abres desde la copia de solo lectura \`${attachmentsCopy}\`.`
-    : '';
   return (
-    `Tienes una base de conocimiento ${where}. Sigue la sección "Base de conocimiento" de la skill. ` +
+    `Tienes una base de conocimiento ${knowledgeWhere(config)}. Sigue la sección "Base de conocimiento" de la skill. ` +
     `La historia vive en la carpeta \`${storyFolder}\` de la base (no en el repositorio): ahí lees y escribes ` +
-    `historia.md, bitacora.md, estado.json, plan.json y adjuntos/.${copy} ` +
+    `historia.md, bitacora.md, estado.json, plan.json y adjuntos/.${copyHint(attachmentsCopy)} ` +
     `Tu nota de esta historia es \`${notePath}\`.`
+  );
+}
+
+// Un análisis no tiene nota propia: solo su carpeta, con las fuentes en fuentes/
+export function analysisContextLine(config: KnowledgeConfig, analysisFolder: string, attachmentsCopy?: string): string {
+  if (config.type === 'none') return '';
+  return (
+    `Tienes una base de conocimiento ${knowledgeWhere(config)}. Sigue la sección "Base de conocimiento" de la skill. ` +
+    `El análisis vive en la carpeta \`${analysisFolder}\` de la base (no en el repositorio): ahí lees y escribes ` +
+    `estado.json, bitacora.md, puntos.json y los 3 documentos; las fuentes están en fuentes/.${copyHint(attachmentsCopy)}`
+  );
+}
+
+export interface LinkedAnalysisRef {
+  id: string;
+  name: string;
+}
+
+const LINKED_ANALYSIS_DOCS = 'análisis_propuesta.md, observaciones_funcional_tecnico.md, resumen_observaciones.md y puntos.json';
+
+// Historia de la épica de un análisis vinculado: ese análisis es contexto de solo lectura
+export function linkedAnalysisLine(analyses: LinkedAnalysisRef[], folderOf: (id: string) => string): string {
+  if (analyses.length === 0) return '';
+  const where = analyses.map((analysis) => `${analysis.id} (${analysis.name}) en \`${folderOf(analysis.id)}\``);
+  return (
+    `Esta historia es de la épica vinculada al análisis ${where.join('; ')}. Antes de refinar, lee de esa carpeta ` +
+    `${LINKED_ANALYSIS_DOCS} (los que existan) y úsalos como contexto. Es solo lectura: no escribas ahí.`
   );
 }

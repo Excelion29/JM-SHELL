@@ -144,7 +144,7 @@ test('si renovar la key falla se muestra el error en español y no se cambia nad
   assert.equal(fake.calls.renewed.length, 0);
 });
 
-test('sin base, base y quitar no aplican y renovar solo vale para MCP', async () => {
+test('sin base solo se ofrece conectar una base (tecla 2); 1, 3 y 4 no hacen nada', async () => {
   const settings = {
     ...FAKE_SETTINGS,
     type: 'none' as const,
@@ -153,13 +153,15 @@ test('sin base, base y quitar no aplican y renovar solo vale para MCP', async ()
     adrFolder: null,
     connection: 'none' as const,
   };
-  const { fake, type, waitText } = openHome({ settings });
+  const { fake, type, waitText, frame } = openHome({ settings });
   await waitText(HOME_TEXTS.title);
   await type(KEYS.knowledgeBase);
   await waitText(T.noBase);
-  await type('1');
-  await waitText(T.needsBase);
-  await type('4');
-  await waitText(T.renewNeedsMcp);
+  assert.ok(frame().includes(T.connectAction));
+  for (const action of Object.values(T.actions)) assert.ok(!frame().includes(action), action);
+  for (const key of ['1', '3', '4']) await type(key);
+  assert.ok(frame().includes(T.noBase) && !frame().includes(T.renewNeedsMcp));
+  await type('2');
+  await waitText(KNOWLEDGE_TEXTS.question);
   assert.equal(fake.calls.changed.length, 0);
 });

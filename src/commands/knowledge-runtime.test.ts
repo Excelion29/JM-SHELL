@@ -64,6 +64,16 @@ test('carpeta local: crea la JM-ADR numerada, da el permiso acotado y retoma des
   assert.equal((await open(root, true)).startMessage, 'resume');
 });
 
+test('carpeta local con la raíz de la bóveda como base: lista la raíz y el permiso de escritura queda en JM-ADR', async () => {
+  const kb = await tempDir('jm-rt-rootbase-');
+  await fs.ensureDir(path.join(kb, '01-Docs'));
+  const root = await rootWith({ type: 'local', root: kb, baseFolder: '' });
+  const runtime = await open(root);
+  assert.ok(await fs.pathExists(path.join(kb, '02-JM-ADR')));
+  assert.ok(runtime.kb?.type === 'local' && runtime.kb.adrDir.endsWith('/02-JM-ADR'));
+  assert.match(runtime.context ?? '', /02-JM-ADR\/AQ-45\.md/);
+});
+
 test('si la base no responde, abrir falla con un mensaje claro (el chat se bloquea)', async () => {
   const missing = path.join(await tempDir('jm-rt-gone-'), 'no-existe');
   const root = await rootWith({ type: 'local', root: missing, baseFolder: 'PROY' });

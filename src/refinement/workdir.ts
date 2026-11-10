@@ -9,6 +9,8 @@ const READ_ONLY_MODE = 0o400;
 const PRIVATE_DIR_MODE = 0o700;
 const WORK_SEGMENTS = ['.jira-tool', 'trabajo'];
 export const WORK_ATTACHMENTS_DIR = 'adjuntos';
+// Copias de las fuentes de un análisis: <adjuntos>/analisis/<id>, aparte de las de historias (NTFS no distingue an-1 de AN-1)
+export const WORK_ANALYSIS_DIR = 'analisis';
 export const WORK_OPEN_DIR = 'abrir';
 
 // Archivos técnicos que Claude lee al arrancar; viven en la carpeta de trabajo de jm, nunca en el repositorio
@@ -17,6 +19,7 @@ export const CHAT_FILES = {
   taskSettings: 'tarea-settings.json',
   agents: 'agents.json',
   skill: 'refinar-skill.md',
+  analysisSkill: 'analizar-skill.md',
   mcp: 'mcp.json',
   context: 'knowledge-context.md',
 } as const;

@@ -30,6 +30,8 @@ export interface StoryStore {
   list: (dir: string) => Promise<StoreEntry[]>;
   exists: (name: string) => Promise<boolean>;
   remove: (name: string) => Promise<void>;
+  // Quita una carpeta ya vacía ('' = la de la historia); idempotente. La bóveda no guarda carpetas vacías: no hace nada
+  removeFolder: (dir: string) => Promise<void>;
   // Ruta absoluta en disco si el contenido es un archivo local; null en la bóveda
   localPath: (name: string) => string | null;
 }

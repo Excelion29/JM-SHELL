@@ -38,6 +38,7 @@ export const KEYS = {
   management: 'g',
   newAnalysis: 'a',
   addSources: 'a',
+  linkAnalysis: 'v',
 } as const;
 
 // Palabra que hay que escribir completa para borrar subtareas de Jira
@@ -71,9 +72,19 @@ export const HOME_TEXTS = {
   empty: 'Aún no hay historias en curso.',
   nextStep: 'Siguiente paso: pulsa n para buscar una historia en Jira.',
   listNextStep: 'Siguiente paso: elige una historia y pulsa Enter para continuar.',
+  pickAnalysis: 'Elige un análisis (marcado [análisis]) para ver sus fuentes.',
+  onlyAnalysisDeletable: 'Solo se pueden borrar análisis; las historias viven en Jira.',
+  // Cortos: un aviso largo se parte en dos líneas en una terminal angosta
+  analysisHasNoTasks: 'r es para historias; en un análisis usa t para sus puntos.',
+  reviewNotYet: 'Aún no hay plan: pulsa Enter para refinar esta historia.',
+  tasksNotYet: 'Las tareas aún no están en Jira: créalas con r y luego c.',
   selectedMarker: '>',
   blockLabel: 'bloque',
   analysisMarker: '[análisis]',
+  // Valor de StorySummary.block cuando no hay bloque en curso
+  noBlock: '—',
+  onlyAnalysisLinkable: 'Vincular a Jira es solo de análisis; elige uno.',
+  linkedTo: (epicKey: string) => `→ ${epicKey}`,
   needsProjectForAnalysis: 'Primero elige un proyecto con p; el análisis queda en el proyecto actual.',
 } as const;
 
@@ -125,6 +136,10 @@ export const CHAT_KEYS = {
   newSession: 'n',
   fullClaude: 't',
   newline: 'j',
+  // Solo en el chat de un análisis: pide a Claude escribir los 3 documentos
+  closeAnalysis: 'g',
+  // Abre el navegador de la base para referenciar notas
+  referenceNotes: 'b',
 } as const;
 
 export const CHAT_VISIBLE_MIN_ROWS = 6;
@@ -161,6 +176,13 @@ export const CHAT_TEXTS = {
   context: (tokens: number) => `contexto ${tokens >= CONTEXT_K ? `${Math.round(tokens / CONTEXT_K)}k` : tokens}`,
   cost: (usd: number) => `$${usd.toFixed(2)}`,
   tooLongHint: `La conversación ya es larga. Pulsa Ctrl+${CHAT_KEYS.newSession.toUpperCase()} para seguir en una sesión nueva desde la bitácora (gasta menos).`,
+  closeAnalysisMessage:
+    'Cerremos el análisis: escribe ahora los 3 documentos (análisis_propuesta.md, observaciones_funcional_tecnico.md y resumen_observaciones.md) en la carpeta del análisis y escribe fase.json con phase documented.',
+  notesSent: (count: number) => `Referencié ${count === 1 ? '1 nota' : `${count} notas`} de la base: Claude las lee.`,
+  closeBusy: 'Espera a que Claude termine para cerrar el análisis.',
+  notesAlready: 'Esas notas ya estaban referenciadas.',
+  notesNoKnowledge: `No hay base de conocimiento conectada: conéctala con ${KEYS.knowledgeBase} desde el inicio para referenciar notas.`,
+  notesError: (message: string) => `No pude referenciar las notas: ${message}`,
   planReady: `Plan listo. Pulsa Esc y luego ${KEYS.review} para revisarlo.`,
   activity: {
     read: (target: string) => `leyendo ${target}`,
@@ -173,7 +195,7 @@ export const CHAT_TEXTS = {
 
 export const FOOTER_HINTS = {
   pin: 'Enter confirmar · Ctrl+C salir',
-  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.calibration} calibración · ${KEYS.management} gestión · ${KEYS.newAnalysis} nuevo análisis · ${KEYS.quit} salir`,
+  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas o puntos del análisis · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.calibration} calibración · ${KEYS.management} gestión · ${KEYS.newAnalysis} nuevo análisis · ${KEYS.detail} fuentes del análisis · ${KEYS.linkAnalysis} vincular análisis a Jira · ${KEYS.closeStory} o Supr borrar análisis · ${KEYS.quit} salir`,
   picker: `↑↓ elegir · Enter abrir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · ${KEYS.changeProject} proyecto · Esc volver`,
   filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
   projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
@@ -200,11 +222,17 @@ export const FOOTER_HINTS = {
   reviewReadOnly: `↑↓ moverte · ${KEYS.detail} detalle · Esc volver`,
   tasks: `↑↓ moverte · espacio marcar · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar · ${KEYS.giveBack} devolver · ${KEYS.removeTasks} borrar · ${KEYS.pendingFilter} pendientes · ${KEYS.retry} actualizar · ${KEYS.open} abrir · ${KEYS.viewPlan} ver plan · Esc inicio`,
   calibration: `${KEYS.retry} actualizar · Esc inicio`,
+  points: `↑↓ moverte · ${KEYS.start} iniciar con Claude · ${KEYS.finishDirect} finalizar · ${KEYS.giveBack} devolver a pendiente · ${KEYS.retry} actualizar · Esc inicio`,
+  linkEpic: `Enter conservar · ${KEYS.edit} cambiar la épica · Esc inicio`,
+  linkPicker: `↑↓ elegir · Enter elegir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc volver o saltar`,
+  linkPoints: `↑↓ moverte · espacio marcar · ${KEYS.edit} destino de lo marcado · ${KEYS.create} crear en Jira · Esc inicio`,
+  linkDone: 'Esc inicio',
   myDay: `↑↓ moverte · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar ·${KEYS.retry} actualizar · ${KEYS.open} abrir · Esc inicio`,
   options: '↑↓ elegir · Enter confirmar · Esc cancelar',
   yesNo: `${KEYS.confirmYes}/${KEYS.confirmNo}`,
   typeConfirm: 'Escribe la palabra y pulsa Enter · Esc cancelar',
-  chat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo (vuelves con /exit) · Esc inicio`,
+  chat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.referenceNotes.toUpperCase()} notas de la base · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo (vuelves con /exit) · Esc inicio`,
+  analysisChat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.referenceNotes.toUpperCase()} notas de la base · Ctrl+${CHAT_KEYS.closeAnalysis.toUpperCase()} cerrar y documentar · Esc inicio`,
 } as const;
 export const SECONDS_PER_HOUR = 3600;
 export const SECONDS_PER_MINUTE = 60;
@@ -393,7 +421,12 @@ export const KNOWLEDGE_TEXTS = {
   confirmQuestion: `¿Confías en esta base de conocimiento? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
   confirmNextStep: `Si la reconoces, pulsa ${KEYS.confirmYes} y sigo al chat; cualquier otra tecla vuelve al inicio.`,
   confirmError: (message: string) => `No pude leer la base configurada: ${message}`,
-  rootNotAllowed: 'No puedes elegir la raíz de la bóveda: entra a una carpeta y pulsa de nuevo.',
+  rootConfirm: `Usarás toda la bóveda como base: Claude la lee entera y solo escribe en la carpeta de notas de jm. ¿Confirmas? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  notesTitle: (dir: string) => `Notas de la base · ${dir || '/'}`,
+  notesMarker: (marked: boolean) => (marked ? '[x]' : '[ ]'),
+  notesCount: (count: number) => `Marcadas: ${count}`,
+  notesNextStep: `Siguiente paso: entra a las carpetas, marca notas con espacio y pulsa ${KEYS.selectFolder} para referenciarlas. Enter abre carpetas o vista previa; Esc cancela.`,
+  notesNoneMarked: 'Marca al menos una nota con espacio antes de confirmar.',
   browseNextStep: `Siguiente paso: entra a la carpeta donde continuar y pulsa ${KEYS.selectFolder} para elegirla.`,
 } as const;
 
@@ -420,6 +453,8 @@ export const KNOWLEDGE_SETTINGS_TEXTS = {
     remove: '3  Quitar la base de conocimiento',
     renew: '4  Renovar la API key',
   },
+  // Sin base es la única acción; conserva la tecla 2 de «Cambiar la conexión»
+  connectAction: '2  Conectar una base',
   nextStep: 'Siguiente paso: pulsa el número de lo que quieres hacer o Esc para volver.',
   loadError: (message: string) => `No pude leer la configuración: ${message}`,
   leftBehind: pluralStories,
@@ -432,7 +467,6 @@ export const KNOWLEDGE_SETTINGS_TEXTS = {
   removeQuestion: `¿Quitas la base de conocimiento de esta carpeta? Las historias no se borran. (${KEYS.confirmYes}/${KEYS.confirmNo})`,
   removeNextStep: `Pulsa ${KEYS.confirmYes} para quitarla; cualquier otra tecla cancela.`,
   renewNeedsMcp: 'Renovar la API key solo aplica a una base MCP.',
-  needsBase: 'Primero conecta una base con la opción 2.',
   renewLabel: 'Nueva API key: ',
   renewNextStep: 'Pega la nueva API key y pulsa Enter. Se verifica con el servidor y se guarda cifrada con tu PIN.',
   renewing: 'Verificando la nueva API key...',
@@ -480,6 +514,68 @@ export const TASKS_TEXTS = {
     `Cierres reintentados: ${finished} listos, ${failed} siguen pendientes.`,
   openError: (message: string) => `No pude abrir el navegador: ${message}`,
   planTitle: 'Plan (solo lectura)',
+} as const;
+
+export const POINTS_TEXTS = {
+  loading: 'Leyendo los puntos del análisis...',
+  title: (id: string, name: string) => `Puntos del análisis ${id} · ${name}`,
+  empty: 'Este análisis aún no tiene puntos: ábrelo con Enter y debate con Claude.',
+  invalid: (message: string) => `Los puntos del análisis no son válidos: ${message}`,
+  noneInScope: 'Todos los puntos quedaron fuera de alcance: no hay nada que iniciar.',
+  status: { pending: 'pendiente', started: 'en curso', done: 'finalizada' },
+  line: (id: string, status: string, title: string, estimate: string, real: string, issueKey: string | null = null) =>
+    `${id} · ${status} · ${title} · esperado ${estimate} · real ${real}${issueKey ? ` · ${issueKey}` : ''}`,
+  noEstimate: '—',
+  jiraNotMoved: (id: string) => `${id} cambió en jm; su tarea en Jira no se movió.`,
+  chooseReturn: (key: string) => `¿A qué estado devuelvo ${key} en Jira?`,
+  noReal: '—',
+  real: (claude: string, elapsed: string) => `${claude} / ${elapsed}`,
+  summary: (done: number, total: number) => `${done} de ${total} puntos finalizados`,
+  nextStep: `Siguiente paso: elige un punto y pulsa ${KEYS.start} para trabajarlo con Claude.`,
+  reopenQuestion: (id: string) => `${id} ya está finalizado. ¿Lo reabro y lo inicio? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  finishQuestion: (id: string) => `¿Terminaste ${id}? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  working: 'Guardando...',
+  finished: (id: string) => `${id} quedó finalizado.`,
+  keptInProgress: (id: string) => `${id} sigue en curso.`,
+  alreadyDone: (id: string) => `${id} ya está finalizado.`,
+  notStarted: (id: string) => `${id} no está en curso: no hay nada que devolver.`,
+  returned: (id: string) => `${id} volvió a pendiente; su tiempo acumulado se conserva.`,
+  actionError: (message: string) => `No pude completar la acción: ${message}`,
+} as const;
+
+export const LINK_TEXTS = {
+  loading: 'Leyendo el análisis...',
+  noPoints: 'No hay puntos en alcance que vincular: debate el análisis con Claude.',
+  epicCurrent: (key: string) => `Épica del análisis: ${key}`,
+  epicTitle: 'Épica del análisis (Esc para saltar)',
+  epicEmpty: `No encontré épicas: usa ${KEYS.manualKey} para escribir la clave.`,
+  epicNextStep: 'Siguiente paso: elige la épica y pulsa Enter, o Esc para saltar.',
+  checking: (key: string) => `Revisando ${key} en Jira...`,
+  epicSaved: (key: string) => `Épica ${key} vinculada.`,
+  targetTitle: 'Destino de los puntos marcados',
+  targetEmpty: `Sin épica no hay lista: usa ${KEYS.manualKey} para escribir una clave.`,
+  targetNextStep: 'Siguiente paso: elige la épica o una historia.',
+  epicOption: (key: string) => `${key} · épica (tareas)`,
+  targetSet: (count: number, key: string) => `${count} punto(s) → ${key}.`,
+  nothingMarked: 'Marca puntos con espacio antes de elegir destino.',
+  fixed: 'ya creado: no cambia de destino',
+  noTarget: 'sin destino',
+  line: (id: string, title: string, estimate: string, status: string, target: string) =>
+    `${id} · ${title} · ${estimate} · ${status} · ${target}`,
+  nothingToCreate: 'Ningún punto tiene destino: elige uno con e (o la épica).',
+  confirmTitle: 'Voy a crear en Jira:',
+  group: (ids: string, key: string, childKind: 'standard' | 'subtask') =>
+    `${ids} → ${key} (${childKind === 'subtask' ? 'subtareas' : 'tareas'})`,
+  skipped: (ids: string) => `Sin destino, se omiten: ${ids}`,
+  confirm: `¿Creo estas tareas? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  creating: 'Creando en Jira... no cierres la consola.',
+  resultTitle: 'Resultado',
+  created: (id: string, key: string) => `${id} → ${key} creada`,
+  createdNote: (id: string, key: string, note: string) => `${id} → ${key} creada · ${note}`,
+  failed: (id: string, message: string) => `${id} sin crear: ${message}`,
+  summary: (created: number, failed: number) => `${created} creada(s), ${failed} con error.`,
+  actionError: (message: string) => `No pude vincular: ${message}`,
+  refused: (message: string) => `Ese destino no sirve: ${message}`,
 } as const;
 
 export const PLANNING_TEXTS = {
@@ -540,9 +636,21 @@ export const ANALYSIS_TEXTS = {
   noTracking: 'Sin tarea de análisis registrada.',
   trackingLine: (key: string, status: string) => `  ${key} · ${status}`,
   trackingStatus: { started: 'En curso', done: 'Finalizada' },
-  nextStep: `Siguiente paso: ${KEYS.addSources} para agregar fuentes. El debate con Claude llega en la próxima parte.`,
+  nextStep: `Siguiente paso: ${KEYS.addSources} para agregar fuentes; el debate con Claude se abre con Enter desde el inicio.`,
   detailHint: `${KEYS.addSources} agregar fuentes · Esc inicio`,
   addTitle: 'Agregar fuentes',
+  remove: {
+    loading: 'Leyendo el análisis...',
+    title: (id: string, name: string) => `Borrar el análisis ${id} · ${name}`,
+    sources: (count: number) => `Fuentes que se borran: ${count}`,
+    documents: (documented: boolean) =>
+      documented ? 'Tiene documentos generados: se borran también.' : 'Aún no tiene documentos.',
+    scope: 'Se borra todo: estado, conversación y copias. Las notas de la base que consultó no se tocan.',
+    prompt: `Escribe ${DELETE_CONFIRM_WORD} para confirmar: `,
+    mismatch: `Eso no es «${DELETE_CONFIRM_WORD}»: no borré nada.`,
+    done: (id: string) => `Análisis ${id} borrado.`,
+    deleting: 'Borrando el análisis...',
+  },
   tracking: {
     question: (name: string, managementKey: string | null) =>
       `¿Registro una tarea de análisis para "${name}"${managementKey ? ` en ${managementKey} (gestión)` : ''}? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
@@ -621,10 +729,13 @@ export const CALIBRATION_TEXTS = {
   outliersTitle: 'Las más desviadas (con Claude vs. estimado):',
   outlierLine: (key: string, title: string, estimate: string, claude: string, elapsed: string) =>
     `  ${key} · ${title} · estimado ${estimate} · con Claude ${claude} · de inicio a fin ${elapsed}`,
-  excludedDirect: (count: number) => `${count} finalizada(s) con ${KEYS.finishDirect} quedan fuera: no tienen inicio medido.`,
+  excludedDirect: (count: number) =>
+    `${count} finalizada(s) con ${KEYS.finishDirect} quedan fuera: no tienen inicio medido.`,
   unreadable: (count: number) => `${count} historia(s) no se pudieron leer (¿base sin conexión?).`,
   planning: (count: number, estimate: string, elapsed: string) =>
     `Planificaciones y análisis (aparte): ${count} medida(s) · estimado ${estimate} · de inicio a fin ${elapsed}`,
+  analysisPoints: (count: number, estimate: string, elapsed: string) =>
+    `Puntos de análisis (aparte): ${count} medido(s) · esperado ${estimate} · de inicio a fin ${elapsed}`,
   note: 'Abierto no siempre es trabajando: úsalo como referencia, no como cronómetro.',
 } as const;
 

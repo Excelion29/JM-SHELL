@@ -22,7 +22,7 @@ type Step =
   | { name: 'saving' }
   | { name: 'results'; results: SourceResult[] };
 
-// Destino provisional de entrar a un análisis (10B-1): sus fuentes y su tarea. 10B-2 lo reemplaza por el chat
+// Fuentes y tarea del análisis; se llega con la tecla d en el inicio (Enter abre el chat)
 export function AnalysisScreen({ id, analysis, onBack }: AnalysisScreenProps) {
   const { state, retry } = useLoad(() => analysis.load(id));
   return (

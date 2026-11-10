@@ -27,8 +27,10 @@ import { analysisSummary, filterAnalysesByProject } from '../refinement/analysis
 import { createAnalysisBridge } from './analysis-bridge';
 import { createChatBridge } from './chat-bridge';
 import { createManagementBridge } from './management-bridge';
+import type { PointFinishTarget } from '../refinement/analysis-types';
 import type { TaskFinishTarget } from '../refinement/tasks-types';
 import { runTaskSession } from './execute';
+import { runPointSession } from './execute-point';
 import { createPlanBridge } from './plan-bridge';
 import { createTasksBridge } from './tasks-bridge';
 import { runRefine } from './refine';
@@ -132,6 +134,22 @@ async function runTaskAndReturn(
   return result;
 }
 
+// Ink ya está desmontado aquí; al volver, la pantalla de puntos pregunta si el punto se terminó
+async function runPointAndReturn(
+  analysisId: string,
+  pointId: string,
+): Promise<{ notice: string; finish: PointFinishTarget | null }> {
+  let result: { notice: string; finish: PointFinishTarget | null };
+  try {
+    await runPointSession(analysisId, pointId);
+    result = { notice: BACK_NOTICE, finish: { analysisId, pointId } };
+  } catch (err: unknown) {
+    result = { notice: (err as Error).message, finish: null };
+  }
+  reclaimStdin();
+  return result;
+}
+
 export interface AppOptions {
   chatKey?: string;
 }
@@ -153,6 +171,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
   const management = createManagementBridge(sessionJira);
   const analysis = createAnalysisBridge(sessionJira, () => projectKey);
   let initialTaskFinish: TaskFinishTarget | null = null;
+  let initialPointFinish: PointFinishTarget | null = null;
 
   try {
     for (;;) {
@@ -167,6 +186,7 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
         management,
         analysis,
         initialTaskFinish,
+        initialPointFinish,
         initialChatKey,
         notice,
         fetchEpics: async (): Promise<BrowseItem[]> =>
@@ -203,7 +223,13 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
       if (!action) break;
       chat.closeNow();
       initialTaskFinish = null;
-      if (action.type === 'runTask') {
+      initialPointFinish = null;
+      if (action.type === 'runPoint') {
+        initialChatKey = null;
+        const outcome = await runPointAndReturn(action.analysisId, action.pointId);
+        notice = outcome.notice;
+        initialPointFinish = outcome.finish;
+      } else if (action.type === 'runTask') {
         initialChatKey = null;
         const outcome = await runTaskAndReturn(action.storyKey, action.issueKey);
         notice = outcome.notice;

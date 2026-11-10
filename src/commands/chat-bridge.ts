@@ -1,5 +1,6 @@
 import * as fs from 'fs-extra';
 import { JiraService } from '../services/jira';
+import { formatSeconds } from '../utils/time';
 import { ChatBridge, ChatHeader, ChatModel, ChatUiEvent } from '../refinement/chat-types';
 import {
   appendTranscript,
@@ -11,7 +12,19 @@ import {
   writeClaudeSettings,
 } from '../refinement/chat-store';
 import { ChatEvent, ChatSession, MODELS } from '../refinement/claude-chat';
-import { assertWorkDirUsable, isClaudeAvailable, workFilesOf } from '../refinement/claude';
+import { assertWorkDirUsable, isAnalysisKey, isClaudeAvailable, workFilesOf } from '../refinement/claude';
+import {
+  advanceAnalysisPhase,
+  isValidAnalysisId,
+  ANALYSIS_BLOCK_LABELS,
+  ANALYSIS_PHASE_LABELS,
+  hasAnalysisLogProgress,
+  readAnalysis,
+  updateAnalysis,
+} from '../refinement/analysis';
+import { loadPoints, pointsTotals, PointsValidationError } from '../refinement/analysis-points';
+import { ensureSourceCopies } from '../refinement/analysis-sources';
+import { buildNotesMessage, mergeReferencedNotes } from '../refinement/referenced-notes';
 import { bundledSkillPath } from '../refinement/skill';
 import {
   assertKey,
@@ -23,12 +36,13 @@ import {
   updateState,
 } from '../refinement/state';
 import type { StoryStore } from '../refinement/story-store';
-import { contextTokensOf, exceedsSoftLimit } from '../refinement/usage';
-import { workDirFor } from '../refinement/workdir';
+import { addTurnUsage, contextTokensOf, exceedsSoftLimit } from '../refinement/usage';
+import { CHAT_FILES, workDirFor } from '../refinement/workdir';
 import { refreshDashboard } from './dashboard';
 import { ensureSkill, prepareStory } from './refine';
 import { applyKnowledgeFiles, KnowledgeRuntime, openKnowledge } from './knowledge-runtime';
-import { openStory } from './story-resolver';
+import { linkedAnalysisLine } from '../refinement/knowledge';
+import { invalidateAnalysisListing, listAllAnalyses, openAnalysis, openStory } from './story-resolver';
 import {
   changeKnowledge,
   confirmKnowledge,
@@ -44,6 +58,9 @@ import {
 } from './knowledge-setup';
 
 const NO_BLOCK_LABEL = '—';
+export const INVALID_POINTS_LABEL = 'puntos.json con errores';
+const pointsLabel = (count: number, expectedSeconds: number) =>
+  `${count} ${count === 1 ? 'punto' : 'puntos'} · ${formatSeconds(expectedSeconds)} esperadas`;
 
 export interface ChatBridgeHandle extends ChatBridge {
   // Corta el hijo ya (el handoff a Claude completo necesita la sesión libre)
@@ -83,25 +100,87 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
     return store;
   };
 
+  // Un puntos.json a medio escribir no debe tumbar el encabezado
+  async function pointsDetail(): Promise<string | undefined> {
+    try {
+      const points = await loadPoints(activeStore());
+      if (points === null) return undefined;
+      const totals = pointsTotals(points);
+      return pointsLabel(totals.pointCount, totals.expectedSeconds);
+    } catch (err: unknown) {
+      if (err instanceof PointsValidationError) return INVALID_POINTS_LABEL;
+      throw err;
+    }
+  }
+
   async function buildHeader(model: ChatModel): Promise<ChatHeader> {
+    const common = { key, model, contextTokens, tooLong: exceedsSoftLimit(contextTokens) };
+    if (isAnalysisKey(key)) {
+      const analysisState = await readAnalysis(activeStore(), key);
+      if (!analysisState) throw new Error(`El análisis ${key} aún no tiene estado.`);
+      return {
+        ...common,
+        kind: 'analysis',
+        phase: analysisState.phase,
+        phaseLabel: ANALYSIS_PHASE_LABELS[analysisState.phase],
+        blockLabel: analysisState.block ? ANALYSIS_BLOCK_LABELS[analysisState.block] : NO_BLOCK_LABEL,
+        costUsd: analysisState.usage.costUsd,
+        detail: await pointsDetail(),
+      };
+    }
     const state = await readState(activeStore(), key);
     if (!state) throw new Error(`La historia ${key} aún no tiene estado.`);
-    const { usage } = state;
     return {
-      key,
+      ...common,
       phase: state.phase,
       phaseLabel: PHASE_LABELS[state.phase],
       blockLabel: state.block ? BLOCK_LABELS[state.block] : NO_BLOCK_LABEL,
-      model,
-      contextTokens,
-      costUsd: usage.costUsd,
-      tooLong: exceedsSoftLimit(contextTokens),
+      costUsd: state.usage.costUsd,
     };
+  }
+
+  async function recordUsage(turn: Parameters<typeof recordTurnUsage>[2], costUsd: number): Promise<void> {
+    if (!isAnalysisKey(key)) return recordTurnUsage(activeStore(), key, turn, costUsd);
+    await updateAnalysis(activeStore(), key, (state) => {
+      state.usage = addTurnUsage(state.usage, turn, costUsd);
+    });
+  }
+
+  async function saveSessionId(id: string): Promise<void> {
+    if (!isAnalysisKey(key)) {
+      await updateState(activeStore(), key, (s) => {
+        s.claudeSessionId = id;
+      });
+      return;
+    }
+    await updateAnalysis(activeStore(), key, (s) => {
+      s.claudeSessionId = id;
+    });
+  }
+
+  // Guarda las notas nuevas en el estado y devuelve solo las que no estaban
+  async function storeNotes(notes: string[]): Promise<string[]> {
+    let fresh: string[] = [];
+    const apply = (state: { referencedNotes?: string[] }) => {
+      const current = state.referencedNotes ?? [];
+      const merged = mergeReferencedNotes(current, notes);
+      fresh = merged.filter((note) => !current.includes(note));
+      state.referencedNotes = merged;
+    };
+    if (isAnalysisKey(key)) await updateAnalysis(activeStore(), key, apply);
+    else await updateState(activeStore(), key, apply);
+    return fresh;
+  }
+
+  function sendUserText(text: string): void {
+    if (!session) throw new Error('La conversación no está abierta.');
+    session.send(text);
+    enqueue(() => appendTranscript(activeStore(), { role: 'user', text, at: new Date().toISOString() }));
   }
 
   async function onTurnEnd(event: Extract<ChatEvent, { type: 'turnEnd' }>, model: ChatModel): Promise<void> {
     contextTokens = contextTokensOf(event.usage);
-    await recordTurnUsage(activeStore(), key, event.usage, event.costUsd);
+    await recordUsage(event.usage, event.costUsd);
     emit({ type: 'turnEnd', header: await buildHeader(model) });
     if (event.isError) emit({ type: 'error', message: 'Claude no pudo completar esa respuesta. Intenta de nuevo.' });
   }
@@ -132,24 +211,37 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
     }
   }
 
-  async function startChat(runtime: KnowledgeRuntime, sessionId: string | null, skillSource: string) {
+  // Una historia de la épica de un análisis vinculado lo recibe como contexto de solo lectura
+  async function linkedAnalysisContext(runtime: KnowledgeRuntime): Promise<string | null> {
+    if (isAnalysisKey(key)) return null;
+    const epicKey = (await readState(activeStore(), key))?.parentKey;
+    if (!epicKey) return null;
+    const linked = (await listAllAnalyses(root)).filter((state) => state.link?.epicKey === epicKey);
+    return linkedAnalysisLine(linked, runtime.analysisFolderOf) || null;
+  }
+
+  async function startChat(
+    runtime: KnowledgeRuntime,
+    sessionId: string | null,
+    skillSource: string,
+    subjectName?: string,
+  ) {
+    const linkedContext = await linkedAnalysisContext(runtime);
     const storyStore = activeStore();
     applyKnowledgeFiles(workDir, runtime, key);
     const files = workFilesOf(workDir, key);
+    const skillFileName = isAnalysisKey(key) ? CHAT_FILES.analysisSkill : CHAT_FILES.skill;
     const current = new ChatSession({
       root,
-      skillFile: writeSkillCopy(workDir, skillSource),
+      subjectName,
+      skillFile: writeSkillCopy(workDir, skillSource, skillFileName),
       agentsFile: writeAgentsFile(workDir),
       settingsFile: writeClaudeSettings(workDir, key, runtime.kb),
       mcpFile: files.mcp,
       attachmentsDir: files.attachments,
       kb: runtime.kb,
-      kbContext: runtime.context,
-      saveSessionId: async (id) => {
-        await updateState(storyStore, key, (s) => {
-          s.claudeSessionId = id;
-        });
-      },
+      kbContext: [runtime.context, linkedContext].filter(Boolean).join(' ') || null,
+      saveSessionId,
     });
     session = current;
     current.onEvent((event) => handle(event, current));
@@ -162,12 +254,18 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
       startMessage,
       hasHistory: history.length > 0,
     });
-    return { header: await buildHeader(current.currentModel), codeFolder: root, history, idle: current.isAwaitingFirstMessage };
+    return {
+      header: await buildHeader(current.currentModel),
+      codeFolder: root,
+      history,
+      idle: current.isAwaitingFirstMessage,
+    };
   }
 
   return {
-    async open(storyKey, onEvent) {
-      assertKey(storyKey);
+    async open(chatKey, onEvent) {
+      const analysis = isValidAnalysisId(chatKey);
+      if (!analysis) assertKey(chatKey);
       await writes;
       root = projectRoot();
       workDir = workDirFor(root);
@@ -176,30 +274,48 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
         throw new Error(
           'No encontré `claude` en tu terminal. Instálalo con `npm install -g @anthropic-ai/claude-code`.',
         );
-      const skillSource = bundledSkillPath();
+      const skillSource = bundledSkillPath(analysis ? 'analizar' : 'refinar');
       if (!(await fs.pathExists(skillSource)))
-        throw new Error('No encontré la skill de refinar dentro del paquete. Reinstala JM-SHELL.');
-      key = storyKey;
+        throw new Error(
+          `No encontré la skill de ${analysis ? 'analizar' : 'refinar'} dentro del paquete. Reinstala JM-SHELL.`,
+        );
+      key = chatKey;
       listener = onEvent;
       contextTokens = 0;
       await closeKnowledge();
-      const access = await openStory(root, key);
+      const access = analysis
+        ? { store: await openAnalysis(root, key), notice: undefined }
+        : await openStory(root, key);
       store = access.store;
-      const before = await readState(store, key);
+      const analysisBefore = analysis ? await readAnalysis(store, key) : null;
+      if (analysis && !analysisBefore) throw new Error(`El análisis ${key} no existe.`);
+      const before = analysisBefore ?? (await readState(store, key));
       // Antes de escribir nada: si la base no responde, la historia no se toca
       const runtime = await openKnowledge({
         root,
         key,
         hasSession: Boolean(before?.claudeSessionId),
-        hasLocalLog: await hasLogProgress(store, key),
+        hasLocalLog: analysisBefore
+          ? await hasAnalysisLogProgress(store, analysisBefore.name)
+          : await hasLogProgress(store, key),
       });
       knowledge = runtime;
       try {
-        await prepareStory(getJira(), store, key, (message) => emit({ type: 'error', message }), workDir);
-        await refreshDashboard(root);
+        if (analysis) {
+          await ensureSourceCopies(store, workDir, key);
+          await advanceAnalysisPhase(store, key, 'debate');
+          invalidateAnalysisListing(root);
+        } else {
+          await prepareStory(getJira(), store, key, (message) => emit({ type: 'error', message }), workDir);
+          await refreshDashboard(root);
+        }
         await ensureSkill();
-        const state = await readState(store, key);
-        return { ...(await startChat(runtime, state?.claudeSessionId ?? null, skillSource)), notice: access.notice };
+        const analysisNow = analysis ? await readAnalysis(store, key) : null;
+        const state = analysisNow ?? (await readState(store, key));
+        return {
+          ...(await startChat(runtime, state?.claudeSessionId ?? null, skillSource, analysisNow?.name)),
+          notice: access.notice,
+        };
       } catch (err: unknown) {
         await closeKnowledge();
         throw err;
@@ -217,10 +333,11 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
     renewKnowledgeKey: (apiKey) => renewKnowledgeKey(projectRoot(), apiKey),
     describeKnowledge: () => describeKnowledge(projectRoot()),
     trustKnowledge: () => confirmKnowledge(projectRoot()),
-    send(text) {
-      if (!session) throw new Error('La conversación no está abierta.');
-      session.send(text);
-      enqueue(() => appendTranscript(activeStore(), { role: 'user', text, at: new Date().toISOString() }));
+    send: sendUserText,
+    async referenceNotes(notes) {
+      const fresh = await storeNotes(notes);
+      if (fresh.length > 0) sendUserText(buildNotesMessage(fresh, knowledge?.kb ?? null));
+      return fresh.length;
     },
     toggleDeep() {
       if (!session) return;

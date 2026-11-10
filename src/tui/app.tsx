@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { render, Text, useApp, useInput } from 'ink';
 import { Frame } from './components/frame.js';
 import { HomeScreen } from './components/home-screen.js';
 // Solo tipos: se borra al compilar
-import type { AnalysisBridge } from '../refinement/analysis-types.js';
+import type { AnalysisBridge, PointFinishTarget } from '../refinement/analysis-types.js';
 import type { ChatBridge, KnowledgeStatus } from '../refinement/chat-types.js';
 import type { ManagementBridge, ManagementStatus } from '../refinement/management-types.js';
 import type { PlanBridge } from '../refinement/review-types.js';
@@ -17,6 +17,9 @@ import { ChatScreen } from './screens/chat-screen.js';
 import { CloseScreen } from './screens/close-screen.js';
 import { KnowledgeScreen } from './screens/knowledge-screen.js';
 import { AnalysisScreen } from './screens/analysis-screen.js';
+import { AnalysisPointsScreen } from './screens/analysis-points-screen.js';
+import { AnalysisLinkScreen } from './screens/analysis-link-screen.js';
+import { AnalysisDeleteScreen } from './screens/analysis-delete-screen.js';
 import { AnalysisTrackingScreen } from './screens/analysis-tracking-screen.js';
 import { NewAnalysisScreen } from './screens/analysis-new-screen.js';
 import { CalibrationScreen } from './screens/calibration-screen.js';
@@ -35,6 +38,7 @@ import {
   KNOWLEDGE_TEXTS,
   MANAGEMENT_TEXTS,
   PIN_TEXTS,
+  TASKS_TEXTS,
 } from './texts.js';
 
 export type { StorySummary, BrowseItem, ProjectItem, SetProjectResult };
@@ -48,7 +52,10 @@ export interface UnlockResult {
 export type AppAction =
   | { type: 'handoff'; key: string }
   // Claude completo con el contexto de una subtarea; storyKey es null si no es de una historia de jm
-  | { type: 'runTask'; storyKey: string | null; issueKey: string };
+  | { type: 'runTask'; storyKey: string | null; issueKey: string }
+  // Claude completo con el contexto de un punto de análisis (sin Jira)
+  | { type: 'runPoint'; analysisId: string; pointId: string };
+
 
 export interface AppProps {
   projectKey: string | null;
@@ -66,6 +73,7 @@ export interface AppProps {
   management?: ManagementBridge;
   analysis?: AnalysisBridge;
   initialTaskFinish?: TaskFinishTarget | null;
+  initialPointFinish?: PointFinishTarget | null;
   initialChatKey?: string | null;
   notice?: string | null;
   onAction?: (action: AppAction) => void;
@@ -97,11 +105,21 @@ type Stage =
   | 'calibration'
   | 'newAnalysis'
   | 'analysisTracking'
-  | 'analysisDetail';
+  | 'analysisChat'
+  | 'analysisDetail'
+  | 'analysisDelete'
+  | 'analysisPoints'
+  | 'analysisLink';
 
-const NOTICE_STAGES: readonly Stage[] = ['home', 'chat', 'tasks', 'myDay', 'analysisDetail'];
-// Único destino de entrar a un análisis tras preguntar por su tarea: 10B-2 lo cambia por el chat del análisis
-const ANALYSIS_DESTINATION: Stage = 'analysisDetail';
+const NOTICE_STAGES: readonly Stage[] = ['home', 'chat', 'tasks', 'myDay', 'analysisChat', 'analysisDetail', 'analysisPoints'];
+// Destino de entrar a un análisis tras preguntar por su tarea; sus fuentes se ven con la tecla d del inicio
+const ANALYSIS_DESTINATION: Stage = 'analysisChat';
+
+function initialStageOf(finishTask: unknown, finishPoint: unknown, chatKey: string | null): Stage {
+  if (finishTask) return 'taskFinish';
+  if (finishPoint) return 'analysisPoints';
+  return chatKey ? 'routing' : 'home';
+}
 
 // La clave de la historia es PROYECTO-NÚMERO
 const projectOfKey = (key: string): string => key.slice(0, key.lastIndexOf('-'));
@@ -113,8 +131,9 @@ function hintFor(stage: Stage, choiceCount: number): string {
   if (stage === 'knowledgeSettings') return FOOTER_HINTS.knowledgeSettings;
   if (stage === 'management') return FOOTER_HINTS.management;
   if (stage === 'managementCheck') return FOOTER_HINTS.managementCheck;
-  if (stage !== 'chat') return '';
-  return choiceCount > 0 ? `${FOOTER_HINTS.choose(choiceCount)} · ${FOOTER_HINTS.chat}` : FOOTER_HINTS.chat;
+  if (stage !== 'chat' && stage !== 'analysisChat') return '';
+  const chatHint = stage === 'chat' ? FOOTER_HINTS.chat : FOOTER_HINTS.analysisChat;
+  return choiceCount > 0 ? `${FOOTER_HINTS.choose(choiceCount)} · ${chatHint}` : chatHint;
 }
 
 export function App({
@@ -133,6 +152,7 @@ export function App({
   management,
   analysis,
   initialTaskFinish = null,
+  initialPointFinish = null,
   initialChatKey = null,
   notice: initialNotice = null,
   onAction,
@@ -144,14 +164,16 @@ export function App({
   const [chatKey, setChatKey] = useState<string | null>(initialChatKey);
   const [storyKey, setStoryKey] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>(
-    unlocked ? (initialTaskFinish && tasks ? 'taskFinish' : initialChatKey ? 'routing' : 'home') : 'pin',
+    unlocked ? initialStageOf(initialTaskFinish && tasks, initialPointFinish && analysis, initialChatKey) : 'pin',
   );
   const [finishTarget, setFinishTarget] = useState(initialTaskFinish);
   // Planificación abierta de la historia del chat: al salir se pregunta si terminó y se vuelve al inicio
   const [planningKey, setPlanningKey] = useState<string | null>(null);
   const [finishToHome, setFinishToHome] = useState(false);
   // Análisis abierto y su tarea de seguimiento abierta: al salir se pregunta si terminó y se vuelve al inicio
-  const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [analysisId, setAnalysisId] = useState<string | null>(initialPointFinish?.analysisId ?? null);
+  // Punto que se trabajó en Claude: al volver a la pantalla de puntos se pregunta si terminó
+  const [pointToAsk, setPointToAsk] = useState<string | null>(initialPointFinish?.pointId ?? null);
   const [analysisTaskKey, setAnalysisTaskKey] = useState<string | null>(null);
   const [projectsReturnTo, setProjectsReturnTo] = useState<Stage>('home');
   const [managementNext, setManagementNext] = useState<Stage>('home');
@@ -162,6 +184,7 @@ export function App({
   const [checking, setChecking] = useState(false);
   const [choiceCount, setChoiceCount] = useState(0);
   const [pinError, setPinError] = useState<string | null>(null);
+  const knowledgeProceed = useRef<(() => void | Promise<void>) | null>(null);
 
   const handlePin = async (pin: string) => {
     setChecking(true);
@@ -188,6 +211,33 @@ export function App({
       .catch((): KnowledgeStatus => 'set')
       .then((status) => setStage(ROUTE_BY_STATUS[status] === 'chat' ? entryRoute : ROUTE_BY_STATUS[status]));
   }, [stage, chat]);
+
+  // Pide la base si la carpeta no la tiene (o no la confirmó) y luego sigue a `proceed`; cancelar también sigue
+  const askKnowledgeThen = async (proceed: () => void | Promise<void>) => {
+    const status = await chat.knowledgeStatus().catch((): KnowledgeStatus => 'set');
+    if (status === 'set') {
+      await proceed();
+      return;
+    }
+    knowledgeProceed.current = proceed;
+    setStage(ROUTE_BY_STATUS[status]);
+  };
+
+  // Sin continuación pendiente la base se pide al entrar a una historia: sigue su ruta o, al cancelar, vuelve al inicio
+  const finishKnowledge = (cancelled: boolean) => {
+    const proceed = knowledgeProceed.current;
+    knowledgeProceed.current = null;
+    // proceed puede ir a Jira (gestión): un fallo se avisa, no tumba la app
+    if (proceed)
+      void Promise.resolve()
+        .then(proceed)
+        .catch((err: unknown) => {
+          setStage('home');
+          setNotice(TASKS_TEXTS.actionError((err as Error).message));
+        });
+    else if (cancelled) void leaveChat();
+    else setStage(entryRoute);
+  };
 
   // La gestión del proyecto se pregunta una sola vez: solo si nunca respondió, y luego sigue a `next`
   const askManagementThen = async (key: string | null, next: Stage) => {
@@ -235,6 +285,34 @@ export function App({
     else setStage(ANALYSIS_DESTINATION);
   };
 
+  const handleAnalysisDetail = (id: string | null) => {
+    // Después de la tecla que respondió: el useInput global borra el aviso con cada pulsación
+    if (!id) {
+      queueMicrotask(() => setNotice(HOME_TEXTS.pickAnalysis));
+      return;
+    }
+    setAnalysisId(id);
+    setAnalysisTaskKey(null);
+    setStage('analysisDetail');
+  };
+
+  const handleDeleteAnalysis = (id: string | null) => {
+    // Después de la tecla que respondió: el useInput global borra el aviso con cada pulsación
+    if (!id) {
+      queueMicrotask(() => setNotice(HOME_TEXTS.onlyAnalysisDeletable));
+      return;
+    }
+    setAnalysisId(id);
+    setStage('analysisDelete');
+  };
+
+  const finishDeleteAnalysis = async (message: string | null) => {
+    setAnalysisId(null);
+    setStories(await loadStories(projectKey));
+    setStage('home');
+    if (message) setNotice(message);
+  };
+
   const leaveAnalysis = async () => {
     if (analysisTaskKey && analysisId && tasks) {
       setFinishTarget({ storyKey: analysisId, issueKey: analysisTaskKey });
@@ -249,9 +327,44 @@ export function App({
     setStage('home');
   };
 
+  const handleAnalysisPoints = (id: string) => {
+    setAnalysisId(id);
+    setPointToAsk(null);
+    setStage('analysisPoints');
+  };
+
+  const handleAnalysisLink = (id: string | null) => {
+    // Después de la tecla que respondió: el useInput global borra el aviso con cada pulsación
+    if (!id) {
+      queueMicrotask(() => setNotice(HOME_TEXTS.onlyAnalysisLinkable));
+      return;
+    }
+    setAnalysisId(id);
+    setStage('analysisLink');
+  };
+
+  const finishAnalysisLink = async (message: string | null) => {
+    setAnalysisId(null);
+    setStories(await loadStories(projectKey));
+    setStage('home');
+    if (message) setNotice(message);
+  };
+
+  const handleRunPoint = (id: string, pointId: string) => {
+    onAction?.({ type: 'runPoint', analysisId: id, pointId });
+    exit();
+  };
+
+  const leavePoints = async () => {
+    setAnalysisId(null);
+    setPointToAsk(null);
+    setStories(await loadStories(projectKey));
+    setStage('home');
+  };
+
   const openNewAnalysis = () => {
     if (!analysis) return;
-    if (projectKey) setStage('newAnalysis');
+    if (projectKey) void askKnowledgeThen(() => setStage('newAnalysis'));
     else queueMicrotask(() => setNotice(HOME_TEXTS.needsProjectForAnalysis));
   };
 
@@ -328,6 +441,11 @@ export function App({
           onManagement={openManagement}
           onNewAnalysis={openNewAnalysis}
           onAnalysis={handleAnalysis}
+          onAnalysisDetail={handleAnalysisDetail}
+          onAnalysisPoints={handleAnalysisPoints}
+          onAnalysisLink={handleAnalysisLink}
+          onDeleteAnalysis={handleDeleteAnalysis}
+          onNotice={(message) => queueMicrotask(() => setNotice(message))}
           onQuit={exit}
         />
       )}
@@ -344,7 +462,11 @@ export function App({
       {stage === 'newAnalysis' && analysis && (
         <NewAnalysisScreen
           analysis={analysis}
-          onDone={() => void loadStories(projectKey).then(setStories).then(() => setStage('home'))}
+          onDone={() =>
+            void loadStories(projectKey)
+              .then(setStories)
+              .then(() => setStage('home'))
+          }
         />
       )}
       {stage === 'analysisTracking' && analysisId && analysis && (
@@ -361,14 +483,48 @@ export function App({
           }}
         />
       )}
+      {stage === 'analysisChat' && analysisId && (
+        <ChatScreen
+          chatKey={analysisId}
+          chat={chat}
+          onBack={() => void leaveAnalysis()}
+          onHandoff={() => undefined}
+          onChoicesChange={setChoiceCount}
+        />
+      )}
       {stage === 'analysisDetail' && analysisId && analysis && (
         <AnalysisScreen id={analysisId} analysis={analysis} onBack={() => void leaveAnalysis()} />
       )}
+      {stage === 'analysisPoints' && analysisId && analysis && (
+        <AnalysisPointsScreen
+          id={analysisId}
+          points={analysis.points}
+          askFinish={pointToAsk}
+          onRunPoint={handleRunPoint}
+          onBack={() => void leavePoints()}
+        />
+      )}
+      {stage === 'analysisLink' && analysisId && analysis && (
+        <AnalysisLinkScreen
+          id={analysisId}
+          link={analysis.link}
+          fetchEpics={fetchEpics}
+          fetchStories={fetchStories}
+          onDone={(message) => void finishAnalysisLink(message)}
+        />
+      )}
+      {stage === 'analysisDelete' && analysisId && analysis && (
+        <AnalysisDeleteScreen
+          id={analysisId}
+          analysis={analysis}
+          onDone={(message) => void finishDeleteAnalysis(message)}
+        />
+      )}
       {stage === 'knowledge' && (
-        <KnowledgePrompt chat={chat} onDone={() => setStage(entryRoute)} onCancel={() => void leaveChat()} />
+        <KnowledgePrompt chat={chat} onDone={() => finishKnowledge(false)} onCancel={() => finishKnowledge(true)} />
       )}
       {stage === 'knowledgeConfirm' && (
-        <KnowledgeConfirm chat={chat} onDone={() => setStage(entryRoute)} onCancel={() => void leaveChat()} />
+        <KnowledgeConfirm chat={chat} onDone={() => finishKnowledge(false)} onCancel={() => finishKnowledge(true)} />
       )}
       {stage === 'knowledgeSettings' && (
         <KnowledgeScreen
@@ -441,7 +597,7 @@ export function App({
           onChanged={async (key) => {
             setProjectKey(key);
             setStories(await loadStories(key));
-            await askManagementThen(key, projectsReturnTo);
+            await askKnowledgeThen(() => askManagementThen(key, projectsReturnTo));
           }}
           onBack={() => setStage(projectsReturnTo)}
         />

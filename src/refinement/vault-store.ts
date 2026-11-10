@@ -64,6 +64,7 @@ export function createVaultStore({ client, baseFolder, dir, label }: VaultStoreO
     async remove(name) {
       await client.deleteFile(target(name));
     },
+    removeFolder: async () => undefined,
     localPath: () => null,
   };
 }

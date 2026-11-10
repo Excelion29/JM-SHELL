@@ -73,6 +73,17 @@ test('con carpeta local: --add-dir y las reglas con ruta absoluta solo van en lo
   assert.deepEqual(settings.permissions.allow, [...chatAllowedTools('AQ-45', LOCAL).split(','), ...rules]);
 });
 
+test('con la raíz de la bóveda como base Claude solo escribe en la carpeta JM-ADR', () => {
+  const rootBase = { type: 'local', root: 'C:\notas', adrDir: 'C:/notas/06-JM-ADR' } as const;
+  assert.deepEqual(scopedKnowledgeRules(rootBase, 'AQ-45'), [
+    'Write(//c/notas/06-JM-ADR/AQ-45/**)',
+    'Write(//c/notas/06-JM-ADR/AQ-45.md)',
+    'Edit(//c/notas/06-JM-ADR/AQ-45/**)',
+    'Edit(//c/notas/06-JM-ADR/AQ-45.md)',
+  ]);
+  assert.ok(!chatAllowedTools('AQ-45', rootBase).includes('Write'));
+});
+
 test('sin base los ajustes y los argumentos no cambian', () => {
   const args = buildChatArgs(BASE_INPUT);
   assert.ok(!args.includes('--mcp-config') && !args.includes('--add-dir'));

@@ -102,10 +102,6 @@ test('si el cambio falla no se guarda nada ni se toca la configuración anterior
     changeKnowledge(root, { type: 'connect', connection: { type: 'current' }, baseFolder: '../fuera' }),
     /no es válida/,
   );
-  await assert.rejects(
-    changeKnowledge(root, { type: 'connect', connection: { type: 'current' }, baseFolder: '' }),
-    /no la raíz/,
-  );
   assert.deepEqual((await readConfig(root)).knowledge, knowledge);
 });
 

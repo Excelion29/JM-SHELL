@@ -289,3 +289,19 @@ test('el listado de análisis sin base también se guarda en la sesión y invali
   invalidateAnalysisListing(root);
   assert.equal((await listAllAnalyses(root)).length, 2);
 });
+
+test('con MCP, listar antes del PIN no deja en caché un listado vacío que esconda los análisis de la bóveda', async () => {
+  setSessionPin(PIN);
+  await saveKnowledgeKey(mcpUrl, API_KEY, PIN, secrets);
+  await saveKnowledgeCert(mcpUrl, TEST_CERT_A, secrets);
+  seedVaultBase();
+  const root = await projectWith(mcpConfig());
+  const options = { secretsDir: secrets };
+  await createAnalysis(await openAnalysis(root, 'an-1', options), 'an-1', 'Observaciones', 'AQ');
+  invalidateAnalysisListing(root);
+  // El inicio carga antes de pedir el PIN
+  clearSession();
+  assert.deepEqual(await listAllAnalyses(root, options), []);
+  setSessionPin(PIN);
+  assert.deepEqual((await listAllAnalyses(root, options)).map((a) => a.id), ['an-1']);
+});

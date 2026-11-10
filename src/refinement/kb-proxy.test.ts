@@ -448,3 +448,119 @@ test('solo se reenvían los argumentos permitidos de cada herramienta (-32602 si
   }
   assert.equal(seen.length, 0);
 });
+
+test('con writeFolder las escrituras solo caben en esa carpeta y las lecturas siguen en toda la base', async () => {
+  const folder = `${BASE}/06-JM-ADR/analisis/an-1`;
+  const scoped = await startKbProxy({
+    upstreamUrl: 'https://kb.example/mcp',
+    apiKey: FAKE_KEY,
+    baseFolder: BASE,
+    writeFolder: folder,
+    request: fakeRequest,
+  });
+  try {
+    seen = [];
+    const written = await callOn(scoped, toolCall('vault_write', { path: `${folder}/puntos.json`, content: 'x' }));
+    assert.deepEqual(JSON.parse(written.body).result, { ok: true });
+    for (const path of [
+      `${BASE}/06-JM-ADR/AQ-1.md`,
+      `${BASE}/06-JM-ADR/analisis/an-2/x.md`,
+      `${folder}X/x.md`,
+      folder,
+    ]) {
+      const reply = await callOn(scoped, toolCall('vault_write', { path, content: 'x' }));
+      assert.match(JSON.parse(reply.body).error.message, /rechazó la ruta/, path);
+    }
+    const read = await callOn(scoped, toolCall('vault_read', { path: `${BASE}/otra/nota.md` }));
+    assert.ok(JSON.parse(read.body).result, 'leer fuera de la carpeta del análisis sigue permitido');
+  } finally {
+    await scoped.close();
+  }
+});
+
+test('writeDenied bloquea estado.json y fuentes/ dentro de la carpeta de escritura, también con otra capitalización', async () => {
+  const folder = `${BASE}/06-JM-ADR/analisis/an-1`;
+  const scoped = await startKbProxy({
+    upstreamUrl: 'https://kb.example/mcp',
+    apiKey: FAKE_KEY,
+    baseFolder: BASE,
+    writeFolder: folder,
+    writeDenied: [`${folder}/estado.json`, `${folder}/fuentes`],
+    request: fakeRequest,
+  });
+  try {
+    seen = [];
+    const denied = [
+      `${folder}/estado.json`,
+      `${folder}/ESTADO.JSON`,
+      `${folder}/fuentes/texto.md`,
+      `${folder}/fuentes`,
+      `${folder}/Fuentes/a.png`,
+    ];
+    for (const path of denied) {
+      for (const name of ['vault_write', 'vault_append']) {
+        const reply = await callOn(scoped, toolCall(name, { path, content: 'x' }));
+        assert.match(JSON.parse(reply.body).error.message, /solo lectura/, `${name} ${path}`);
+      }
+    }
+    assert.equal(seen.length, 0);
+    for (const path of [`${folder}/fase.json`, `${folder}/puntos.json`, `${folder}/fuentes-extra.md`]) {
+      const reply = await callOn(scoped, toolCall('vault_write', { path, content: 'x' }));
+      assert.deepEqual(JSON.parse(reply.body).result, { ok: true }, path);
+    }
+    const read = await callOn(scoped, toolCall('vault_read', { path: `${folder}/estado.json` }));
+    assert.ok(JSON.parse(read.body).result, 'leer sigue permitido');
+  } finally {
+    await scoped.close();
+  }
+});
+
+test('con la raíz como base las escrituras solo caben en JM-ADR; leer en toda la bóveda sí, salvo rutas ocultas', async () => {
+  const adr = '06-JM-ADR';
+  await assert.rejects(
+    startKbProxy({ upstreamUrl: 'https://kb.example/mcp', apiKey: FAKE_KEY, baseFolder: '', request: fakeRequest }),
+    /carpeta de escritura/,
+  );
+  const scoped = await startKbProxy({
+    upstreamUrl: 'https://kb.example/mcp',
+    apiKey: FAKE_KEY,
+    baseFolder: '',
+    writeFolder: adr,
+    request: fakeRequest,
+  });
+  try {
+    seen = [];
+    for (const name of ['vault_write', 'vault_append']) {
+      const ok = await callOn(scoped, toolCall(name, { path: `${adr}/AQ-1.md`, content: 'x' }));
+      assert.deepEqual(JSON.parse(ok.body).result, { ok: true }, name);
+    }
+    for (const path of ['nota.md', 'PROY/nota.md', `${adr}X/a.md`, adr, `${adr}/.git/config`, '.obsidian/app.json']) {
+      const reply = await callOn(scoped, toolCall('vault_write', { path, content: 'x' }));
+      assert.match(JSON.parse(reply.body).error.message, /rechazó la ruta/, path);
+    }
+    for (const path of ['', 'PROY/nota.md', `${adr}/AQ-1.md`]) {
+      const read = await callOn(scoped, toolCall('vault_read', { path }));
+      assert.ok(JSON.parse(read.body).result, path);
+    }
+    for (const path of ['.git/config', '.obsidian/app.json', 'PROY/.git/x']) {
+      const read = await callOn(scoped, toolCall('vault_read', { path }));
+      assert.match(JSON.parse(read.body).error.message, /rechazó la ruta/, path);
+    }
+  } finally {
+    await scoped.close();
+  }
+});
+
+test('escribir con punto o espacio final o con nombre corto de Windows no burla los denegados', () => {
+  const denied = ['06-JM-ADR/analisis/an-1/estado.json', '06-JM-ADR/analisis/an-1/fuentes'];
+  for (const path of [
+    '06-JM-ADR/analisis/an-1/estado.json.',
+    '06-JM-ADR/analisis/an-1/estado.json ',
+    '06-JM-ADR/analisis/an-1/fuentes./x.md',
+    '06-JM-ADR/analisis/an-1/fuentes /x.md',
+    '06-JM-ADR/analisis/an-1/ESTADO~1.JSO',
+  ]) {
+    assert.notEqual(checkKbPath(path, '06-JM-ADR/analisis/an-1', true, denied), null, path);
+  }
+  assert.equal(checkKbPath('06-JM-ADR/analisis/an-1/puntos.json', '06-JM-ADR/analisis/an-1', true, denied), null);
+});

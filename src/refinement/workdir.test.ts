@@ -35,6 +35,7 @@ test('los archivos técnicos van a la carpeta de trabajo, el repo queda limpio y
   writeAgentsFile(workDir);
   writeClaudeSettings(workDir, 'AQ-45', { type: 'mcp' });
   writeSkillCopy(workDir, skill);
+  writeSkillCopy(workDir, skill, CHAT_FILES.analysisSkill);
   writeMcpConfig(workDir, 'http://127.0.0.1:50123/mcp/abc');
   writeKnowledgeContext(workDir, 'contexto');
   writeTaskSettings(workDir);

@@ -351,8 +351,10 @@ interface AnalysisSources {
 
 async function analysisSources(root: string, options: ResolverOptions): Promise<AnalysisSources> {
   const config = await readKnowledgeConfig(root);
-  const useKnowledge = config !== null && config.type !== 'none' && (config.type === 'local' || getSessionPin() !== null);
-  if (!useKnowledge) return { folders: null, ids: await localAnalysisIds(root), complete: true };
+  const hasKnowledge = config !== null && config.type !== 'none';
+  const useKnowledge = hasKnowledge && (config.type === 'local' || getSessionPin() !== null);
+  // Base MCP aún sin PIN (inicio antes de desbloquear): el listado de .jm no se guarda, o esconde los de la base
+  if (!useKnowledge) return { folders: null, ids: await localAnalysisIds(root), complete: !hasKnowledge };
   try {
     const folders = await knowledgeFoldersOf(root, config, options.secretsDir);
     if (!folders) return { folders: null, ids: await localAnalysisIds(root), complete: true };

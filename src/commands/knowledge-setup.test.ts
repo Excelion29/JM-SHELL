@@ -201,10 +201,13 @@ test('un enlace (junction/symlink) que sale de la raíz no se puede listar ni pr
   await assert.rejects(previewKnowledge(connection, 'salida/secreto.md'), /sale de la carpeta/);
 });
 
-test('saveKnowledge rechaza la raíz de la bóveda como carpeta base', async () => {
+test('saveKnowledge guarda la raíz de la bóveda como carpeta base y queda confirmada', async () => {
   const root = await projectRoot({ projectKey: 'AQ' });
-  const connection = { type: 'local', root: 'C:\notas' } as const;
-  await assert.rejects(saveKnowledge(root, { type: 'connect', baseFolder: '', connection }), /no la raíz/);
+  const secrets = await tempDir('jm-kb-secrets-');
+  const connection = { type: 'local', root: await tempDir('jm-kb-vault-') } as const;
+  await saveKnowledge(root, { type: 'connect', baseFolder: '', connection }, secrets);
+  assert.equal((await readConfig(root)).knowledge.baseFolder, '');
+  assert.equal(await knowledgeStatus(root, secrets), 'set');
 });
 
 let mcpServer: https.Server;

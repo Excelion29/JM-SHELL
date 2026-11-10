@@ -97,9 +97,12 @@ test('knowledgeContextLine nombra la base y la nota; sin base no dice nada', () 
   assert.ok(!local.includes('copia de solo lectura'));
 });
 
-test('parseKnowledgeConfig rechaza una carpeta base vacía (la raíz de la bóveda)', () => {
-  assert.equal(parseKnowledgeConfig({ type: 'mcp', url: 'https://h/mcp', baseFolder: '', tls: 'system' }), null);
-  assert.equal(parseKnowledgeConfig({ type: 'local', root: 'C:\notas', baseFolder: '' }), null);
+test('parseKnowledgeConfig acepta la raíz de la bóveda (carpeta base vacía)', () => {
+  const mcp = { type: 'mcp', url: 'https://h/mcp', baseFolder: '', tls: 'system' };
+  assert.deepEqual(parseKnowledgeConfig(mcp), mcp);
+  const local = { type: 'local', root: 'C:\\notas', baseFolder: '' };
+  assert.deepEqual(parseKnowledgeConfig(local), local);
+  assert.equal(parseKnowledgeConfig({ ...mcp, baseFolder: undefined }), null);
 });
 
 test('resolveAdrFolder ignora nombres con separadores de ruta', () => {

@@ -2,6 +2,11 @@ import type {
   AnalysisBridge,
   AnalysisDetail,
   NewAnalysisInput,
+  LinkPointResult,
+  LinkTargetOutcome,
+  PointRow,
+  PointsModel,
+  PointStartOutcome,
   SourceResult,
   SourcesInput,
 } from '../refinement/analysis-types.js';
@@ -109,6 +114,8 @@ export interface FakeKnowledge {
   // Errores simulados al cambiar la base o renovar la key
   changeError?: string;
   renewError?: string;
+  // Cuántas notas toma como nuevas referenceNotes; por defecto todas
+  notesAdded?: number;
 }
 
 export function createFakeChat(
@@ -128,6 +135,7 @@ export function createFakeChat(
     listed: [] as Array<{ connection: KnowledgeTarget; dir: string }>,
     changed: [] as KnowledgeChoice[],
     renewed: [] as string[],
+    notes: [] as string[][],
   };
   let listener: ((event: ChatUiEvent) => void) | null = null;
   const chat: ChatBridge = {
@@ -146,6 +154,10 @@ export function createFakeChat(
     toggleDeep: () => void (calls.toggle += 1),
     newSession: () => void (calls.newSession += 1),
     close: async () => void (calls.close += 1),
+    referenceNotes: async (notes) => {
+      calls.notes.push(notes);
+      return knowledge.notesAdded ?? notes.length;
+    },
     knowledgeStatus: async () => {
       if (knowledge.statusDelayMs) await new Promise((resolve) => setTimeout(resolve, knowledge.statusDelayMs));
       if (knowledge.statusError) throw new Error('estado ilegible');
@@ -409,6 +421,7 @@ export const EMPTY_CALIBRATION: CalibrationModel = {
   excludedDirect: 0,
   unreadable: 0,
   planning: { count: 0, estimateSeconds: 0, elapsedSeconds: 0 },
+  analysisPoints: { count: 0, estimateSeconds: 0, elapsedSeconds: 0 },
 };
 
 export const fakeRow = (key: string, patch: Partial<TaskRow> = {}): TaskRow => ({
@@ -424,6 +437,7 @@ export const fakeRow = (key: string, patch: Partial<TaskRow> = {}): TaskRow => (
   pendingDone: false,
   realClaudeSeconds: null,
   realElapsedSeconds: null,
+  issueKey: null,
   ...patch,
 });
 
@@ -535,18 +549,108 @@ export interface FakeAnalysisOptions {
   createError?: string;
   addError?: string;
   results?: SourceResult[];
+  // Mensaje con el que remove se niega; sin él borra
+  removeError?: string;
+  // Puntos del análisis; sin ellos no hay puntos.json
+  pointRows?: PointRow[];
+  // Épica ya vinculada al abrir el vínculo
+  linkEpicKey?: string | null;
+  // Clave -> resultado de resolveTarget; una clave ausente se acepta (épica si está en `epics`)
+  linkTargets?: Record<string, LinkTargetOutcome>;
+  // Resultados de create; sin ellos cada punto crea AQ-<100+n>
+  linkResults?: LinkPointResult[];
+  // Mensaje de aviso que devuelven finish y giveBack (Jira no se movió)
+  pointNotice?: string;
+  // Transiciones que ofrece Jira al devolver un punto vinculado
+  returnOptions?: string[];
+  // Estado de los puntos: 'invalid' simula un puntos.json con errores
+  pointsInvalid?: string;
 }
+
+export const fakePointRow = (id: string, patch: Partial<PointRow> = {}): PointRow => ({
+  id,
+  title: `Punto ${id}`,
+  status: 'pending',
+  estimateSeconds: 3600,
+  realClaudeSeconds: null,
+  realElapsedSeconds: null,
+  ...patch,
+});
 
 // Puente de análisis falso en memoria: registra lo que la pantalla pide, sin disco ni Jira
 export function createFakeAnalysis(options: FakeAnalysisOptions = {}) {
-  const detail: AnalysisDetail = { id: 'an-1', name: 'Observaciones', sources: [], tracking: [], ...options.detail };
+  const detail: AnalysisDetail = {
+    id: 'an-1',
+    name: 'Observaciones',
+    sources: [],
+    tracking: [],
+    documented: false,
+    ...options.detail,
+  };
   const calls = {
+    removed: [] as string[],
     created: [] as NewAnalysisInput[],
     added: [] as Array<{ id: string; input: SourcesInput }>,
     tracking: [] as Array<{ id: string; input: PlanningInput; whereKey: string | null }>,
+    pointStarted: [] as Array<{ id: string; pointId: string; reopen: boolean }>,
+    pointFinished: [] as string[],
+    pointGivenBack: [] as Array<{ pointId: string; transitionName: string | undefined }>,
+    linkEpics: [] as Array<string | null>,
+    linkCreated: [] as Array<Record<string, string>>,
+    linkResolved: [] as Array<{ key: string; mustBeEpic: boolean }>,
+  };
+  let linkEpicKey = options.linkEpicKey ?? null;
+  const rows = options.pointRows?.map((row) => ({ ...row }));
+  const rowOf = (pointId: string): PointRow | undefined => rows?.find((row) => row.id === pointId);
+  const pointsModel = (): PointsModel => {
+    const base = { id: detail.id, name: detail.name };
+    if (options.pointsInvalid) return { kind: 'invalid', ...base, message: options.pointsInvalid };
+    return rows ? { kind: 'ready', ...base, rows: rows.map((row) => ({ ...row })) } : { kind: 'missing', ...base };
   };
   const outcomes = [...(options.trackingOutcomes ?? [])];
   const analysis: AnalysisBridge = {
+    points: {
+      load: async () => pointsModel(),
+      start: async (id, pointId, startOptions): Promise<PointStartOutcome> => {
+        const row = rowOf(pointId);
+        if (row?.status === 'done' && !startOptions.reopen) return { kind: 'needs-reopen' };
+        calls.pointStarted.push({ id, pointId, reopen: startOptions.reopen === true });
+        if (row) row.status = 'started';
+        return { kind: 'ok' };
+      },
+      finish: async (_id, pointId) => {
+        calls.pointFinished.push(pointId);
+        const row = rowOf(pointId);
+        if (row) row.status = 'done';
+        return options.pointNotice ?? null;
+      },
+      returnOptions: async () => options.returnOptions ?? [],
+      giveBack: async (_id, pointId, transitionName) => {
+        calls.pointGivenBack.push({ pointId, transitionName });
+        const row = rowOf(pointId);
+        if (row) row.status = 'pending';
+        return options.pointNotice ?? null;
+      },
+    },
+    link: {
+      load: async () => ({ epicKey: linkEpicKey, points: pointsModel() }),
+      resolveTarget: async (_id, key, mustBeEpic) => {
+        calls.linkResolved.push({ key, mustBeEpic });
+        const childKind = mustBeEpic ? 'standard' : 'subtask';
+        return options.linkTargets?.[key] ?? { ok: true, target: { key, summary: `Resumen de ${key}`, childKind } };
+      },
+      setEpic: async (_id, epicKey) => {
+        calls.linkEpics.push(epicKey);
+        linkEpicKey = epicKey;
+      },
+      create: async (_id, targets) => {
+        calls.linkCreated.push(targets);
+        return (
+          options.linkResults ??
+          Object.keys(targets).map((pointId, n) => ({ pointId, ok: true, issueKey: `AQ-${100 + n}` }))
+        );
+      },
+    },
     create: async (input) => {
       if (options.createError) return { ok: false, message: options.createError };
       calls.created.push(input);
@@ -560,6 +664,11 @@ export function createFakeAnalysis(options: FakeAnalysisOptions = {}) {
       const now = new Date().toISOString();
       if (input.paths.trim()) detail.sources.push({ file: input.paths.trim(), origin: 'file', addedAt: now });
       return { ok: true, results: options.results ?? [] };
+    },
+    remove: async (id) => {
+      if (options.removeError) return { ok: false, message: options.removeError };
+      calls.removed.push(id);
+      return { ok: true };
     },
     trackingStatus: async () => ({ open: options.trackingOpen ?? null, managementKey: options.managementKey ?? null }),
     trackingSuggestion: async () => ({ estimate: '1h', dueDate: 'hoy', measured: 0 }),

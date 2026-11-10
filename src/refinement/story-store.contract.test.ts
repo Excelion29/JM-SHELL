@@ -116,6 +116,14 @@ for (const [label, make] of harnesses) {
       await assert.doesNotReject(store.remove('adjuntos/1-captura.png'));
     });
 
+    test('removeFolder: idempotente, no falla con carpetas inexistentes y no toca archivos de otras', async () => {
+      await store.removeFolder('no-existe');
+      await store.remove('adjuntos/1-captura.png');
+      await store.removeFolder('adjuntos');
+      await assert.doesNotReject(store.removeFolder('adjuntos'));
+      assert.equal(await store.exists('estado.json'), true);
+    });
+
     test('rechaza nombres con "..", "\\", segmentos con punto inicial o caracteres no permitidos', async () => {
       for (const name of INVALID_NAMES) {
         await assert.rejects(store.readText(name), /no permitido/, name);
@@ -169,5 +177,8 @@ test('el listado del almacén local trae el tamaño y el de la bóveda no', asyn
   assert.equal(listed.find((e) => e.name === 'a.md')?.size, 4);
   assert.equal(await local.readText('a.md'), 'hola');
   const vaultStore = createVaultStore({ client, baseFolder: BASE, dir: VAULT_DIR, label: 'falso' });
-  assert.equal((await vaultStore.list('')).every((e) => e.size === undefined), true);
+  assert.equal(
+    (await vaultStore.list('')).every((e) => e.size === undefined),
+    true,
+  );
 });

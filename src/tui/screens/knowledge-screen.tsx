@@ -98,8 +98,9 @@ export function KnowledgeScreen({ chat, onChanged, onBack }: KnowledgeScreenProp
     setMessage(null);
     setNote(null);
     if (!settings) return;
+    // Sin base solo se ofrece conectar: el resto de las teclas no hace nada
+    if (settings.type === 'none' && next !== 'connect') return;
     if (next === 'renew' && settings.type !== 'mcp') setError(T.renewNeedsMcp);
-    else if ((next === 'base' || next === 'remove') && settings.type === 'none') setError(T.needsBase);
     else setStep(next);
   };
 
@@ -127,7 +128,7 @@ export function KnowledgeScreen({ chat, onChanged, onBack }: KnowledgeScreenProp
           {settings && <SettingsView settings={settings} />}
           {settings && (
             <Box flexDirection="column">
-              {Object.values(T.actions).map((action) => (
+              {(settings.type === 'none' ? [T.connectAction] : Object.values(T.actions)).map((action) => (
                 <Text key={action}>{action}</Text>
               ))}
             </Box>

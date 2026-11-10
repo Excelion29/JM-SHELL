@@ -2,7 +2,7 @@ import * as fs from 'fs-extra';
 import * as os from 'os';
 import * as path from 'path';
 
-export const SKILL_NAMES = ['refinar', 'ejecutar'] as const;
+export const SKILL_NAMES = ['refinar', 'ejecutar', 'analizar'] as const;
 export type SkillName = (typeof SKILL_NAMES)[number];
 const SKILL_FILE = 'SKILL.md';
 

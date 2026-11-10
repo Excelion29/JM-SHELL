@@ -4,11 +4,15 @@ import * as path from 'path';
 import { MAX_ATTACHMENT_BYTES, sanitizeFilename } from './attachments';
 import { readAnalysis, updateAnalysis } from './analysis';
 import type { AnalysisSource, SourceResult, SourcesInput } from './analysis-types';
-import type { StoryStore } from './story-store';
+import { assertStoryName, type StoryStore } from './story-store';
+import { WORK_ANALYSIS_DIR, WORK_ATTACHMENTS_DIR, writeReadOnlyCopy } from './workdir';
 
 export const SOURCES_DIR = 'fuentes';
 export const TEXT_SOURCE_FILE = 'texto.md';
 export const SOURCE_EXTENSIONS = ['.md', '.txt', '.pdf', '.eml', '.png', '.jpg', '.jpeg'] as const;
+// Tope de copias de solo lectura por análisis: una carpeta enorme en la bóveda no debe llenar el disco
+export const SOURCE_COPIES_MAX = 100;
+const BINARY_EXTENSIONS: readonly string[] = ['.pdf', '.png', '.jpg', '.jpeg'];
 const PATH_SEPARATORS = new Set([',', ';', '\n', '\r']);
 const QUOTES = new Set(['"', "'"]);
 const TEXT_SEPARATOR = '\n\n---\n\n';
@@ -125,7 +129,8 @@ export async function addSources(store: StoryStore, id: string, input: SourcesIn
     const name = `${SOURCES_DIR}/${TEXT_SOURCE_FILE}`;
     const previous = await store.readText(name);
     const next = previous ? `${previous.trimEnd()}${TEXT_SEPARATOR}${text}\n` : `${text}\n`;
-    if (Buffer.byteLength(next) > MAX_ATTACHMENT_BYTES) results.push(failed(TEXT_SOURCE_FILE, `con ese texto ${TOO_BIG}`));
+    if (Buffer.byteLength(next) > MAX_ATTACHMENT_BYTES)
+      results.push(failed(TEXT_SOURCE_FILE, `con ese texto ${TOO_BIG}`));
     else {
       await store.writeText(name, next);
       if (!state.sources.some((s) => s.file === TEXT_SOURCE_FILE)) {
@@ -136,4 +141,30 @@ export async function addSources(store: StoryStore, id: string, input: SourcesIn
   }
   if (added.length > 0) await updateAnalysis(store, id, (s) => void s.sources.push(...added));
   return results;
+}
+
+// Un nombre raro en la bóveda (puesto por otra persona) se omite: no debe impedir abrir el análisis
+function isStorableName(name: string): boolean {
+  try {
+    assertStoryName(`${SOURCES_DIR}/${name}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Claude no abre binarios por el MCP: con la bóveda se deja una copia de solo lectura de los PDF e imágenes en la carpeta de trabajo
+export async function ensureSourceCopies(store: StoryStore, workDir: string, id: string): Promise<void> {
+  if (store.kind !== 'vault') return;
+  const folder = path.join(WORK_ATTACHMENTS_DIR, WORK_ANALYSIS_DIR, id);
+  const present = new Set(fs.existsSync(path.join(workDir, folder)) ? fs.readdirSync(path.join(workDir, folder)) : []);
+  let copies = 0;
+  for (const entry of await store.list(SOURCES_DIR)) {
+    if (copies >= SOURCE_COPIES_MAX) break;
+    const binary = BINARY_EXTENSIONS.includes(path.extname(entry.name).toLowerCase());
+    if (!entry.isFile || !binary || present.has(entry.name) || !isStorableName(entry.name)) continue;
+    const data = await store.readBinary(`${SOURCES_DIR}/${entry.name}`, MAX_ATTACHMENT_BYTES);
+    if (data) writeReadOnlyCopy(workDir, folder, entry.name, data);
+    copies += 1;
+  }
 }

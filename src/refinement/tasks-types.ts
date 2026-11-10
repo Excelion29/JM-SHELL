@@ -113,6 +113,8 @@ export interface CalibrationModel {
   unreadable: number;
   // Planificaciones finalizadas: aparte, no tienen estimación de Claude con qué comparar
   planning: PlanningGroup;
+  // Puntos de análisis finalizados (tareas solo de jm): estimado esperado por Claude vs. real de inicio a fin
+  analysisPoints: PlanningGroup;
 }
 
 // Tarea de Planificación al entrar a una historia (parte 9)

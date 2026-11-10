@@ -91,6 +91,10 @@ export interface KbProxyOptions {
   apiKey: string;
   // Carpeta base configurada: las escrituras solo caben dentro de ella
   baseFolder: string;
+  // Si se indica, las escrituras solo caben aquí (p. ej. la carpeta de un análisis); las lecturas siguen en toda la bóveda
+  writeFolder?: string;
+  // Rutas de la bóveda (archivo o carpeta) donde nunca se escribe, ni dentro de writeFolder
+  writeDenied?: readonly string[];
   // Certificado fijado por el dev; sin él se verifica con las autoridades del sistema
   ca?: string;
   // Tope y plazo para leer la lista de herramientas completa antes de filtrarla
@@ -155,7 +159,15 @@ const rpcError = (id: unknown, code: number, message: string) => ({
 });
 
 // Ruta relativa a la bóveda: sin absolutas, "..", "\" ni segmentos que empiecen por "." (.obsidian, .git...)
-export function checkKbPath(value: unknown, baseFolder: string, mustBeInsideBase: boolean): string | null {
+const WINDOWS_ALIAS_SEGMENT = /[. ]$|~\d/;
+const isUnder = (path: string, entry: string): boolean => path === entry || path.startsWith(`${entry}/`);
+
+export function checkKbPath(
+  value: unknown,
+  baseFolder: string,
+  mustBeInsideBase: boolean,
+  writeDenied: readonly string[] = [],
+): string | null {
   if (typeof value !== 'string') return `falta el argumento "${PATH_ARG}" o no es texto`;
   if (value.startsWith('/')) return 'la ruta no puede ser absoluta';
   if (value.includes('..')) return 'la ruta no puede contener ".."';
@@ -166,9 +178,15 @@ export function checkKbPath(value: unknown, baseFolder: string, mustBeInsideBase
   if (trimmed !== '' && trimmed.split('/').some((segment) => segment === '' || segment.startsWith('.')))
     return 'la ruta no puede tener segmentos vacíos ni que empiecen por "."';
   if (mustBeInsideBase) {
+    // Windows quita el punto o espacio final y resuelve nombres cortos (ESTADO~1.JSO): burlarían la lista de denegados
+    if (trimmed.split('/').some((segment) => WINDOWS_ALIAS_SEGMENT.test(segment)))
+      return 'la ruta no puede terminar un segmento en punto o espacio ni usar nombres cortos (~1)';
     const prefix = baseFolder === '' ? '' : `${baseFolder}/`;
     if (trimmed === '' || !trimmed.startsWith(prefix))
       return `solo se puede escribir dentro de la carpeta base "${baseFolder || '/'}"`;
+    // Minúsculas: la bóveda puede ser insensible a mayúsculas (NTFS, macOS)
+    if (writeDenied.some((entry) => isUnder(trimmed.toLowerCase(), entry.toLowerCase())))
+      return 'esa ruta es de solo lectura para Claude';
   }
   return null;
 }
@@ -181,7 +199,7 @@ function refuse(parsed: Json, code: number, message: string): Inspection {
   return { kind: 'reply', status: HTTP_OK, body: rpcError(parsed.id, code, message) };
 }
 
-function inspectToolCall(parsed: Json, baseFolder: string): Inspection | null {
+function inspectToolCall(parsed: Json, baseFolder: string, writeDenied: readonly string[]): Inspection | null {
   const params = isRecord(parsed.params) ? parsed.params : {};
   if (typeof params.name !== 'string' || !ALLOWED.has(params.name))
     return refuse(
@@ -201,13 +219,13 @@ function inspectToolCall(parsed: Json, baseFolder: string): Inspection | null {
   if (!PATH_TOOLS.has(params.name)) return null;
   // vault_list sin ruta lista la raíz (path es opcional en su esquema)
   if (params.name === VAULT_LIST_TOOL && args[PATH_ARG] === undefined) return null;
-  const problem = checkKbPath(args[PATH_ARG], baseFolder, WRITE_TOOLS.has(params.name));
+  const problem = checkKbPath(args[PATH_ARG], baseFolder, WRITE_TOOLS.has(params.name), writeDenied);
   return problem
     ? refuse(parsed, JSON_RPC_INVALID_PARAMS, `jm rechazó la ruta de "${params.name}": ${problem}.`)
     : null;
 }
 
-function inspectBody(raw: Buffer, baseFolder: string): Inspection {
+function inspectBody(raw: Buffer, baseFolder: string, writeDenied: readonly string[]): Inspection {
   const parsedJson = tryParseJson(raw.toString('utf8'));
   if (!parsedJson) {
     return {
@@ -227,7 +245,7 @@ function inspectBody(raw: Buffer, baseFolder: string): Inspection {
   }
   if (typeof parsed.method !== 'string' || !ALLOWED_METHODS.has(parsed.method))
     return refuse(parsed, JSON_RPC_METHOD_NOT_FOUND, `El método "${String(parsed.method)}" no está permitido por jm.`);
-  const refusal = parsed.method === TOOLS_CALL ? inspectToolCall(parsed, baseFolder) : null;
+  const refusal = parsed.method === TOOLS_CALL ? inspectToolCall(parsed, baseFolder, writeDenied) : null;
   if (refusal) return refusal;
   // Se reenvía lo ya parseado, no el texto crudo: así una clave duplicada no puede decir otra cosa al servidor
   return { kind: 'forward', body: Buffer.from(JSON.stringify(parsed)), isToolsList: parsed.method === TOOLS_LIST };
@@ -351,6 +369,9 @@ async function relayFiltered(
 export async function startKbProxy(options: KbProxyOptions): Promise<KbProxy> {
   const upstream = new URL(options.upstreamUrl);
   if (upstream.protocol !== 'https:') throw new Error('El MCP de la base de conocimiento debe usar https.');
+  // Base en la raíz sin carpeta de escritura dejaría escribir en toda la bóveda
+  if (options.baseFolder === '' && !options.writeFolder)
+    throw new Error('Con la raíz de la bóveda como base hace falta una carpeta de escritura.');
   const agent = createKnowledgeAgent(options.ca);
   const route = `${PROXY_PATH}/${crypto.randomBytes(TOKEN_BYTES).toString('hex')}`;
   const limits = options.filterLimits ?? { maxBytes: FILTER_MAX_BYTES, timeoutMs: FILTER_TIMEOUT_MS };
@@ -391,7 +412,7 @@ export async function startKbProxy(options: KbProxyOptions): Promise<KbProxy> {
       res.once('finish', () => req.destroy());
       return sendJson(res, HTTP_PAYLOAD_TOO_LARGE);
     }
-    const inspection = inspectBody(body, options.baseFolder);
+    const inspection = inspectBody(body, options.writeFolder ?? options.baseFolder, options.writeDenied ?? []);
     if (inspection.kind === 'reply') return sendJson(res, inspection.status, inspection.body);
     forward(req, res, inspection.body, inspection.isToolsList);
   };

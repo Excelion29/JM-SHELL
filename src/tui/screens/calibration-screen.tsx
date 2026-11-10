@@ -95,6 +95,15 @@ function CalibrationBody({
           )}
         </Text>
       )}
+      {model.analysisPoints.count > 0 && (
+        <Text>
+          {T.analysisPoints(
+            model.analysisPoints.count,
+            formatDuration(model.analysisPoints.estimateSeconds),
+            formatDuration(model.analysisPoints.elapsedSeconds),
+          )}
+        </Text>
+      )}
       {model.excludedDirect > 0 && <Text color={COLORS.muted}>{T.excludedDirect(model.excludedDirect)}</Text>}
       {model.unreadable > 0 && <Text color={COLORS.error}>{T.unreadable(model.unreadable)}</Text>}
       {total.count > 0 && <Text color={COLORS.muted}>{T.note}</Text>}

@@ -1,22 +1,58 @@
 // Análisis sin historia (parte 10B-1): un tipo propio con id local `an-<n>`, nunca una clave de Jira
-import { readPlanningTasks, readTaskRuns } from './state';
+import {
+  ANALYSIS_DIR_NAME,
+  ANALYSIS_KEY_SOURCE,
+  ANALYSIS_STATE_NAME,
+  POINT_ID_SOURCE,
+  SESSION_ID_PATTERN,
+} from './claude';
+import { readReferencedNotes } from './referenced-notes';
+import { emptyUsage, isValidIssueKey, readPlanningTasks, readTaskRuns, readUsage } from './state';
 import type { StoryStore } from './story-store';
 import { stripControlChars } from './text';
-import type { AnalysisPhase, AnalysisSource, AnalysisState, SourceOrigin } from './analysis-types';
+import {
+  ANALYSIS_BLOCKS,
+  ANALYSIS_PHASES,
+  type AnalysisBlock,
+  type AnalysisLink,
+  type AnalysisLinkedPoint,
+  type AnalysisPhase,
+  type AnalysisSource,
+  type AnalysisState,
+  type SourceOrigin,
+} from './analysis-types';
 import type { StorySummary } from './types';
 
-export const ANALYSIS_DIR = 'analisis';
-export const ANALYSIS_STATE_FILE = 'estado.json';
+export const ANALYSIS_DIR = ANALYSIS_DIR_NAME;
+export const ANALYSIS_STATE_FILE = ANALYSIS_STATE_NAME;
 export const ANALYSIS_LOG_FILE = 'bitacora.md';
 export const ANALYSIS_NAME_MAX_LENGTH = 120;
-export const ANALYSIS_PHASE_LABELS: Record<AnalysisPhase, string> = { sources: 'fuentes' };
+export const ANALYSIS_POINTS_FILE = 'puntos.json';
+// Lo único del estado que escribe Claude: jm no confía en estado.json para él (tiene tareas de Jira y sesión)
+export const ANALYSIS_PROGRESS_FILE = 'fase.json';
+// Tope de lectura de los JSON que escribe Claude (puntos.json, fase.json)
+export const CLAUDE_JSON_MAX_BYTES = 1024 * 1024;
+export const ANALYSIS_PHASE_LABELS: Record<AnalysisPhase, string> = {
+  sources: 'fuentes',
+  debate: 'debate',
+  documented: 'documentado',
+};
+export const ANALYSIS_BLOCK_LABELS: Record<AnalysisBlock, string> = {
+  points: 'puntos',
+  analysis: 'análisis',
+  proposal: 'propuesta',
+  estimation: 'estimación',
+};
 export const ANALYSIS_NEXT_STEP = 'Pulsa Enter para continuar el análisis.';
+const ANALYSIS_DOCUMENTED_NEXT_STEP = 'Documentos listos en la carpeta del análisis. Pulsa Enter para retomarlo.';
 const ANALYSIS_ID_PREFIX = 'an-';
-const ANALYSIS_ID_PATTERN = /^an-\d{1,6}$/;
+const ANALYSIS_ID_PATTERN = new RegExp(`^${ANALYSIS_KEY_SOURCE}$`);
+const POINT_ID_PATTERN = new RegExp(`^${POINT_ID_SOURCE}$`);
 const NO_BLOCK_LABEL = '—';
 const EPOCH = new Date(0).toISOString();
 
 export const isValidAnalysisId = (id: string): boolean => ANALYSIS_ID_PATTERN.test(id);
+export const isValidPointId = (id: string): boolean => POINT_ID_PATTERN.test(id);
 
 export function assertAnalysisId(id: string): void {
   if (!isValidAnalysisId(id)) throw new Error(`Id de análisis inválido: "${id}". Usa el formato an-1.`);
@@ -51,20 +87,89 @@ function readSources(value: unknown): AnalysisSource[] {
   });
 }
 
+function readLinkedPoints(value: unknown): Record<string, AnalysisLinkedPoint> {
+  const points: Record<string, AnalysisLinkedPoint> = {};
+  if (!isRecord(value)) return points;
+  for (const [pointId, raw] of Object.entries(value)) {
+    if (!isValidPointId(pointId) || !isRecord(raw)) continue;
+    const { issueKey, parentKey } = raw;
+    const valid = typeof issueKey === 'string' && isValidIssueKey(issueKey);
+    if (valid && typeof parentKey === 'string' && isValidIssueKey(parentKey)) points[pointId] = { issueKey, parentKey };
+  }
+  return points;
+}
+
+// Sin épica ni puntos vinculados no hay vínculo
+function readLink(value: unknown): AnalysisLink | undefined {
+  if (!isRecord(value)) return undefined;
+  const epicKey = typeof value.epicKey === 'string' && isValidIssueKey(value.epicKey) ? value.epicKey : null;
+  const points = readLinkedPoints(value.points);
+  return epicKey || Object.keys(points).length > 0 ? { epicKey, points } : undefined;
+}
+
 // El id sale siempre de la carpeta/argumento validado, nunca del contenido del archivo
 function normalize(raw: unknown, id: string): AnalysisState {
   if (!isRecord(raw)) throw new Error('el contenido no es un objeto JSON');
+  const referencedNotes = readReferencedNotes(raw.referencedNotes);
+  const link = readLink(raw.link);
   return {
     id,
     name: typeof raw.name === 'string' ? stripControlChars(raw.name) : id,
     projectKey: typeof raw.projectKey === 'string' ? raw.projectKey : '',
     createdAt: readTimestamp(raw.createdAt),
     updatedAt: readTimestamp(raw.updatedAt),
-    phase: 'sources',
+    phase: ANALYSIS_PHASES.includes(raw.phase as AnalysisPhase) ? (raw.phase as AnalysisPhase) : 'sources',
+    block: ANALYSIS_BLOCKS.includes(raw.block as AnalysisBlock) ? (raw.block as AnalysisBlock) : null,
+    claudeSessionId:
+      typeof raw.claudeSessionId === 'string' && SESSION_ID_PATTERN.test(raw.claudeSessionId)
+        ? raw.claudeSessionId
+        : null,
+    usage: readUsage(raw.usage),
     sources: readSources(raw.sources),
+    ...(referencedNotes.length > 0 ? { referencedNotes } : {}),
     trackingTasks: readPlanningTasks(raw.trackingTasks),
     taskRuns: readTaskRuns(raw.taskRuns),
+    pointRuns: readTaskRuns(raw.pointRuns, isValidPointId),
+    ...(link ? { link } : {}),
   };
+}
+
+// null si no existe; lanza si pasa del tope (un archivo de Claude no puede agotar la memoria)
+export async function readClaudeJsonText(store: StoryStore, name: string): Promise<string | null> {
+  const data = await store.readBinary(name, CLAUDE_JSON_MAX_BYTES);
+  return data === null ? null : data.toString('utf8');
+}
+
+interface Progress {
+  phase: AnalysisPhase | null;
+  block: AnalysisBlock | null;
+}
+
+// fase.json lo escribe Claude: solo se aceptan fase y bloque conocidos; un archivo roto equivale a no tenerlo
+async function readProgress(store: StoryStore): Promise<Progress | null> {
+  let raw: unknown;
+  try {
+    const text = await readClaudeJsonText(store, ANALYSIS_PROGRESS_FILE);
+    if (text === null) return null;
+    raw = JSON.parse(text);
+  } catch {
+    return null; // fase.json ilegible o enorme: se ignora y el análisis sigue con lo que jm guardó
+  }
+  if (!isRecord(raw)) return null;
+  return {
+    phase: ANALYSIS_PHASES.includes(raw.phase as AnalysisPhase) ? (raw.phase as AnalysisPhase) : null,
+    block: ANALYSIS_BLOCKS.includes(raw.block as AnalysisBlock) ? (raw.block as AnalysisBlock) : null,
+  };
+}
+
+// La fase solo avanza (la de estado.json es el respaldo de lo que Claude escribía allí antes de fase.json)
+function withProgress(state: AnalysisState, progress: Progress | null): AnalysisState {
+  if (!progress) return state;
+  const phase =
+    progress.phase && ANALYSIS_PHASES.indexOf(progress.phase) > ANALYSIS_PHASES.indexOf(state.phase)
+      ? progress.phase
+      : state.phase;
+  return { ...state, phase, block: progress.block };
 }
 
 export async function readAnalysis(store: StoryStore, id: string): Promise<AnalysisState | null> {
@@ -72,7 +177,8 @@ export async function readAnalysis(store: StoryStore, id: string): Promise<Analy
   const file = `${store.label}/${ANALYSIS_STATE_FILE}`;
   try {
     const text = await store.readText(ANALYSIS_STATE_FILE);
-    return text === null ? null : normalize(JSON.parse(text) as unknown, id);
+    if (text === null) return null;
+    return withProgress(normalize(JSON.parse(text) as unknown, id), await readProgress(store));
   } catch (err: unknown) {
     throw new Error(`No pude leer ${file}: ${(err as Error).message}`);
   }
@@ -117,9 +223,13 @@ export async function createAnalysis(
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
     phase: 'sources',
+    block: null,
+    claudeSessionId: null,
+    usage: emptyUsage(),
     sources: [],
     trackingTasks: [],
     taskRuns: {},
+    pointRuns: {},
   };
   await writeAnalysis(store, state);
   return state;
@@ -130,7 +240,11 @@ async function readOrPlaceholder(store: StoryStore, id: string): Promise<Analysi
   try {
     return await readAnalysis(store, id);
   } catch {
-    return { ...normalize({}, id), name: `estado ilegible, revisa ${store.label}/${ANALYSIS_STATE_FILE}`, unreadable: true };
+    return {
+      ...normalize({}, id),
+      name: `estado ilegible, revisa ${store.label}/${ANALYSIS_STATE_FILE}`,
+      unreadable: true,
+    };
   }
 }
 
@@ -145,9 +259,10 @@ export function analysisSummary(state: AnalysisState): StorySummary {
     kind: 'analysis',
     summary: state.name,
     phase: ANALYSIS_PHASE_LABELS[state.phase],
-    block: NO_BLOCK_LABEL,
-    nextStep: ANALYSIS_NEXT_STEP,
+    block: state.block ? ANALYSIS_BLOCK_LABELS[state.block] : NO_BLOCK_LABEL,
+    nextStep: state.phase === 'documented' ? ANALYSIS_DOCUMENTED_NEXT_STEP : ANALYSIS_NEXT_STEP,
     updatedAt: state.updatedAt,
+    ...(state.link?.epicKey ? { linkedEpicKey: state.link.epicKey } : {}),
   };
 }
 
@@ -163,3 +278,15 @@ export function openTrackingOf(state: AnalysisState | null): string | null {
 }
 
 export const analysisTrackingSummary = (name: string, date: string): string => `Análisis · ${name} · ${date}`;
+
+// Avanza solo si el destino está por delante: nunca pisa un avance que hizo la skill
+export const advanceAnalysisPhase = (store: StoryStore, id: string, to: AnalysisPhase): Promise<AnalysisState> =>
+  updateAnalysis(store, id, (state) => {
+    if (ANALYSIS_PHASES.indexOf(to) > ANALYSIS_PHASES.indexOf(state.phase)) state.phase = to;
+  });
+
+// La bitácora nace con solo el título: cualquier otra cosa es avance
+export async function hasAnalysisLogProgress(store: StoryStore, name: string): Promise<boolean> {
+  const log = await store.readText(ANALYSIS_LOG_FILE);
+  return log !== null && log.trim() !== `# Bitácora ${name}`;
+}
