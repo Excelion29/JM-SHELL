@@ -144,7 +144,7 @@ test('f finaliza el punto y b devuelve a pendiente el que está en curso', async
   await app.press('b');
   await app.has(T.returned('P1'));
   await app.has(T.line('P1', T.status.pending, 'Punto P1', '1h', T.noReal));
-  assert.deepEqual(app.calls.pointGivenBack, ['P1']);
+  assert.deepEqual(app.calls.pointGivenBack, [{ pointId: 'P1', transitionName: undefined }]);
 
   await app.press('f');
   await app.has(T.finished('P1'));

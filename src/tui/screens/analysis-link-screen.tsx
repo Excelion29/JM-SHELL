@@ -5,6 +5,7 @@ import type { AnalysisLinkBridge, LinkModel, LinkPointResult, PointRow } from '.
 import type { BrowseItem } from '../../refinement/types.js';
 import { formatDuration } from '../components/duration.js';
 import { EpicPicker } from '../components/epic-picker.js';
+import { OptionSelector } from '../components/option-selector.js';
 import { LoadGate } from '../components/load-gate.js';
 import { ManualKeyInput } from '../components/manual-key-input.js';
 import { YesNoPrompt } from '../components/task-prompts.js';
@@ -30,6 +31,8 @@ export function AnalysisLinkScreen(props: AnalysisLinkScreenProps) {
   );
 }
 
+type ResultMode = 'create' | 'sync';
+
 type ChildKind = 'standard' | 'subtask';
 
 // Destino elegido para un punto aún sin crear
@@ -47,7 +50,8 @@ type Step =
   | { name: 'target' }
   | { name: 'targetManual' }
   | { name: 'confirm' }
-  | { name: 'result'; results: LinkPointResult[] };
+  | { name: 'result'; mode: ResultMode; results: LinkPointResult[] }
+  | { name: 'chooseTransition'; mode: ResultMode; results: LinkPointResult[]; target: 'start' | 'done'; available: string[] };
 
 interface Message {
   text: string;
@@ -126,7 +130,30 @@ function LinkFlow({ model, id, link, fetchEpics, fetchStories, onDone }: Analysi
   const createAll = () =>
     run(T.creating, async () => {
       const wanted = Object.fromEntries(toCreate.map((row) => [row.id, (targetOf(row) as Target).key]));
-      return { name: 'result', results: await link.create(id, wanted) };
+      return resultStep('create', await link.create(id, wanted));
+    });
+
+  // Un punto que Jira no supo mover pide elegir la transición; el resto del resultado ya está
+  const resultStep = (mode: ResultMode, results: LinkPointResult[]): Step => {
+    const pending = results.find((result) => result.choose);
+    if (!pending?.choose) return { name: 'result', mode, results };
+    return { name: 'chooseTransition', mode, results, ...pending.choose };
+  };
+
+  // Sin choice sincroniza todo lo vinculado; con choice aplica esa transición y reintenta el resto con la recordada
+  const syncStates = (
+    choice?: { target: 'start' | 'done'; name: string },
+    previous: LinkPointResult[] = [],
+    mode: ResultMode = 'sync',
+  ) =>
+    run(T.syncing, async () => {
+      const synced = await link.sync(id, choice);
+      if (!choice && synced.length === 0) {
+        setMessage(infoMessage(T.syncNone));
+        return { name: 'points' };
+      }
+      const replaced = new Set(synced.map((result) => result.pointId));
+      return resultStep(mode, [...previous.filter((result) => !replaced.has(result.pointId)), ...synced]);
     });
 
   const toggleMark = (row: PointRow) => {
@@ -152,6 +179,7 @@ function LinkFlow({ model, id, link, fetchEpics, fetchStories, onDone }: Analysi
       else if (input === KEYS.toggle && current) toggleMark(current);
       else if (input === KEYS.edit) chooseTargets();
       else if (input === KEYS.create) confirm();
+      else if (input === KEYS.syncStatus) void syncStates();
     },
     { isActive: step.name === 'points' },
   );
@@ -213,7 +241,19 @@ function LinkFlow({ model, id, link, fetchEpics, fetchStories, onDone }: Analysi
       </Box>
     );
   }
-  if (step.name === 'result') return <LinkResult results={step.results} onBack={() => onDone(resultNotice(step.results))} />;
+  if (step.name === 'chooseTransition') {
+    return (
+      <OptionSelector
+        title={step.target === 'start' ? T.chooseStart : T.chooseDone}
+        options={step.available}
+        onSelect={(name) => void syncStates({ target: step.target, name }, step.results, step.mode)}
+        onCancel={() => setStep({ name: 'result', mode: step.mode, results: step.results })}
+      />
+    );
+  }
+  if (step.name === 'result') {
+    return <LinkResult results={step.results} mode={step.mode} onBack={() => onDone(resultNotice(step.results))} />;
+  }
 
   return (
     <Box flexDirection="column" flexGrow={1}>

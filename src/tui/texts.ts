@@ -39,6 +39,7 @@ export const KEYS = {
   newAnalysis: 'a',
   addSources: 'a',
   linkAnalysis: 'v',
+  syncStatus: 's',
 } as const;
 
 // Palabra que hay que escribir completa para borrar subtareas de Jira
@@ -225,7 +226,7 @@ export const FOOTER_HINTS = {
   points: `↑↓ moverte · ${KEYS.start} iniciar con Claude · ${KEYS.finishDirect} finalizar · ${KEYS.giveBack} devolver a pendiente · ${KEYS.retry} actualizar · Esc inicio`,
   linkEpic: `Enter conservar · ${KEYS.edit} cambiar la épica · Esc inicio`,
   linkPicker: `↑↓ elegir · Enter elegir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc volver o saltar`,
-  linkPoints: `↑↓ moverte · espacio marcar · ${KEYS.edit} destino de lo marcado · ${KEYS.create} crear en Jira · Esc inicio`,
+  linkPoints: `↑↓ moverte · espacio marcar · ${KEYS.edit} destino de lo marcado · ${KEYS.create} crear en Jira · ${KEYS.syncStatus} sincronizar estados · Esc inicio`,
   linkDone: 'Esc inicio',
   myDay: `↑↓ moverte · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar ·${KEYS.retry} actualizar · ${KEYS.open} abrir · Esc inicio`,
   options: '↑↓ elegir · Enter confirmar · Esc cancelar',
@@ -526,6 +527,8 @@ export const POINTS_TEXTS = {
   line: (id: string, status: string, title: string, estimate: string, real: string, issueKey: string | null = null) =>
     `${id} · ${status} · ${title} · esperado ${estimate} · real ${real}${issueKey ? ` · ${issueKey}` : ''}`,
   noEstimate: '—',
+  chooseStart: "Tu proyecto no tiene un estado 'En curso' conocido. ¿Cuál usas? (lo recordaré)",
+  chooseDone: "Tu proyecto no tiene un estado 'Finalizada' conocido. ¿Cuál usas? (lo recordaré)",
   jiraNotMoved: (id: string) => `${id} cambió en jm; su tarea en Jira no se movió.`,
   chooseReturn: (key: string) => `¿A qué estado devuelvo ${key} en Jira?`,
   noReal: '—',
@@ -544,6 +547,13 @@ export const POINTS_TEXTS = {
 } as const;
 
 export const LINK_TEXTS = {
+  chooseStart: "Tu proyecto no tiene un estado 'En curso' conocido. ¿Cuál usas? (lo recordaré)",
+  chooseDone: "Tu proyecto no tiene un estado 'Finalizada' conocido. ¿Cuál usas? (lo recordaré)",
+  notMoved: (id: string, key: string) => `${id} → ${key} sin mover de estado: hazlo a mano en Jira`,
+  synced: (id: string, key: string) => `${id} → ${key} con el estado al día`,
+  syncing: 'Sincronizando estados con Jira...',
+  syncNone: 'Los estados ya coinciden con Jira.',
+  syncSummary: (moved: number, failed: number) => `${moved} al día, ${failed} con error.`,
   loading: 'Leyendo el análisis...',
   noPoints: 'No hay puntos en alcance que vincular: debate el análisis con Claude.',
   epicCurrent: (key: string) => `Épica del análisis: ${key}`,

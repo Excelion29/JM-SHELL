@@ -53,3 +53,35 @@ test('la calibración cuenta los análisis ilegibles en vez de ocultarlos', asyn
   const model = await loadCalibration();
   assert.equal(model.unreadable, 1);
 });
+
+test('guardar la épica la revalida en Jira: una historia se rechaza y no se guarda', async () => {
+  const story = { getIssue: async (key: string) => ({ key, fields: { summary: 'H', issuetype: { name: 'Historia' }, status: { name: 'x' } } }), getIssueTypes: async () => [{ id: '2', name: 'Historia', subtask: false }, { id: '3', name: 'Tarea', subtask: false }, { id: '4', name: 'Subtarea', subtask: true }] };
+  const linking = createAnalysisBridge(() => story as unknown as JiraService, () => 'AQ');
+  const created = await linking.create({ name: 'Épica', paths: '', text: '' });
+  assert.ok(created.ok);
+  const id = created.ok ? created.id : '';
+  await assert.rejects(() => linking.link.setEpic(id, 'AQ-7'), /no es una épica/);
+  assert.equal((await linking.link.load(id)).epicKey, null);
+});
+
+test('un segundo create de tareas mientras el primero sigue en curso se rechaza', async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const slow = {
+    getMyself: async () => {
+      await gate;
+      return { accountId: 'x', displayName: 'X' };
+    },
+    getAssignableUsers: async () => [],
+  };
+  const linking = createAnalysisBridge(() => slow as unknown as JiraService, () => 'AQ');
+  const created = await linking.create({ name: 'Doble', paths: '', text: '' });
+  const id = created.ok ? created.id : '';
+  const first = linking.link.create(id, { P1: 'AQ-5' });
+  await assert.rejects(() => linking.link.create(id, { P1: 'AQ-5' }), /Ya estoy creando/);
+  release();
+  await first;
+  await linking.link.create(id, {});
+});

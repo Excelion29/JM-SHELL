@@ -189,8 +189,26 @@ async function writeAnalysis(store: StoryStore, state: AnalysisState): Promise<v
   await store.writeText(ANALYSIS_STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
 }
 
+// Escrituras del mismo estado.json en cola: dos lectura-escritura a la vez pisarían una a la otra
+const updateQueues = new Map<string, Promise<unknown>>();
+
 // Lee justo antes de escribir, como el estado de las historias
-export async function updateAnalysis(
+export function updateAnalysis(
+  store: StoryStore,
+  id: string,
+  mutate: (state: AnalysisState) => void,
+): Promise<AnalysisState> {
+  const queued = (updateQueues.get(store.label) ?? Promise.resolve()).catch(() => undefined);
+  const run = queued.then(() => updateAnalysisNow(store, id, mutate));
+  updateQueues.set(store.label, run);
+  const release = () => {
+    if (updateQueues.get(store.label) === run) updateQueues.delete(store.label);
+  };
+  run.then(release, release);
+  return run;
+}
+
+async function updateAnalysisNow(
   store: StoryStore,
   id: string,
   mutate: (state: AnalysisState) => void,

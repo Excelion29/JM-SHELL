@@ -33,7 +33,8 @@ type Mode =
   | { name: 'busy' }
   | { name: 'reopen'; pointId: string }
   | { name: 'finishAsk'; pointId: string }
-  | { name: 'returnPick'; pointId: string; options: string[] };
+  | { name: 'returnPick'; pointId: string; options: string[] }
+  | { name: 'chooseTransition'; pointId: string; kind: 'start' | 'done'; available: string[] };
 
 interface Message {
   text: string;
@@ -90,14 +91,17 @@ function PointsBody({
 
   const reload = async () => setModel(await points.load(id));
 
-  const start = (pointId: string, reopen = false) =>
+  const start = (pointId: string, reopen = false, transitionName?: string) =>
     run(async () => {
-      const outcome = await points.start(id, pointId, { reopen });
+      const outcome = await points.start(id, pointId, { reopen, transitionName });
       if (outcome.kind === 'ok') {
         onRunPoint(id, pointId);
         return {};
       }
       if (outcome.kind === 'needs-reopen') return { mode: { name: 'reopen', pointId } };
+      if (outcome.kind === 'choose') {
+        return { mode: { name: 'chooseTransition', pointId, kind: 'start', available: outcome.available } };
+      }
       return { message: errorMessage(T.actionError(outcome.message)) };
     });
 
@@ -107,11 +111,14 @@ function PointsBody({
       return {};
     });
 
-  const finish = (pointId: string) =>
+  const finish = (pointId: string, transitionName?: string) =>
     run(async () => {
-      const notice = await points.finish(id, pointId);
+      const outcome = await points.finish(id, pointId, transitionName);
       await reload();
-      return { message: notice ? errorMessage(notice) : infoMessage(T.finished(pointId)) };
+      if (outcome.choose) {
+        return { mode: { name: 'chooseTransition', pointId, kind: 'done', available: outcome.choose } };
+      }
+      return { message: outcome.notice ? errorMessage(outcome.notice) : infoMessage(T.finished(pointId)) };
     });
 
   const giveBack = (pointId: string, transitionName?: string) =>
@@ -170,6 +177,19 @@ function PointsBody({
         options={mode.options}
         onSelect={(name) => void giveBack(mode.pointId, name)}
         onCancel={() => setMode({ name: 'list' })}
+      />
+    );
+  }
+  if (mode.name === 'chooseTransition') {
+    return (
+      <OptionSelector
+        title={mode.kind === 'start' ? T.chooseStart : T.chooseDone}
+        options={mode.available}
+        onSelect={(name) => void (mode.kind === 'start' ? start(mode.pointId, false, name) : finish(mode.pointId, name))}
+        onCancel={() => {
+          setMessage(errorMessage(T.jiraNotMoved(mode.pointId)));
+          setMode({ name: 'list' });
+        }}
       />
     );
   }

@@ -9,12 +9,15 @@ import {
 import type { AnalysisBridge, AnalysisState, SourceResult } from '../refinement/analysis-types';
 import {
   createLinkedPoints,
-  finishLinkedNotice,
+  finishLinked,
   linkedIssueOf,
   resolveLinkTarget,
   returnLinked,
+  noticeOf,
   setAnalysisEpic,
   startLinked,
+  type SyncOutcome,
+  syncLinkedPoints,
 } from '../refinement/analysis-link';
 import { removeAnalysis } from '../refinement/analysis-remove';
 import { finishPoint, giveBackPoint, loadPointsModel, startPoint } from '../refinement/analysis-point-runs';
@@ -31,6 +34,7 @@ import { readManagementKey } from './management-store';
 import { invalidateAnalysisListing, listAnalysisIds, openAnalysis } from './story-resolver';
 
 const SOURCES_FAILURE_LABEL = 'fuentes';
+const CREATING_MESSAGE = 'Ya estoy creando las tareas de este análisis.';
 const NO_PROJECT = 'Aún no hay un proyecto elegido. Pulsa p para elegir uno.';
 
 const messageOf = (err: unknown): string => (err as Error).message;
@@ -67,14 +71,33 @@ export function createAnalysisBridge(getJira: () => JiraService, getProjectKey: 
   const withLinked = async (
     id: string,
     pointId: string,
-    move: (issueKey: string) => Promise<string | null>,
-  ): Promise<string | null> => {
+    move: (issueKey: string) => Promise<SyncOutcome>,
+  ): Promise<{ key: string; outcome: SyncOutcome } | null> => {
+    let key = '';
     try {
-      const issueKey = await linkedIssueOf(await storeOf(id), id, pointId);
-      return issueKey ? await move(issueKey) : null;
+      key = (await linkedIssueOf(await storeOf(id), id, pointId)) ?? '';
+      return key ? { key, outcome: await move(key) } : null;
     } catch (err: unknown) {
-      return messageOf(err);
+      return { key, outcome: { kind: 'failed', message: messageOf(err) } };
     }
+  };
+  // Un segundo create a la vez duplicaría tareas: el primero aún no anotó las suyas
+  const creating = new Set<string>();
+  const createPoints = async (id: string, targets: Record<string, string>) => {
+    const jira = getJira();
+    const state = await stateOf(id);
+    return afterChange(
+      createLinkedPoints(
+        {
+          jira,
+          store: await storeOf(id),
+          assigneeId: await projectAssigneeId(jira, state.projectKey),
+          transitionMemory,
+        },
+        id,
+        targets,
+      ),
+    );
   };
   const jiraDeps = () => ({ jira: getJira(), transitionMemory });
   // Los puntos cambian el estado.json del análisis: el inicio debe releerlo
@@ -91,12 +114,16 @@ export function createAnalysisBridge(getJira: () => JiraService, getProjectKey: 
       start: async (id, pointId, options) => {
         const outcome = await afterChange(startPoint(await storeOf(id), id, pointId, options));
         if (outcome.kind !== 'ok') return outcome;
-        const notice = await withLinked(id, pointId, (key) => startLinked(jiraDeps(), key));
+        const moved = await withLinked(id, pointId, (key) => startLinked(jiraDeps(), key, options.transitionName));
+        if (moved?.outcome.kind === 'choose') return { kind: 'choose', available: moved.outcome.available };
+        const notice = moved && noticeOf(moved.outcome, moved.key);
         return notice ? { kind: 'ok', notice } : outcome;
       },
-      finish: async (id, pointId) => {
+      finish: async (id, pointId, transitionName) => {
         await afterChange(finishPoint(await storeOf(id), id, pointId));
-        return withLinked(id, pointId, (key) => finishLinkedNotice(jiraDeps(), key));
+        const moved = await withLinked(id, pointId, (key) => finishLinked(jiraDeps(), key, transitionName));
+        if (moved?.outcome.kind === 'choose') return { notice: null, choose: moved.outcome.available };
+        return { notice: moved && noticeOf(moved.outcome, moved.key) };
       },
       returnOptions: async (id, pointId) => {
         try {
@@ -109,7 +136,12 @@ export function createAnalysisBridge(getJira: () => JiraService, getProjectKey: 
       giveBack: async (id, pointId, transitionName) => {
         await afterChange(giveBackPoint(await storeOf(id), id, pointId));
         if (!transitionName) return null;
-        return withLinked(id, pointId, (key) => returnLinked(getJira(), key, transitionName));
+        try {
+          const issueKey = await linkedIssueOf(await storeOf(id), id, pointId);
+          return issueKey ? await returnLinked(getJira(), issueKey, transitionName) : null;
+        } catch (err: unknown) {
+          return messageOf(err);
+        }
       },
     },
     link: {
@@ -119,22 +151,23 @@ export function createAnalysisBridge(getJira: () => JiraService, getProjectKey: 
       },
       resolveTarget: async (id, key, mustBeEpic) =>
         resolveLinkTarget(getJira(), (await stateOf(id)).projectKey, key, mustBeEpic),
-      setEpic: async (id, epicKey) => afterChange(setAnalysisEpic(await storeOf(id), id, epicKey)),
+      setEpic: async (id, epicKey) => {
+        if (epicKey) {
+          const outcome = await resolveLinkTarget(getJira(), (await stateOf(id)).projectKey, epicKey, true);
+          if (!outcome.ok) throw new Error(outcome.message);
+        }
+        await afterChange(setAnalysisEpic(await storeOf(id), id, epicKey));
+      },
+      sync: async (id, choice) =>
+        afterChange(syncLinkedPoints({ ...jiraDeps(), store: await storeOf(id) }, id, choice)),
       create: async (id, targets) => {
-        const jira = getJira();
-        const state = await stateOf(id);
-        return afterChange(
-          createLinkedPoints(
-            {
-              jira,
-              store: await storeOf(id),
-              assigneeId: await projectAssigneeId(jira, state.projectKey),
-              transitionMemory,
-            },
-            id,
-            targets,
-          ),
-        );
+        if (creating.has(id)) throw new Error(CREATING_MESSAGE);
+        creating.add(id);
+        try {
+          return await createPoints(id, targets);
+        } finally {
+          creating.delete(id);
+        }
       },
     },
     create: async (input) => {

@@ -348,6 +348,9 @@ resumen y confirmación crea tarea (destino épica) o subtarea (destino historia
 asignado y análisis+propuesta en la descripción. Estado del punto en jm pasa a Jira (en curso / finalizada); el
 tiempo medido queda en jm. Luego `t` muestra la clave y `i`/`f` mueven también la tarea en Jira. Repetir `v` solo
 crea lo que falta; un punto ya creado no cambia de destino desde jm; un análisis vinculado no se borra.
+Ajuste tras la prueba real (2026-11-10): al crear, el estado de jm pasa a Jira; si la transición no se reconoce, el dev
+la elige (se recuerda) y se reintenta el resto; finalizar desde Por hacer sin transición directa pasa por En curso;
+`s` en la lista del vínculo resincroniza los puntos ya creados que difieren de Jira, sin duplicar.
 
 ### Parte 4 — Ejecución tarea por tarea (idea registrada 2026-11-05, por diseñar)
 

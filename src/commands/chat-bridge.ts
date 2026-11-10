@@ -41,6 +41,7 @@ import { CHAT_FILES, workDirFor } from '../refinement/workdir';
 import { refreshDashboard } from './dashboard';
 import { ensureSkill, prepareStory } from './refine';
 import { applyKnowledgeFiles, KnowledgeRuntime, openKnowledge } from './knowledge-runtime';
+import { linkedAnalysesOf } from '../refinement/analysis-link';
 import { linkedAnalysisLine } from '../refinement/knowledge';
 import { invalidateAnalysisListing, listAllAnalyses, openAnalysis, openStory } from './story-resolver';
 import {
@@ -214,9 +215,9 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
   // Una historia de la épica de un análisis vinculado lo recibe como contexto de solo lectura
   async function linkedAnalysisContext(runtime: KnowledgeRuntime): Promise<string | null> {
     if (isAnalysisKey(key)) return null;
-    const epicKey = (await readState(activeStore(), key))?.parentKey;
+    const epicKey = (await readState(activeStore(), key))?.parentKey ?? null;
     if (!epicKey) return null;
-    const linked = (await listAllAnalyses(root)).filter((state) => state.link?.epicKey === epicKey);
+    const linked = linkedAnalysesOf(await listAllAnalyses(root), epicKey);
     return linkedAnalysisLine(linked, runtime.analysisFolderOf) || null;
   }
 

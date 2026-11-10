@@ -1,3 +1,4 @@
+import { ANALYSIS_NAME_MAX_LENGTH } from './analysis';
 import { CHAT_KEY_SOURCE, isNormalizedAbsolutePath } from './claude';
 import { KB_SERVER_NAME } from './kb-proxy';
 
@@ -144,10 +145,12 @@ export interface LinkedAnalysisRef {
 
 const LINKED_ANALYSIS_DOCS = 'análisis_propuesta.md, observaciones_funcional_tecnico.md, resumen_observaciones.md y puntos.json';
 
+const cleanName = (name: string): string => name.replace(/`/g, "'").slice(0, ANALYSIS_NAME_MAX_LENGTH);
+
 // Historia de la épica de un análisis vinculado: ese análisis es contexto de solo lectura
 export function linkedAnalysisLine(analyses: LinkedAnalysisRef[], folderOf: (id: string) => string): string {
   if (analyses.length === 0) return '';
-  const where = analyses.map((analysis) => `${analysis.id} (${analysis.name}) en \`${folderOf(analysis.id)}\``);
+  const where = analyses.map((analysis) => `${analysis.id} (${cleanName(analysis.name)}) en \`${folderOf(analysis.id)}\``);
   return (
     `Esta historia es de la épica vinculada al análisis ${where.join('; ')}. Antes de refinar, lee de esa carpeta ` +
     `${LINKED_ANALYSIS_DOCS} (los que existan) y úsalos como contexto. Es solo lectura: no escribas ahí.`

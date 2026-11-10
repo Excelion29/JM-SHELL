@@ -61,26 +61,38 @@ export function TargetPicker({ epicKey, fetchStories, onChoose, onManual, onBack
   );
 }
 
-export function LinkResult({ results, onBack }: { results: LinkPointResult[]; onBack: () => void }) {
+const lineOf = (result: LinkPointResult, mode: 'create' | 'sync'): string => {
+  if (!result.ok || !result.issueKey) return T.failed(result.pointId, result.message ?? '');
+  if (result.choose) return T.notMoved(result.pointId, result.issueKey);
+  if (result.message) return T.createdNote(result.pointId, result.issueKey, result.message);
+  return mode === 'sync' ? T.synced(result.pointId, result.issueKey) : T.created(result.pointId, result.issueKey);
+};
+
+interface LinkResultProps {
+  results: LinkPointResult[];
+  mode: 'create' | 'sync';
+  onBack: () => void;
+}
+
+export function LinkResult({ results, mode, onBack }: LinkResultProps) {
   useInput((_input, key) => {
     if (key.escape || key.return) onBack();
   });
   const created = results.filter((result) => result.ok).length;
+  const withProblem = results.filter((result) => !result.ok || result.message || result.choose).length;
   return (
     <Box flexDirection="column">
       <Text bold color={COLORS.accent}>
         {T.resultTitle}
       </Text>
       {results.map((result) => (
-        <Text key={result.pointId} color={result.ok && !result.message ? undefined : COLORS.error}>
-          {result.ok && result.issueKey
-            ? result.message
-              ? T.createdNote(result.pointId, result.issueKey, result.message)
-              : T.created(result.pointId, result.issueKey)
-            : T.failed(result.pointId, result.message ?? '')}
+        <Text key={result.pointId} color={result.ok && !result.message && !result.choose ? undefined : COLORS.error}>
+          {lineOf(result, mode)}
         </Text>
       ))}
-      <Text bold>{T.summary(created, results.length - created)}</Text>
+      <Text bold>
+        {mode === 'sync' ? T.syncSummary(results.length - withProblem, withProblem) : T.summary(created, results.length - created)}
+      </Text>
       <Text color={COLORS.muted}>{FOOTER_HINTS.linkDone}</Text>
     </Box>
   );

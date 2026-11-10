@@ -437,7 +437,6 @@ export const fakeRow = (key: string, patch: Partial<TaskRow> = {}): TaskRow => (
   pendingDone: false,
   realClaudeSeconds: null,
   realElapsedSeconds: null,
-  issueKey: null,
   ...patch,
 });
 
@@ -561,6 +560,11 @@ export interface FakeAnalysisOptions {
   linkResults?: LinkPointResult[];
   // Mensaje de aviso que devuelven finish y giveBack (Jira no se movió)
   pointNotice?: string;
+  // Transiciones que Jira ofrece cuando no reconoce la de iniciar o finalizar un punto vinculado
+  startChoose?: string[];
+  finishChoose?: string[];
+  // Resultados sucesivos de link.sync; al agotarse, sin cambios
+  syncResults?: LinkPointResult[][];
   // Transiciones que ofrece Jira al devolver un punto vinculado
   returnOptions?: string[];
   // Estado de los puntos: 'invalid' simula un puntos.json con errores
@@ -574,6 +578,7 @@ export const fakePointRow = (id: string, patch: Partial<PointRow> = {}): PointRo
   estimateSeconds: 3600,
   realClaudeSeconds: null,
   realElapsedSeconds: null,
+  issueKey: null,
   ...patch,
 });
 
@@ -595,11 +600,15 @@ export function createFakeAnalysis(options: FakeAnalysisOptions = {}) {
     pointStarted: [] as Array<{ id: string; pointId: string; reopen: boolean }>,
     pointFinished: [] as string[],
     pointGivenBack: [] as Array<{ pointId: string; transitionName: string | undefined }>,
+    finishTransitions: [] as Array<string | undefined>,
+    startTransitions: [] as Array<string | undefined>,
+    linkSynced: [] as Array<{ target: 'start' | 'done'; name: string } | undefined>,
     linkEpics: [] as Array<string | null>,
     linkCreated: [] as Array<Record<string, string>>,
     linkResolved: [] as Array<{ key: string; mustBeEpic: boolean }>,
   };
   let linkEpicKey = options.linkEpicKey ?? null;
+  const syncOutcomes = [...(options.syncResults ?? [])];
   const rows = options.pointRows?.map((row) => ({ ...row }));
   const rowOf = (pointId: string): PointRow | undefined => rows?.find((row) => row.id === pointId);
   const pointsModel = (): PointsModel => {
@@ -616,13 +625,17 @@ export function createFakeAnalysis(options: FakeAnalysisOptions = {}) {
         if (row?.status === 'done' && !startOptions.reopen) return { kind: 'needs-reopen' };
         calls.pointStarted.push({ id, pointId, reopen: startOptions.reopen === true });
         if (row) row.status = 'started';
+        if (options.startChoose && !startOptions.transitionName) return { kind: 'choose', available: options.startChoose };
+        calls.startTransitions.push(startOptions.transitionName);
         return { kind: 'ok' };
       },
-      finish: async (_id, pointId) => {
+      finish: async (_id, pointId, transitionName) => {
         calls.pointFinished.push(pointId);
         const row = rowOf(pointId);
         if (row) row.status = 'done';
-        return options.pointNotice ?? null;
+        calls.finishTransitions.push(transitionName);
+        const choose = options.finishChoose && !transitionName ? options.finishChoose : undefined;
+        return { notice: options.pointNotice ?? null, ...(choose ? { choose } : {}) };
       },
       returnOptions: async () => options.returnOptions ?? [],
       giveBack: async (_id, pointId, transitionName) => {
@@ -642,6 +655,10 @@ export function createFakeAnalysis(options: FakeAnalysisOptions = {}) {
       setEpic: async (_id, epicKey) => {
         calls.linkEpics.push(epicKey);
         linkEpicKey = epicKey;
+      },
+      sync: async (_id, choice) => {
+        calls.linkSynced.push(choice);
+        return syncOutcomes.shift() ?? [];
       },
       create: async (_id, targets) => {
         calls.linkCreated.push(targets);

@@ -113,14 +113,24 @@ export interface PointFinishTarget {
 
 // notice: el punto cambió en jm pero Jira no se movió (se avisa, no se bloquea)
 export type PointStartOutcome =
-  { kind: 'ok'; notice?: string } | { kind: 'needs-reopen' } | { kind: 'failed'; message: string };
+  | { kind: 'ok'; notice?: string }
+  | { kind: 'needs-reopen' }
+  // Jira no reconoce la transición a En curso: el punto ya está iniciado en jm
+  | { kind: 'choose'; available: string[] }
+  | { kind: 'failed'; message: string };
+
+export interface PointFinishOutcome {
+  notice: string | null;
+  // Jira no reconoce la transición a Finalizada: el punto ya quedó finalizado en jm
+  choose?: string[];
+}
 
 // Los puntos del análisis son tareas solo de jm (sin Jira): el dev las inicia una a una
 export interface AnalysisPointsBridge {
   load: (id: string) => Promise<PointsModel>;
-  start: (id: string, pointId: string, options: { reopen?: boolean }) => Promise<PointStartOutcome>;
-  // Devuelven un aviso si el punto está vinculado y Jira no se movió; null si todo quedó bien
-  finish: (id: string, pointId: string) => Promise<string | null>;
+  start: (id: string, pointId: string, options: { reopen?: boolean; transitionName?: string }) => Promise<PointStartOutcome>;
+  // Avisa si el punto está vinculado y Jira no se movió
+  finish: (id: string, pointId: string, transitionName?: string) => Promise<PointFinishOutcome>;
   // Transiciones de Jira para devolver un punto vinculado; vacío si no está vinculado o Jira no respondió
   returnOptions: (id: string, pointId: string) => Promise<string[]>;
   giveBack: (id: string, pointId: string, transitionName?: string) => Promise<string | null>;
@@ -146,6 +156,8 @@ export interface LinkPointResult {
   issueKey?: string;
   // Fallo, o aviso si se creó pero el estado no pasó a Jira
   message?: string;
+  // Jira no reconoce la transición: el dev elige entre estas (start: En curso, done: Finalizada)
+  choose?: { target: 'start' | 'done'; available: string[] };
 }
 
 export interface AnalysisLinkBridge {
@@ -155,6 +167,8 @@ export interface AnalysisLinkBridge {
   setEpic: (id: string, epicKey: string | null) => Promise<void>;
   // pointId -> clave del destino; crea solo lo que falta
   create: (id: string, targets: Record<string, string>) => Promise<LinkPointResult[]>;
+  // Pone en Jira el estado de los puntos ya vinculados que difieren; choice: la transición elegida por el dev
+  sync: (id: string, choice?: { target: 'start' | 'done'; name: string }) => Promise<LinkPointResult[]>;
 }
 
 export interface AnalysisBridge {
