@@ -49,10 +49,10 @@ No modifiques código del proyecto. No uses herramientas de Jira/Atlassian ni le
    indique el mensaje; con MCP, `vault_read` con esa ruta. Cuando el dev referencie más, `jm` te lo pide en un mensaje.
 3. **Si la bitácora ya tiene bloques cerrados, estás retomando.** Resume en dos líneas lo decidido y sigue en el bloque
    de `fase.json`.
-4. Si es nuevo, necesitas contexto del proyecto para hablar con evidencia. **No explores el código tú mismo:** si está
-   disponible el subagente `explorador`, pídele un mapa corto (archivos clave con `archivo:línea`, patrón a seguir, cómo son
-   los tests) de lo que mencionan las fuentes. Pídele más solo cuando un punto concreto lo requiera. **Espera el mapa
-   antes de escribirle al dev:** tu primer mensaje ya llega con evidencia.
+4. Si es nuevo, necesitas contexto del proyecto para hablar con evidencia. Para el recorrido amplio usa el subagente
+   `explorador` si está disponible: pídele un mapa corto (archivos clave con `archivo:línea`, patrón a seguir, cómo son
+   los tests) de lo que mencionan las fuentes. **El mapa solo te dice dónde mirar:** antes de escribirle al dev, abre tú
+   los archivos clave de cada punto y confirma lo que dice el mapa. Tu primer mensaje ya llega con evidencia verificada.
 5. Si el mapa muestra que el código de un punto no está en este repo, dilo y ofrece dos opciones: abrir `jm` en el repo
    correcto, o analizar sin código marcando lo que dependa de él como supuesto.
 6. Escribe `fase.json` con `phase: "debate"` y `block: "points"`.
@@ -106,6 +106,14 @@ Reglas del debate:
 - **Un punto a la vez** dentro del bloque, **máximo 2-3 preguntas por punto**. Si el punto ya está claro, ciérralo sin
   preguntar.
 - **Pregunta con una hipótesis, no en blanco**, y cita evidencia como `archivo:línea`.
+- **Verifica antes de afirmar.** Todo lo que digas del código sale de un archivo que leíste tú con Read, citado
+  como `archivo:línea`. El mapa del explorador dice dónde mirar, no es evidencia: antes de usar un hallazgo suyo, abre
+  ese archivo. Si no lo verificaste, dilo como supuesto.
+- **Investiga antes de preguntar.** Si el código, el schema, la configuración o los tests pueden responder una duda,
+  búscalo tú y trae la respuesta. Al dev solo le preguntas lo que el código no sabe: reglas de negocio, intención,
+  prioridades, personas y accesos. Nunca le pidas que confirme algo que podías comprobar leyendo.
+- **En `proposal`, recorre el flujo de punta a punta** de cada punto: datos, backend, infraestructura, frontend (incluida
+  la integración con APIs nuevas o cambiadas) y tests. Si una capa no lleva trabajo, dilo con su evidencia.
 - **Atajo:** si el dev dice "ya, propón" (o similar), avanza con lo que tengas y marca como supuesto lo no confirmado.
 - Al cerrar cada bloque, **antes de pasar al siguiente**: agrega la sección a `bitacora.md`, actualiza `puntos.json` con lo
   decidido y `block` en `fase.json`. Así, si se cierra la consola, solo se pierde la pregunta en curso.

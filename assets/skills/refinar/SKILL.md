@@ -46,14 +46,16 @@ credenciales (`~/.jira-tool/`, `.env*`).
    indique el mensaje; con MCP, `vault_read` con esa ruta. Cuando el dev referencie más, `jm` te lo pide en un mensaje.
 3. **Si la bitácora ya tiene bloques cerrados, estás retomando.** Resume en dos líneas lo decidido y sigue en el bloque de
    `estado.json` ("Íbamos en riesgos; ya cerramos alcance y dependencias. Sigamos.").
-4. Si es nueva: necesitas contexto del proyecto para hablar con evidencia. **No explores el código tú mismo:** si está
-   disponible el subagente `explorador`, pídele un mapa corto (archivos clave con `archivo:línea`, patrón a seguir, cómo
-   son los tests del módulo que toca la historia). Trabaja con ese mapa y pídele más solo cuando una pregunta concreta lo
-   requiera. Si no está disponible, haz búsquedas puntuales, no un recorrido completo. **Espera el mapa antes de
-   escribirle al dev:** tu primer mensaje ya llega con evidencia.
+4. Si es nueva: necesitas contexto del proyecto para hablar con evidencia. Para el recorrido amplio usa el subagente
+   `explorador` si está disponible: pídele un mapa corto (archivos clave con `archivo:línea`, patrón a seguir, cómo son
+   los tests del módulo que toca la historia). Si no está, haz búsquedas puntuales, no un recorrido completo. **El mapa
+   solo te dice dónde mirar:** antes de escribirle al dev, abre tú los archivos clave (entidad o schema, caso de uso,
+   endpoint y la pantalla que lo consume) y confirma lo que dice el mapa. Tu primer mensaje ya llega con evidencia
+   verificada.
 5. Si el mapa muestra que el código de la historia no está en este repo, dilo en tu primer mensaje y ofrece dos opciones:
    abrir `jm` en el repo correcto, o refinar sin código marcando las estimaciones como supuestos.
 6. En ese primer mensaje pregunta quién la va a hacer (normalmente el dev mismo) y qué tan conocida le es esa parte.
+   Si es alguien nuevo o la parte le es poco conocida, investiga más y pregunta menos: no puede validar lo que no conoce.
 7. Pon `phase: "debate"` y `block: "scope"` en `estado.json`.
 
 ## Base de conocimiento
@@ -135,6 +137,12 @@ Reglas del debate:
 - **Pregunta con una hipótesis, no en blanco.** Mal: "¿Qué dependencias hay?". Bien: "Veo que `MortalityRepository`
   (`src/lib/mortality/...:42`) ya guarda por día. ¿Lo reusamos o esta historia necesita otra tabla?".
 - Cita evidencia como `archivo:línea` cuando hables del código.
+- **Verifica antes de afirmar.** Todo lo que digas del código sale de un archivo que leíste tú con Read, citado
+  como `archivo:línea`. El mapa del explorador dice dónde mirar, no es evidencia: antes de usar un hallazgo suyo, abre
+  ese archivo. Si no lo verificaste, dilo como supuesto.
+- **Investiga antes de preguntar.** Si el código, el schema, la configuración o los tests pueden responder una duda,
+  búscalo tú y trae la respuesta. Al dev solo le preguntas lo que el código no sabe: reglas de negocio, intención,
+  prioridades, personas y accesos. Nunca le pidas que confirme algo que podías comprobar leyendo.
 - **Atajo:** si el dev dice "ya, propón" (o similar), salta a `tasks` con lo que tengas y marca como supuesto lo no
   confirmado.
 - Al cerrar cada bloque, **antes de pasar al siguiente**: agrega la sección a `bitacora.md` y actualiza `block` en
@@ -149,6 +157,10 @@ es una pregunta abierta en la bitácora, no un criterio.
 ### Tareas
 
 - Propón tú la lista; el dev une, parte, renombra o descarta.
+- **Antes de proponerla, recorre el flujo de punta a punta** y comprueba en el código que cada capa que toca la historia
+  tenga su tarea: datos (schema, migraciones), backend (casos de uso, endpoints), infraestructura (gateway, despliegue,
+  permisos), frontend (pantallas **y la integración con las APIs nuevas o cambiadas**) y tests. Si una capa no lleva
+  trabajo, dilo con su evidencia en una línea; no la omitas en silencio.
 - **Agrupa por entregable**, no por repo ni por capa (backend, front, tests). Separa solo si lo hace otra persona o en
   otro momento.
 - **Une las tareas que esperas de menos de 1 h** con la tarea vecina. Apunta a medio día o un día por tarea; si pasa de un
