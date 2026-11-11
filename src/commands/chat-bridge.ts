@@ -1,4 +1,5 @@
 import * as fs from 'fs-extra';
+import openBrowser from 'open';
 import { JiraService } from '../services/jira';
 import { formatSeconds } from '../utils/time';
 import { ChatBridge, ChatHeader, ChatModel, ChatUiEvent } from '../refinement/chat-types';
@@ -355,6 +356,12 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
         .then(() => buildHeader(current.currentModel))
         .then((header) => emit({ type: 'header', header }))
         .catch((err: unknown) => emit({ type: 'error', message: (err as Error).message }));
+    },
+    async openInJira() {
+      const target = isAnalysisKey(key) ? ((await readAnalysis(activeStore(), key))?.link?.epicKey ?? null) : key;
+      if (!target) return null;
+      await openBrowser(getJira().getBrowseUrl(target));
+      return target;
     },
     async close() {
       listener = null;

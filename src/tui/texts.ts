@@ -149,6 +149,8 @@ export const CHAT_KEYS = {
   closeAnalysis: 'g',
   // Abre el navegador de la base para referenciar notas
   referenceNotes: 'b',
+  // Abre en Jira la historia del debate o la épica vinculada del análisis
+  openInJira: 'l',
 } as const;
 
 export const CHAT_VISIBLE_MIN_ROWS = 6;
@@ -192,6 +194,9 @@ export const CHAT_TEXTS = {
   notesAlready: 'Esas notas ya estaban referenciadas.',
   notesNoKnowledge: `No hay base de conocimiento conectada: conéctala con ${KEYS.knowledgeBase} desde el inicio para referenciar notas.`,
   notesError: (message: string) => `No pude referenciar las notas: ${message}`,
+  openedInJira: (key: string) => `Abrí ${key} en el navegador.`,
+  noJiraLink: 'Este análisis aún no está vinculado a una épica de Jira: vincúlalo desde el inicio para poder abrirla.',
+  openInJiraError: (message: string) => `No pude abrirla en Jira: ${message}`,
   planReady: `Plan listo. Pulsa Esc y luego ${KEYS.review} para revisarlo.`,
   activity: {
     read: (target: string) => `leyendo ${target}`,
@@ -240,8 +245,8 @@ export const FOOTER_HINTS = {
   options: '↑↓ elegir · Enter confirmar · Esc cancelar',
   yesNo: `${KEYS.confirmYes}/${KEYS.confirmNo}`,
   typeConfirm: 'Escribe la palabra y pulsa Enter · Esc cancelar',
-  chat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.referenceNotes.toUpperCase()} notas de la base · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo (vuelves con /exit) · Esc inicio`,
-  analysisChat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.referenceNotes.toUpperCase()} notas de la base · Ctrl+${CHAT_KEYS.closeAnalysis.toUpperCase()} cerrar y documentar · Esc inicio`,
+  chat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.referenceNotes.toUpperCase()} notas de la base · Ctrl+${CHAT_KEYS.openInJira.toUpperCase()} abrir en Jira · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo (vuelves con /exit) · Esc inicio`,
+  analysisChat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.referenceNotes.toUpperCase()} notas de la base · Ctrl+${CHAT_KEYS.openInJira.toUpperCase()} abrir épica en Jira · Ctrl+${CHAT_KEYS.closeAnalysis.toUpperCase()} cerrar y documentar · Esc inicio`,
 } as const;
 export const SECONDS_PER_HOUR = 3600;
 export const SECONDS_PER_MINUTE = 60;

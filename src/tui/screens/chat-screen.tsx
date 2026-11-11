@@ -267,6 +267,12 @@ export function ChatScreen({ chatKey, chat, onBack, onHandoff, onChoicesChange }
           setBusy(true);
         }
       } else if (key.ctrl && typed === CHAT_KEYS.referenceNotes) openNotesBrowser();
+      else if (key.ctrl && typed === CHAT_KEYS.openInJira) {
+        chat
+          .openInJira()
+          .then((opened) => setMessage(opened ? CHAT_TEXTS.openedInJira(opened) : CHAT_TEXTS.noJiraLink))
+          .catch((err: unknown) => setMessage(CHAT_TEXTS.openInJiraError((err as Error).message)));
+      }
       else if (key.ctrl && typed === CHAT_KEYS.closeAnalysis) {
         if (!isAnalysis) return;
         if (busy) setMessage(CHAT_TEXTS.closeBusy);

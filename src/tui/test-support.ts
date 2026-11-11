@@ -108,6 +108,8 @@ export interface FakeKnowledge {
   listings?: Record<string, KnowledgeListing>;
   previews?: Record<string, string>;
   openError?: string;
+  // Lo que abre Ctrl+L en Jira: undefined abre AQ-45, null simula un análisis sin épica vinculada
+  jiraTarget?: string | null;
   summary?: KnowledgeSummary;
   settings?: KnowledgeSettings;
   changeResult?: KnowledgeChangeResult;
@@ -136,6 +138,7 @@ export function createFakeChat(
     changed: [] as KnowledgeChoice[],
     renewed: [] as string[],
     notes: [] as string[][],
+    openedInJira: 0,
   };
   let listener: ((event: ChatUiEvent) => void) | null = null;
   const chat: ChatBridge = {
@@ -154,6 +157,10 @@ export function createFakeChat(
     toggleDeep: () => void (calls.toggle += 1),
     newSession: () => void (calls.newSession += 1),
     close: async () => void (calls.close += 1),
+    openInJira: async () => {
+      calls.openedInJira += 1;
+      return knowledge.jiraTarget === undefined ? 'AQ-45' : knowledge.jiraTarget;
+    },
     referenceNotes: async (notes) => {
       calls.notes.push(notes);
       return knowledge.notesAdded ?? notes.length;

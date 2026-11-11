@@ -113,6 +113,8 @@ export interface ChatBridge {
   // Guarda las notas como referenciadas y le pide a Claude que las lea; devuelve cuántas eran nuevas
   referenceNotes: (notes: string[]) => Promise<number>;
   close: () => Promise<void>;
+  // Abre en el navegador la historia del debate (o la épica vinculada del análisis); null si no hay nada que abrir
+  openInJira: () => Promise<string | null>;
   knowledgeStatus: () => Promise<KnowledgeStatus>;
   inspectServer: (url: string) => Promise<ServerInspection>;
   listKnowledge: (connection: KnowledgeTarget, dir: string) => Promise<KnowledgeListing>;

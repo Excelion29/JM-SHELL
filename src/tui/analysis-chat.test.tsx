@@ -196,3 +196,19 @@ test('Ctrl+G con Claude trabajando avisa que espere y no envía el cierre', asyn
   await app.has(CHAT_TEXTS.closeBusy);
   assert.deepEqual(app.fake.sent, ['hola']);
 });
+
+test('Ctrl+L en el debate de una historia la abre en Jira y avisa cuál abrió', async () => {
+  const app = await openChat(STORY_ROW, {});
+  await app.press('\u000c');
+  await app.has(CHAT_TEXTS.openedInJira('AQ-45'));
+  assert.equal(app.fake.calls.openedInJira, 1);
+  assert.deepEqual(app.fake.sent, [], 'no se envía nada a Claude');
+});
+
+test('Ctrl+L en un análisis sin épica vinculada avisa que primero se vincule', async () => {
+  const app = await openChat(ANALYSIS_ROW, ANALYSIS_HEADER, { jiraTarget: null });
+  await app.press('\u000c');
+  // El aviso es largo y se parte en filas: basta con su inicio
+  await app.has('Este análisis aún no está vinculado');
+  assert.equal(app.fake.calls.openedInJira, 1);
+});
