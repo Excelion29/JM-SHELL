@@ -38,6 +38,17 @@ export function toBrowseItem(issue: JiraIssue): BrowseItem {
   };
 }
 
+// Número de la clave (PGC-15 → 15); una clave sin número va al final
+const keyNumber = (key: string): number => {
+  const number = Number(key.slice(key.lastIndexOf('-') + 1));
+  return Number.isInteger(number) ? number : Number.MAX_SAFE_INTEGER;
+};
+
+// Orden por código de menor a mayor: PGC-15 antes que PGC-25
+export function sortByKey<T extends { key: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => keyNumber(a.key) - keyNumber(b.key) || a.key.localeCompare(b.key));
+}
+
 export function filterByProject<T extends { key: string }>(stories: T[], projectKey: string | null): T[] {
   if (!projectKey) return stories;
   return stories.filter((story) => story.key.startsWith(`${projectKey}-`));

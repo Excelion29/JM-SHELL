@@ -19,6 +19,8 @@ interface PickerListProps {
   // Solo se activan con el filtro vacío: así no chocan con escribir texto
   shortcuts?: Record<string, () => void>;
   onSelect: (id: string) => void;
+  // → sobre la fila: abre lo que hay dentro (p. ej. las historias de una épica)
+  onOpen?: (id: string) => void;
   onBack: () => void;
 }
 
@@ -41,6 +43,7 @@ export function PickerList({
   limitReached = false,
   shortcuts = {},
   onSelect,
+  onOpen,
   onBack,
 }: PickerListProps) {
   const [filter, setFilter] = useState('');
@@ -59,6 +62,8 @@ export function PickerList({
     else if (key.downArrow) setSelected(Math.min(visible.length - 1, current + 1));
     else if (key.return) {
       if (visible[current]) onSelect(visible[current].id);
+    } else if (key.rightArrow && onOpen) {
+      if (visible[current]) onOpen(visible[current].id);
     } else if (key.backspace || key.delete) {
       setFilter((f) => f.slice(0, -1));
       setSelected(0);

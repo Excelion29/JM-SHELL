@@ -14,13 +14,14 @@ interface ManagementScreenProps {
   projectKey: string;
   management: ManagementBridge;
   fetchEpics: () => Promise<BrowseItem[]>;
+  fetchStories: (epicKey: string) => Promise<BrowseItem[]>;
   // Sale de la pantalla con o sin haber guardado: sin guardar, la pregunta vuelve la próxima vez
   onDone: () => void;
 }
 
 type Step = 'ask' | 'pick' | 'manual' | 'saving';
 
-export function ManagementScreen({ projectKey, management, fetchEpics, onDone }: ManagementScreenProps) {
+export function ManagementScreen({ projectKey, management, fetchEpics, fetchStories, onDone }: ManagementScreenProps) {
   const { state, retry } = useLoad(() => management.status(projectKey));
   return (
     <LoadGate state={state} loadingText={T.loading} onRetry={retry} onBack={onDone}>
@@ -30,6 +31,7 @@ export function ManagementScreen({ projectKey, management, fetchEpics, onDone }:
           status={status}
           management={management}
           fetchEpics={fetchEpics}
+          fetchStories={fetchStories}
           onDone={onDone}
         />
       )}
@@ -41,7 +43,7 @@ interface ManagementFlowProps extends ManagementScreenProps {
   status: ManagementStatus;
 }
 
-function ManagementFlow({ projectKey, status, management, fetchEpics, onDone }: ManagementFlowProps) {
+function ManagementFlow({ projectKey, status, management, fetchEpics, fetchStories, onDone }: ManagementFlowProps) {
   const [step, setStep] = useState<Step>('ask');
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +73,7 @@ function ManagementFlow({ projectKey, status, management, fetchEpics, onDone }: 
         <EpicPicker
           texts={{ title: T.pickTitle(projectKey), empty: T.noEpics, nextStep: T.pickNextStep, hint: T.pickHint }}
           fetchEpics={fetchEpics}
+          fetchStories={fetchStories}
           onChoose={(key) => void save(key)}
           onManual={() => setStep('manual')}
           onBack={() => setStep('ask')}

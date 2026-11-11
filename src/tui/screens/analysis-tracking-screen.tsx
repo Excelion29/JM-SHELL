@@ -10,12 +10,13 @@ interface AnalysisTrackingScreenProps {
   name: string;
   analysis: AnalysisBridge;
   fetchEpics: () => Promise<BrowseItem[]>;
+  fetchStories: (epicKey: string) => Promise<BrowseItem[]>;
   // Sigue al análisis: con un aviso y la tarea abierta (para preguntar al salir), si las hay
   onDone: (notice: string | null, taskKey: string | null) => void;
 }
 
 // Al entrar a un análisis: ¿registro la tarea "Análisis · <nombre> · fecha"? Sin gestión pregunta dónde
-export function AnalysisTrackingScreen({ id, name, analysis, fetchEpics, onDone }: AnalysisTrackingScreenProps) {
+export function AnalysisTrackingScreen({ id, name, analysis, fetchEpics, fetchStories, onDone }: AnalysisTrackingScreenProps) {
   const source: PlanningFlowSource = {
     status: () => analysis.trackingStatus(id),
     suggest: () => analysis.trackingSuggestion(),
@@ -30,5 +31,5 @@ export function AnalysisTrackingScreen({ id, name, analysis, fetchEpics, onDone 
     created: T.tracking.created,
     createdNotStarted: T.tracking.createdNotStarted,
   });
-  return <PlanningFlow key={id} source={source} labels={labels} where={{ fetchEpics }} onDone={onDone} />;
+  return <PlanningFlow key={id} source={source} labels={labels} where={{ fetchEpics, fetchStories }} onDone={onDone} />;
 }

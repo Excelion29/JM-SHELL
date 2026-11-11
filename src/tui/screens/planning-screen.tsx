@@ -54,6 +54,7 @@ export interface PlanningFlowLabels {
 // Solo el análisis sin historia pregunta dónde: no hay una historia donde caer por defecto
 export interface PlanningWhere {
   fetchEpics: () => Promise<BrowseItem[]>;
+  fetchStories: (epicKey: string) => Promise<BrowseItem[]>;
 }
 
 interface PlanningFlowProps {
@@ -176,6 +177,7 @@ export function PlanningFlow({ source, labels, where, onDone }: PlanningFlowProp
         <EpicPicker
           texts={{ title: W.whereTitle, empty: W.whereEmpty, nextStep: W.whereNextStep, hint: W.whereHint }}
           fetchEpics={where.fetchEpics}
+          fetchStories={where.fetchStories}
           onChoose={chooseWhere}
           onManual={() => setStep({ name: 'manual' })}
           onBack={() => onDone(null, null)}

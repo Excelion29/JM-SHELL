@@ -475,6 +475,7 @@ export function App({
           name={stories.find((story) => story.key === analysisId)?.summary ?? analysisId}
           analysis={analysis}
           fetchEpics={fetchEpics}
+          fetchStories={fetchStories}
           onDone={(message, key) => {
             setAnalysisTaskKey(key);
             // Después de la tecla que respondió: el useInput global borra el aviso con cada pulsación
@@ -538,6 +539,7 @@ export function App({
           projectKey={managementProject}
           management={management}
           fetchEpics={fetchEpics}
+          fetchStories={fetchStories}
           onDone={() => setStage(managementNext)}
         />
       )}

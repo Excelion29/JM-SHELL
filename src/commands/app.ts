@@ -20,6 +20,7 @@ import {
   buildStoriesJql,
   filterByProject,
   isValidProjectKey,
+  sortByKey,
   toBrowseItem,
 } from '../refinement/browse';
 import { BrowseItem, ProjectItem, StorySummary } from '../refinement/types';
@@ -194,9 +195,11 @@ export async function appCommand(options: AppOptions = {}): Promise<void> {
             .slice(0, BROWSE_LIMIT)
             .map(toBrowseItem),
         fetchStories: async (epicKey): Promise<BrowseItem[]> =>
-          (await sessionJira().searchIssues(buildStoriesJql(requireProjectKey(projectKey), epicKey)))
-            .slice(0, BROWSE_LIMIT)
-            .map(toBrowseItem),
+          sortByKey(
+            (await sessionJira().searchIssues(buildStoriesJql(requireProjectKey(projectKey), epicKey)))
+              .slice(0, BROWSE_LIMIT)
+              .map(toBrowseItem),
+          ),
         fetchProjects: async (): Promise<ProjectItem[]> =>
           (await sessionJira().getProjects()).map(({ key, name }) => ({ key, name })),
         setProject: async (key) => {

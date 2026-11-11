@@ -13,18 +13,22 @@ import {
   FakeTasksOptions,
   waitFor,
 } from './test-support.js';
-import { HOME_TEXTS, MANAGEMENT_TEXTS, PLANNING_TEXTS, PROJECT_TEXTS } from './texts.js';
+import { EPIC_STORIES_TEXTS, HOME_TEXTS, MANAGEMENT_TEXTS, PLANNING_TEXTS, PROJECT_TEXTS } from './texts.js';
 
 const ENTER = '\r';
 const ESC = '\u001b';
 const DOWN = '\u001b[B';
+const RIGHT = '\u001b[C';
 const TICK_MS = 60;
 const tick = () => new Promise((resolve) => setTimeout(resolve, TICK_MS));
-const NO_ITEMS = async () => [];
 const STORY = { key: 'AQ-45', summary: 'Login', phase: 'debate', block: 'riesgos', nextStep: 'Retoma', updatedAt: 't' };
 const EPICS = [
   { key: 'AQ-7', summary: 'Gestión del tablero', status: 'En curso' },
   { key: 'AQ-8', summary: 'Otra épica', status: 'En curso' },
+];
+const EPIC_STORIES = [
+  { key: 'AQ-20', summary: 'Reuniones', status: 'En curso' },
+  { key: 'AQ-21', summary: 'Análisis de datos', status: 'En curso' },
 ];
 
 interface SetupOptions {
@@ -45,7 +49,7 @@ function setup({ projectKey = 'AQ', management = {}, tasks = {}, story = STORY }
       unlocked
       unlock={async () => ({ ok: true })}
       fetchEpics={async () => EPICS}
-      fetchStories={NO_ITEMS}
+      fetchStories={async (epicKey) => (epicKey === 'AQ-8' ? EPIC_STORIES : [])}
       fetchProjects={async () => [{ key: 'AQ', name: 'Aquí' }]}
       setProject={async () => ({ ok: true })}
       loadStories={async () => [story]}
@@ -235,4 +239,46 @@ test('si el proyecto de la historia ya respondió no pregunta aunque el de la ap
   await app.has(PLANNING_TEXTS.question('XY-5'));
   assert.ok(!app.frame().includes(MANAGEMENT_TEXTS.question));
   assert.deepEqual(app.management.calls.statusReads, ['XY']);
+});
+
+test('g, s y → en una épica muestra sus historias; filtrar y Enter guarda la historia', async () => {
+  const app = setup();
+  await app.press('g');
+  await app.has(MANAGEMENT_TEXTS.question);
+  await app.press('s');
+  await app.has('AQ-8 Otra épica');
+  await app.press(DOWN);
+  await app.press(RIGHT);
+  await app.has(EPIC_STORIES_TEXTS.useEpic('AQ-8'));
+  await app.has('AQ-21 Análisis de datos');
+  await app.press('datos');
+  await app.press(ENTER);
+  await app.has(HOME_TEXTS.title);
+  assert.deepEqual(app.management.calls.saved, [{ projectKey: 'AQ', key: 'AQ-21' }]);
+});
+
+test('dentro de una épica, Enter en la primera fila guarda la misma épica', async () => {
+  const app = setup();
+  await app.press('g');
+  await app.press('s');
+  await app.has('AQ-8 Otra épica');
+  await app.press(DOWN);
+  await app.press(RIGHT);
+  await app.has(EPIC_STORIES_TEXTS.useEpic('AQ-8'));
+  await app.press(ENTER);
+  await app.has(HOME_TEXTS.title);
+  assert.deepEqual(app.management.calls.saved, [{ projectKey: 'AQ', key: 'AQ-8' }]);
+});
+
+test('Esc dentro de una épica vuelve a la lista de épicas sin guardar', async () => {
+  const app = setup();
+  await app.press('g');
+  await app.press('s');
+  await app.has('AQ-8 Otra épica');
+  await app.press(RIGHT);
+  await app.has(EPIC_STORIES_TEXTS.useEpic('AQ-7'));
+  await app.press(ESC);
+  await app.has('AQ-8 Otra épica');
+  assert.ok(!app.frame().includes(EPIC_STORIES_TEXTS.useEpic('AQ-7')));
+  assert.equal(app.management.calls.saved.length, 0);
 });

@@ -57,7 +57,7 @@ function setup({ projectKey = 'AQ', withAnalysis = true, block, stories = [], ..
       unlocked
       unlock={async () => ({ ok: true })}
       fetchEpics={async () => [EPIC]}
-      fetchStories={async () => []}
+      fetchStories={async (epicKey) => (epicKey === EPIC.key ? [{ key: 'AQ-30', summary: 'Reuniones', status: 'En curso' }] : [])}
       fetchProjects={async () => []}
       setProject={async () => ({ ok: true })}
       loadStories={async () => list()}
@@ -398,4 +398,22 @@ test('t sobre una historia con plan sin crear en Jira explica que primero se cre
   await tick();
   await app.press('t');
   await app.has(HOME_TEXTS.tasksNotYet);
+});
+
+test('sin gestión, → en una épica deja elegir una de sus historias como destino de la tarea', async () => {
+  const app = setup();
+  await app.press(ENTER);
+  await app.has(ANALYSIS_TEXTS.tracking.question('Observaciones', null));
+  await app.press('s');
+  await app.has(ANALYSIS_TEXTS.tracking.whereTitle);
+  await app.has(EPIC.key);
+  await app.press('\u001b[C');
+  await app.has('AQ-30 Reuniones');
+  await app.press('\u001b[B');
+  await app.press(ENTER);
+  await app.has(ANALYSIS_TEXTS.tracking.formTitle('Observaciones'));
+  await app.press(ENTER);
+  await app.press(ENTER);
+  await app.chatOpened();
+  assert.equal(app.calls.tracking[0].whereKey, 'AQ-30');
 });

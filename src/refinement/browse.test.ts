@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildEpicsJql, buildStoriesJql, filterByProject, isValidProjectKey } from './browse';
+import { buildEpicsJql, buildStoriesJql, filterByProject, isValidProjectKey, sortByKey } from './browse';
 import { isValidIssueKey } from './state';
 
 test('buildEpicsJql arma el JQL con un proyecto válido', () => {
@@ -41,4 +41,13 @@ test('filterByProject deja solo las historias del proyecto indicado', () => {
   const all = [{ key: 'AQ-1' }, { key: 'AQX-2' }, { key: 'ZX-3' }];
   assert.deepEqual(filterByProject(all, 'AQ'), [{ key: 'AQ-1' }]);
   assert.deepEqual(filterByProject(all, null), all);
+});
+
+test('sortByKey ordena por el número de la clave, de menor a mayor', () => {
+  const items = ['PGC-25', 'PGC-24', 'PGC-100', 'PGC-15', 'PGC-9'].map((key) => ({ key }));
+  assert.deepEqual(
+    sortByKey(items).map((item) => item.key),
+    ['PGC-9', 'PGC-15', 'PGC-24', 'PGC-25', 'PGC-100'],
+  );
+  assert.equal(items[0].key, 'PGC-25', 'no cambia el arreglo original');
 });

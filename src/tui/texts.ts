@@ -102,6 +102,14 @@ export const NO_EPIC_ID = '__no-epic__';
 export const VISIBLE_ROWS = 10;
 export const ROW_SEPARATOR = ' · ';
 
+// Dentro de una épica (→ en la lista de épicas): la misma épica o una de sus historias
+export const EPIC_STORIES_TEXTS = {
+  title: (epicKey: string, summary: string) => `Historias de ${epicKey} ${summary}`,
+  useEpic: (epicKey: string) => `${epicKey} · usar esta épica`,
+  nextStep: 'Siguiente paso: elige una historia (o la misma épica) y pulsa Enter.',
+  hint: `↑↓ elegir · Enter elegir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc volver a las épicas`,
+} as const;
+
 export const BROWSE_TEXTS = {
   epicsTitle: 'Épicas del proyecto',
   noEpicLabel: 'Historias sin épica',
@@ -675,8 +683,8 @@ export const ANALYSIS_TEXTS = {
       `${key} creada, pero no pude pasarla a En curso en Jira; su tiempo ya corre en jm.`,
     whereTitle: '¿Dónde registro la tarea de análisis?',
     whereEmpty: `No encontré épicas en el proyecto. Pulsa ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
-    whereNextStep: `Siguiente paso: elige una épica y pulsa Enter, o ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
-    whereHint: `↑↓ elegir · Enter elegir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc no registrar`,
+    whereNextStep: `Siguiente paso: elige una épica y pulsa Enter, → para ver sus historias o ${KEYS.manualKey} para escribir la clave.`,
+    whereHint: `↑↓ elegir · Enter elegir · → ver sus historias · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc no registrar`,
     whereProblem: (message: string) => `No pude usar ese destino: ${message}`,
   },
 } as const;
@@ -695,8 +703,8 @@ export const MANAGEMENT_TEXTS = {
         : `Ahora: ${status.key} · ${status.summary}`,
   pickTitle: (projectKey: string) => `Épica de gestión de ${projectKey}`,
   noEpics: `No encontré épicas en el proyecto. Pulsa ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
-  pickNextStep: `Siguiente paso: elige una épica y pulsa Enter, o ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
-  pickHint: `↑↓ elegir · Enter guardar · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc volver`,
+  pickNextStep: `Siguiente paso: elige una épica y pulsa Enter, → para ver sus historias o ${KEYS.manualKey} para escribir la clave.`,
+  pickHint: `↑↓ elegir · Enter guardar · → ver sus historias · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc volver`,
   saving: 'Comprobando en Jira y guardando...',
   saveError: (message: string) => `No pude guardar la gestión: ${message}`,
   askHint: `${KEYS.confirmYes} elegir · ${KEYS.confirmNo} no tengo (no vuelvo a preguntar) · Esc seguir sin guardar`,
