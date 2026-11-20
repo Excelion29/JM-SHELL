@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text } from 'ink';
 // Solo tipos: se borra al compilar
 import type { ManagementBridge, ManagementStatus } from '../../refinement/management-types.js';
@@ -91,7 +92,7 @@ function ManagementFlow({ projectKey, status, management, fetchEpics, fetchStori
       {current && <Text color={COLORS.brand}>{current}</Text>}
       <Text color={COLORS.muted}>{T.why}</Text>
       <YesNoPrompt question={T.question} onYes={() => setStep('pick')} onNo={() => void save(null)} onCancel={onDone} />
-      <Text color={COLORS.muted}>{T.askHint}</Text>
+      <KeyLegend hint={T.askHint} />
       {errorLine}
     </Box>
   );

@@ -267,6 +267,8 @@ export interface FakePlanOptions {
   tasks?: ReviewTask[];
   files?: ReviewFile[];
   preview?: Partial<CreatePreview>;
+  // Tareas del plan que aún no están en Jira; sin valor, ninguna
+  pendingTasks?: number;
   targets?: Record<string, TargetResult>;
   outcomes?: CreateOutcome[];
   progress?: CreateProgress[];
@@ -385,6 +387,7 @@ export function createFakePlan(options: FakePlanOptions = {}) {
       existing: [],
       ...options.preview,
     }),
+    countPendingTasks: async () => options.pendingTasks ?? 0,
     resolveTarget: async (parentKey) => {
       calls.resolved.push(parentKey);
       return options.targets?.[parentKey] ?? { ok: false, message: `No encontré ${parentKey} en Jira.` };
@@ -632,7 +635,8 @@ export function createFakeAnalysis(options: FakeAnalysisOptions = {}) {
         if (row?.status === 'done' && !startOptions.reopen) return { kind: 'needs-reopen' };
         calls.pointStarted.push({ id, pointId, reopen: startOptions.reopen === true });
         if (row) row.status = 'started';
-        if (options.startChoose && !startOptions.transitionName) return { kind: 'choose', available: options.startChoose };
+        if (options.startChoose && !startOptions.transitionName)
+          return { kind: 'choose', available: options.startChoose };
         calls.startTransitions.push(startOptions.transitionName);
         return { kind: 'ok' };
       },

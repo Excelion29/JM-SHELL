@@ -37,7 +37,73 @@ export function isTimeoutError(err: unknown): boolean {
   return typeof code === 'string' && TIMEOUT_ERROR_CODES.has(code);
 }
 
-export class IssueNotFoundError extends Error {}
+// Error de Jira ya traducido para el dev; status y code quedan aparte para decidir sin leer el texto
+export class JiraApiError extends Error {
+  constructor(
+    message: string,
+    public status?: number,
+    public code?: string,
+  ) {
+    super(message);
+  }
+}
+
+export class IssueNotFoundError extends JiraApiError {}
+
+const HTTP_BAD_REQUEST = 400;
+const HTTP_UNAUTHORIZED = 401;
+const HTTP_FORBIDDEN = 403;
+const HTTP_NOT_FOUND = 404;
+const HTTP_TOO_MANY_REQUESTS = 429;
+const HTTP_SERVER_ERROR = 500;
+
+// Sin punto final: las pantallas suelen añadir detrás qué hacer («Reintenta con r»)
+export const JIRA_ERROR_TEXTS = {
+  timeout: 'Jira tardó demasiado en responder: revisa tu conexión o la VPN y reintenta',
+  unreachable: 'No pude conectar con Jira: revisa tu conexión o la VPN y reintenta',
+  unauthorized: 'Jira rechazó tus credenciales: revisa el correo y el token con `jm init`',
+  forbidden: (detail: string) => `No tienes permiso en Jira para esto (${detail}): pídelo al admin del proyecto`,
+  notFound: (detail: string) => `No encontré eso en Jira, pudo borrarse o moverse (${detail})`,
+  rateLimited: 'Jira está frenando las peticiones: espera un minuto y reintenta',
+  serverError: (status: number) => `Jira no está respondiendo bien (error ${status}): reintenta en unos minutos`,
+  rejected: (detail: string) => `Jira no aceptó los datos: ${detail}`,
+  other: (status: number, detail: string) => `Jira respondió con error ${status}: ${detail}`,
+} as const;
+
+// Tope del detalle de Jira en pantalla: un 4xx puede repetir JQL o datos largos del issue
+export const MAX_ERROR_DETAIL_CHARS = 300;
+const DETAIL_ELLIPSIS = '…';
+
+const onlyStrings = (values: unknown): string[] =>
+  Array.isArray(values) ? values.filter((v): v is string => typeof v === 'string') : [];
+
+function jiraDetail(err: AxiosError): string {
+  const data = err.response?.data;
+  const body = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+  const errors = body.errors && typeof body.errors === 'object' ? Object.values(body.errors) : [];
+  const detail = [...onlyStrings(body.errorMessages), ...onlyStrings(errors)].join('; ') || err.message;
+  return detail.length > MAX_ERROR_DETAIL_CHARS
+    ? `${detail.slice(0, MAX_ERROR_DETAIL_CHARS)}${DETAIL_ELLIPSIS}`
+    : detail;
+}
+
+// Qué pasó en español y qué hacer; el detalle de Jira se conserva porque suele decir qué campo o recurso falló
+export function toJiraError(err: AxiosError): JiraApiError {
+  const status = err.response?.status;
+  const code = err.code;
+  if (status === undefined) {
+    const text = code && TIMEOUT_ERROR_CODES.has(code) ? JIRA_ERROR_TEXTS.timeout : JIRA_ERROR_TEXTS.unreachable;
+    return new JiraApiError(text, undefined, code);
+  }
+  const detail = jiraDetail(err);
+  if (status === HTTP_UNAUTHORIZED) return new JiraApiError(JIRA_ERROR_TEXTS.unauthorized, status, code);
+  if (status === HTTP_FORBIDDEN) return new JiraApiError(JIRA_ERROR_TEXTS.forbidden(detail), status, code);
+  if (status === HTTP_NOT_FOUND) return new IssueNotFoundError(JIRA_ERROR_TEXTS.notFound(detail), status, code);
+  if (status === HTTP_TOO_MANY_REQUESTS) return new JiraApiError(JIRA_ERROR_TEXTS.rateLimited, status, code);
+  if (status >= HTTP_SERVER_ERROR) return new JiraApiError(JIRA_ERROR_TEXTS.serverError(status), status, code);
+  if (status === HTTP_BAD_REQUEST) return new JiraApiError(JIRA_ERROR_TEXTS.rejected(detail), status, code);
+  return new JiraApiError(JIRA_ERROR_TEXTS.other(status, detail), status, code);
+}
 
 export class TransitionNotFoundError extends Error {
   constructor(public attempted: string, public available: string[]) {
@@ -66,20 +132,8 @@ export class JiraService {
     this.client.interceptors.response.use(
       (res) => res,
       (err: AxiosError) => {
-        const status = err.response?.status;
-        const data = err.response?.data as Record<string, unknown> | undefined;
-        const messages = (data?.errorMessages as string[]) ?? [];
-        const errors = data?.errors as Record<string, string> | undefined;
-        const detail = [
-          ...messages,
-          ...Object.values(errors ?? {}),
-        ].join('; ') || err.message;
-
-        if (status === 401) throw new Error('Authentication failed. Check your email and API token.');
-        if (status === 403) throw new Error(`Permission denied: ${detail}`);
-        if (status === 404) throw new IssueNotFoundError(`Resource not found: ${detail}`);
-        throw new Error(`Jira API error (${status}): ${detail}`);
-      }
+        throw toJiraError(err);
+      },
     );
   }
 
@@ -204,7 +258,12 @@ export class JiraService {
   }
 
   // El contenido ya viene leído y validado por quien llama (descriptor abierto sin seguir enlaces); aquí solo se vigila el tamaño
-  async uploadAttachment(issueKey: string, filename: string, data: Buffer, maxBytes: number = MAX_ATTACHMENT_BYTES): Promise<string> {
+  async uploadAttachment(
+    issueKey: string,
+    filename: string,
+    data: Buffer,
+    maxBytes: number = MAX_ATTACHMENT_BYTES,
+  ): Promise<string> {
     if (data.length > maxBytes) throw new Error(`${filename} pesa más de ${maxBytes} bytes; no lo subo.`);
     const form = new FormData();
     form.append('file', new Blob([data]), filename);
@@ -253,7 +312,10 @@ export class JiraService {
     return match.name;
   }
 
-  async searchIssues(jql: string, fields: string[] = ['summary', 'status', 'assignee', 'issuetype', 'parent']): Promise<JiraIssue[]> {
+  async searchIssues(
+    jql: string,
+    fields: string[] = ['summary', 'status', 'assignee', 'issuetype', 'parent'],
+  ): Promise<JiraIssue[]> {
     const res = await this.client.post<{ issues: JiraIssue[] }>('/search/jql', {
       jql,
       fields,
@@ -295,15 +357,17 @@ export class JiraService {
 
   async getIssueTypes(projectKey: string): Promise<Array<{ id: string; name: string; subtask: boolean }>> {
     const res = await this.client.get<{ issueTypes: Array<{ id: string; name: string; subtask: boolean }> }>(
-      `/project/${pathProject(projectKey)}`
+      `/project/${pathProject(projectKey)}`,
     );
-    return (res.data as unknown as { issueTypes: Array<{ id: string; name: string; subtask: boolean }> }).issueTypes ?? [];
+    return (
+      (res.data as unknown as { issueTypes: Array<{ id: string; name: string; subtask: boolean }> }).issueTypes ?? []
+    );
   }
 
   async getProjects(): Promise<Array<{ key: string; name: string; projectTypeKey: string }>> {
     const res = await this.client.get<{ values: Array<{ key: string; name: string; projectTypeKey: string }> }>(
       '/project/search',
-      { params: { maxResults: 100, orderBy: 'name' } }
+      { params: { maxResults: 100, orderBy: 'name' } },
     );
     return res.data.values;
   }

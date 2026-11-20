@@ -3,6 +3,7 @@ import { JiraService } from '../services/jira';
 import { executeClose, prepareClose } from '../refinement/close';
 import {
   buildPreview,
+  countPendingTasks,
   defaultAssignee,
   findExistingMatches,
   listAssignees,
@@ -58,6 +59,7 @@ export function createPlanBridge(getJira: () => JiraService): PlanBridge {
       const assignee = await defaultAssignee(jira, projectKeyOfStory(key), await configuredAssignee());
       return buildPreview(jira, await storeOf(key), key, assignee);
     },
+    countPendingTasks: async (key) => countPendingTasks(await storeOf(key), key),
     resolveTarget: (parentKey) => resolveTarget(getJira(), parentKey),
     findExisting: async (key, target) => findExistingMatches(getJira(), await storeOf(key), key, target),
     listAssignees: (key) => listAssignees(getJira(), projectKeyOfStory(key)),

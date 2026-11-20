@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import assert from 'node:assert/strict';
 import type { JiraIssue, JiraTransition } from '../config/types';
+import { IssueNotFoundError } from '../services/jira';
 import {
   categoryOf,
   deleteTasks,
@@ -45,6 +46,8 @@ interface FakeOptions {
   transitions?: Record<string, JiraTransition[]>;
   down?: boolean;
   denyDelete?: string[];
+  // Recién creadas: existen, pero la búsqueda de Jira aún no las devuelve
+  unindexed?: string[];
 }
 
 const toIssue = (key: string, f: FakeIssue): JiraIssue => ({
@@ -80,6 +83,7 @@ function fakeJira(options: FakeOptions) {
   const jira: ExecutionJira = {
     getIssue: async (key) => {
       guard();
+      if (!options.issues[key]) throw new IssueNotFoundError(`Resource not found: ${key}`);
       return toIssue(key, options.issues[key]);
     },
     getIssueWithDescription: async (key) => toIssue(key, options.issues[key]),
@@ -94,7 +98,9 @@ function fakeJira(options: FakeOptions) {
     searchIssues: async (jql) => {
       guard();
       calls.searches.push(jql);
-      return Object.entries(options.issues).map(([key, f]) => toIssue(key, f));
+      return Object.entries(options.issues)
+        .filter(([key]) => !options.unindexed?.includes(key))
+        .map(([key, f]) => toIssue(key, f));
     },
     deleteIssue: async (key) => {
       if (options.denyDelete?.includes(key)) throw new Error('Permission denied: sin permiso');
@@ -137,6 +143,23 @@ test('una clave del registro que Jira no devuelve sale como no encontrada', asyn
   const { ctx } = await setup({ issues: { [T1]: ISSUES[T1] } });
   const row = (await loadTaskRows(ctx, STORY)).rows.find((r) => r.key === T2);
   assert.equal(row?.missing, true);
+});
+
+test('una recién creada que la búsqueda aún no devuelve se lee por su clave con su estado y persona reales', async () => {
+  const issues = { ...ISSUES, [T2]: { ...ISSUES[T2], assignee: 'Marcello' } };
+  const { ctx } = await setup({ issues, unindexed: [T2] });
+  const row = (await loadTaskRows(ctx, STORY)).rows.find((r) => r.key === T2);
+  assert.equal(row?.missing, false);
+  assert.equal(row?.assignee, 'Marcello');
+  assert.equal(row?.status, 'En curso');
+});
+
+test('si leerla por su clave falla por otra razón que no existir, el error se propaga', async () => {
+  const { ctx } = await setup({ issues: { [T1]: ISSUES[T1] } });
+  ctx.jira.getIssue = async () => {
+    throw new Error('Jira API error (503): caído');
+  };
+  await assert.rejects(loadTaskRows(ctx, STORY), /503/);
 });
 
 test('iniciar hace la transición a En curso (por estado destino), guarda la hora y avanza la fase', async () => {

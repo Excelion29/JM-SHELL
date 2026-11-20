@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react';
+import { KeyLegend } from './key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 // Solo tipos: se borra al compilar
-import type { ChatBridge, KnowledgeChoice, KnowledgeConnection, KnowledgeSummary } from '../../refinement/chat-types.js';
+import type {
+  ChatBridge,
+  KnowledgeChoice,
+  KnowledgeConnection,
+  KnowledgeSummary,
+} from '../../refinement/chat-types.js';
 import { COLORS, HOME_TEXTS, KEYS, KNOWLEDGE_DEFAULT_URL_EXAMPLE, KNOWLEDGE_TEXTS, PIN_MASK } from '../texts.js';
 import { KnowledgeBrowser } from './knowledge-browser.js';
 
@@ -44,7 +50,7 @@ function KindList({ onPick, onCancel }: { onPick: (kind: Kind) => void; onCancel
           {index === selected ? HOME_TEXTS.selectedMarker : ' '} {KNOWLEDGE_TEXTS.options[kind]}
         </Text>
       ))}
-      <Text color={COLORS.muted}>{KNOWLEDGE_TEXTS.kindKeysHint}</Text>
+      <KeyLegend hint={KNOWLEDGE_TEXTS.kindKeysHint} />
       <Text color={COLORS.muted}>{KNOWLEDGE_TEXTS.kindNextStep}</Text>
     </Box>
   );

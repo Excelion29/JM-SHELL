@@ -14,7 +14,7 @@ import {
   fakePointRow,
   waitFor,
 } from './test-support.js';
-import { FOOTER_HINTS, HOME_TEXTS, POINTS_TEXTS as T } from './texts.js';
+import { HOME_TEXTS, POINTS_TEXTS as T } from './texts.js';
 
 const ESC = '\u001b';
 const TICK_MS = 60;
@@ -93,7 +93,7 @@ test('t sobre un análisis abre los puntos con estado, esperado y real; los fuer
   assert.ok(frame.includes(T.line('P2', T.status.done, 'Punto P2', '1h', T.noReal)), frame);
   assert.ok(frame.includes(T.line('P3', T.status.pending, 'Punto P3', T.noEstimate, T.noReal)), frame);
   assert.ok(frame.includes(T.summary(1, 3)));
-  assert.ok(frame.includes(FOOTER_HINTS.points.slice(0, 20)), frame);
+  assert.ok(frame.includes('↑↓ moverte'), frame);
 });
 
 test('sin puntos.json la pantalla invita a abrir el análisis y debatir con Claude', async () => {

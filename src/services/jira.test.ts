@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { atStep, isTimeoutError, JiraService } from './jira';
+import type { AxiosError } from 'axios';
+import {
+  atStep,
+  IssueNotFoundError,
+  isTimeoutError,
+  JIRA_ERROR_TEXTS,
+  JiraService,
+  MAX_ERROR_DETAIL_CHARS,
+  toJiraError,
+} from './jira';
 
 const CONFIG = { jiraUrl: 'https://acme.atlassian.net', email: 'a@b.c', apiToken: 'x' };
 
@@ -55,4 +64,41 @@ test('createIssue envía fecha y estimación en una sola llamada y nunca transic
   assert.equal(posts[0].body.fields.duedate, '2026-11-06');
   assert.deepEqual(posts[0].body.fields.timetracking, { originalEstimate: '3h', remainingEstimate: '3h' });
   assert.equal('transition' in posts[0].body, false);
+});
+
+const axiosError = (status?: number, data?: unknown, code?: string): AxiosError =>
+  ({ message: 'Request failed', code, response: status === undefined ? undefined : { status, data } }) as AxiosError;
+
+test('sin respuesta de Jira dice que no pudo conectar, o que tardó si fue tiempo, y conserva el code', () => {
+  const offline = toJiraError(axiosError(undefined, undefined, 'ENOTFOUND'));
+  assert.equal(offline.message, JIRA_ERROR_TEXTS.unreachable);
+  assert.equal(offline.code, 'ENOTFOUND');
+  assert.ok(!offline.message.includes('undefined'));
+  const slow = toJiraError(axiosError(undefined, undefined, 'ETIMEDOUT'));
+  assert.equal(slow.message, JIRA_ERROR_TEXTS.timeout);
+  assert.equal(isTimeoutError(slow), true);
+});
+
+test('cada código HTTP se traduce a qué pasó y qué hacer, con el detalle de Jira y el status aparte', () => {
+  const detail = { errorMessages: ['No puedes editar AQ-1'] };
+  assert.equal(toJiraError(axiosError(401)).message, JIRA_ERROR_TEXTS.unauthorized);
+  assert.equal(toJiraError(axiosError(403, detail)).message, JIRA_ERROR_TEXTS.forbidden('No puedes editar AQ-1'));
+  const missing = toJiraError(axiosError(404, detail));
+  assert.ok(missing instanceof IssueNotFoundError);
+  assert.equal(missing.status, 404);
+  assert.equal(toJiraError(axiosError(429)).message, JIRA_ERROR_TEXTS.rateLimited);
+  assert.equal(toJiraError(axiosError(503)).message, JIRA_ERROR_TEXTS.serverError(503));
+  const rejected = toJiraError(axiosError(400, { errors: { duedate: 'Fecha inválida' } }));
+  assert.equal(rejected.message, JIRA_ERROR_TEXTS.rejected('Fecha inválida'));
+  assert.equal(rejected.status, 400);
+  assert.equal(toJiraError(axiosError(409)).message, JIRA_ERROR_TEXTS.other(409, 'Request failed'));
+});
+
+test('el detalle de Jira ignora lo que no es texto y se recorta si es muy largo', () => {
+  const mixed = toJiraError(axiosError(400, { errorMessages: ['Campo inválido', 42], errors: { a: { x: 1 } } }));
+  assert.equal(mixed.message, JIRA_ERROR_TEXTS.rejected('Campo inválido'));
+  const long = toJiraError(axiosError(400, { errorMessages: ['x'.repeat(MAX_ERROR_DETAIL_CHARS + 50)] }));
+  assert.ok(long.message.length < JIRA_ERROR_TEXTS.rejected('').length + MAX_ERROR_DETAIL_CHARS + 5);
+  const html = toJiraError(axiosError(502, '<html>proxy</html>'));
+  assert.equal(html.message, JIRA_ERROR_TEXTS.serverError(502));
 });

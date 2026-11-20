@@ -7,6 +7,7 @@ import { adfToMarkdown } from '../utils/adf';
 import {
   buildDescriptionMarkdown,
   buildPreview,
+  countPendingTasks,
   estimateForJira,
   findExistingMatches,
   plannedUploads,
@@ -441,4 +442,13 @@ test('la vista previa suma lo que irá a Jira y la creación no usa transiciones
   assert.equal(preview.estimateSeconds, 3 * ONE_HOUR + 3900);
   // CreateJira no expone transiciones: crear no puede mover la tarea de su estado inicial
   assert.equal('doTransition' in jira || 'transitionToStatus' in jira, false);
+});
+
+test('cuenta solo las tareas marcadas que aún no están en Jira, sin llamar a Jira', async () => {
+  const root = await tempRoot();
+  await seedStory(storeAt(root), KEY, [task('T1'), task('T2'), task('T3', { include: false })], { phase: 'reviewed' });
+  assert.equal(await countPendingTasks(storeAt(root), KEY), 2);
+  const { jira } = createFakeJira();
+  assert.ok((await runCreation({ jira, store: storeAt(root) }, KEY, REQUEST)).ok);
+  assert.equal(await countPendingTasks(storeAt(root), KEY), 0);
 });

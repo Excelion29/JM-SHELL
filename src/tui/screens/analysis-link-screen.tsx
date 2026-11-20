@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 // Solo tipos: se borra al compilar
 import type { AnalysisLinkBridge, LinkModel, LinkPointResult, PointRow } from '../../refinement/analysis-types.js';
@@ -269,7 +270,7 @@ function LinkFlow({ model, id, link, fetchEpics, fetchStories, onDone }: Analysi
         </Text>
       ))}
       {message && <Text color={message.error ? COLORS.error : COLORS.accent}>{message.text}</Text>}
-      <Text color={COLORS.muted}>{FOOTER_HINTS.linkPoints}</Text>
+      <KeyLegend hint={FOOTER_HINTS.linkPoints} />
     </Box>
   );
 }

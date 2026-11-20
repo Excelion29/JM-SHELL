@@ -42,6 +42,22 @@ export const KEYS = {
   syncStatus: 's',
 } as const;
 
+export interface HintItem {
+  key: string;
+  label: string;
+}
+// Una tecla con su acción; key vacía = texto plano
+export type Hint = readonly HintItem[];
+
+const esc = (label: string): HintItem => ({ key: 'Esc', label });
+const enter = (label: string): HintItem => ({ key: 'Enter', label });
+const PICK: HintItem = { key: '↑↓', label: 'elegir' };
+const MOVE: HintItem = { key: '↑↓', label: 'moverte' };
+const MARK: HintItem = { key: 'espacio', label: 'marcar' };
+const FILTER: HintItem = { key: 'escribe', label: 'para filtrar' };
+const FIELD_SWITCH: HintItem = { key: '↑↓ o Tab', label: 'cambiar de campo' };
+const MANUAL_KEY: HintItem = { key: `${KEYS.manualKeyAlt} o ${KEYS.manualKey}`, label: 'clave a mano' };
+
 // Palabra que hay que escribir completa para borrar subtareas de Jira
 export const DELETE_CONFIRM_WORD = 'borrar';
 
@@ -107,7 +123,7 @@ export const EPIC_STORIES_TEXTS = {
   title: (epicKey: string, summary: string) => `Historias de ${epicKey} ${summary}`,
   useEpic: (epicKey: string) => `${epicKey} · usar esta épica`,
   nextStep: 'Siguiente paso: elige una historia (o la misma épica) y pulsa Enter.',
-  hint: `↑↓ elegir · Enter elegir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc volver a las épicas`,
+  hint: [PICK, enter('elegir'), FILTER, MANUAL_KEY, esc('volver a las épicas')],
 } as const;
 
 export const BROWSE_TEXTS = {
@@ -207,51 +223,147 @@ export const CHAT_TEXTS = {
   },
 } as const;
 
+const chatLegend = (tail: Hint): Hint => [
+  enter('enviar'),
+  { key: 'PgUp/PgDn o ↑↓', label: 'leer' },
+  { key: `Ctrl+${CHAT_KEYS.newline.toUpperCase()}`, label: 'línea' },
+  { key: `Ctrl+${CHAT_KEYS.deepModel.toUpperCase()}`, label: 'Opus' },
+  { key: `Ctrl+${CHAT_KEYS.referenceNotes.toUpperCase()}`, label: 'notas de la base' },
+  ...tail,
+  esc('inicio'),
+];
+
 export const FOOTER_HINTS = {
-  pin: 'Enter confirmar · Ctrl+C salir',
-  home: `↑↓ elegir · Enter continuar · ${KEYS.newStory} buscar en Jira · ${KEYS.changeProject} cambiar proyecto · ${KEYS.review} revisar plan · ${KEYS.closeStory} cerrar historia · ${KEYS.tasks} tareas o puntos del análisis · ${KEYS.myDay} mi día · ${KEYS.knowledgeBase} base de conocimiento · ${KEYS.calibration} calibración · ${KEYS.management} gestión · ${KEYS.newAnalysis} nuevo análisis · ${KEYS.detail} fuentes del análisis · ${KEYS.linkAnalysis} vincular análisis a Jira · ${KEYS.closeStory} o Supr borrar análisis · ${KEYS.quit} salir`,
-  picker: `↑↓ elegir · Enter abrir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · ${KEYS.changeProject} proyecto · Esc volver`,
-  filtering: '↑↓ elegir · Enter abrir · Backspace borrar · Esc limpiar filtro',
-  projects: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
-  status: 'Esc volver',
-  review: `↑↓ moverte · espacio marcar · ${KEYS.edit} editar · ${KEYS.useAdjusted} usar ajustado · ${KEYS.detail} detalle · ${KEYS.attachments} adjuntos · ${KEYS.create} crear en Jira · Esc inicio`,
-  edit: '↑↓ o Tab cambiar de campo · Enter siguiente o guardar · Esc cancelar',
-  files: `↑↓ elegir · espacio cambiar propósito · Enter tareas · ${KEYS.open} abrir · Esc volver`,
-  fileTasks: '↑↓ elegir · espacio asignar o quitar · Esc volver',
-  detail: 'Esc volver',
-  createAsk: '↑↓ elegir · Enter confirmar · Esc volver',
-  createConfirm: `${KEYS.confirmYes} crear · ${KEYS.changeAssignee} cambiar responsable · Esc cancelar`,
-  createRunning: 'Creando en Jira... no cierres la consola.',
-  createDone: `${KEYS.open} abrir el padre en el navegador · Esc inicio`,
-  createFailed: `${KEYS.retry} reintentar · Esc volver`,
-  assignee: '↑↓ elegir · Enter cambiar · escribe para filtrar · Esc volver',
-  close: `${KEYS.confirmYes} confirmar · cualquier otra tecla cancela`,
-  closed: 'Esc inicio',
-  choose: (count: number) => `1-${count} elegir`,
-  knowledge: 'Esc cancelar',
-  knowledgeSettings: '1-4 elegir · Esc inicio',
-  management: 'Esc salir sin guardar',
-  managementCheck: 'Esc cancelar',
-  knowledgeBrowse: `↑↓ elegir · Enter abrir carpeta o nota · Backspace subir · ${KEYS.selectFolder} elegir esta carpeta · Esc cancelar`,
-  reviewReadOnly: `↑↓ moverte · ${KEYS.detail} detalle · Esc volver`,
-  tasks: `↑↓ moverte · espacio marcar · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar · ${KEYS.giveBack} devolver · ${KEYS.removeTasks} borrar · ${KEYS.pendingFilter} pendientes · ${KEYS.retry} actualizar · ${KEYS.open} abrir · ${KEYS.viewPlan} ver plan · Esc inicio`,
-  calibration: `${KEYS.retry} actualizar · Esc inicio`,
-  points: `↑↓ moverte · ${KEYS.start} iniciar con Claude · ${KEYS.finishDirect} finalizar · ${KEYS.giveBack} devolver a pendiente · ${KEYS.retry} actualizar · Esc inicio`,
-  linkEpic: `Enter conservar · ${KEYS.edit} cambiar la épica · Esc inicio`,
-  linkPicker: `↑↓ elegir · Enter elegir · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc volver o saltar`,
-  linkPoints: `↑↓ moverte · espacio marcar · ${KEYS.edit} destino de lo marcado · ${KEYS.create} crear en Jira · ${KEYS.syncStatus} sincronizar estados · Esc inicio`,
-  linkDone: 'Esc inicio',
-  myDay: `↑↓ moverte · ${KEYS.start} iniciar · ${KEYS.finishDirect} finalizar ·${KEYS.retry} actualizar · ${KEYS.open} abrir · Esc inicio`,
-  options: '↑↓ elegir · Enter confirmar · Esc cancelar',
-  yesNo: `${KEYS.confirmYes}/${KEYS.confirmNo}`,
-  typeConfirm: 'Escribe la palabra y pulsa Enter · Esc cancelar',
-  chat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.referenceNotes.toUpperCase()} notas de la base · Ctrl+${CHAT_KEYS.openInJira.toUpperCase()} abrir en Jira · Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()} Claude completo (vuelves con /exit) · Esc inicio`,
-  analysisChat: `Enter enviar · PgUp/PgDn o ↑↓ leer · Ctrl+${CHAT_KEYS.newline.toUpperCase()} línea · Ctrl+${CHAT_KEYS.deepModel.toUpperCase()} Opus · Ctrl+${CHAT_KEYS.referenceNotes.toUpperCase()} notas de la base · Ctrl+${CHAT_KEYS.openInJira.toUpperCase()} abrir épica en Jira · Ctrl+${CHAT_KEYS.closeAnalysis.toUpperCase()} cerrar y documentar · Esc inicio`,
-} as const;
+  pin: [enter('confirmar'), { key: 'Ctrl+C', label: 'salir' }],
+  home: [
+    PICK,
+    enter('continuar'),
+    { key: KEYS.newStory, label: 'buscar en Jira' },
+    { key: KEYS.changeProject, label: 'cambiar proyecto' },
+    { key: KEYS.review, label: 'revisar plan' },
+    { key: KEYS.closeStory, label: 'cerrar historia' },
+    { key: KEYS.tasks, label: 'tareas o puntos del análisis' },
+    { key: KEYS.myDay, label: 'mi día' },
+    { key: KEYS.knowledgeBase, label: 'base de conocimiento' },
+    { key: KEYS.calibration, label: 'calibración' },
+    { key: KEYS.management, label: 'gestión' },
+    { key: KEYS.newAnalysis, label: 'nuevo análisis' },
+    { key: KEYS.detail, label: 'fuentes del análisis' },
+    { key: KEYS.linkAnalysis, label: 'vincular análisis a Jira' },
+    { key: `${KEYS.closeStory} o Supr`, label: 'borrar análisis' },
+    { key: KEYS.quit, label: 'salir' },
+  ],
+  picker: [PICK, enter('abrir'), FILTER, MANUAL_KEY, { key: KEYS.changeProject, label: 'proyecto' }, esc('volver')],
+  filtering: [PICK, enter('abrir'), { key: 'Backspace', label: 'borrar' }, esc('limpiar filtro')],
+  projects: [PICK, enter('cambiar'), FILTER, esc('volver')],
+  status: [esc('volver')],
+  review: [
+    MOVE,
+    MARK,
+    { key: KEYS.edit, label: 'editar' },
+    { key: KEYS.useAdjusted, label: 'usar ajustado' },
+    { key: KEYS.detail, label: 'detalle' },
+    { key: KEYS.attachments, label: 'adjuntos' },
+    { key: KEYS.create, label: 'crear en Jira' },
+    esc('inicio'),
+  ],
+  edit: [FIELD_SWITCH, enter('siguiente o guardar'), esc('cancelar')],
+  files: [
+    PICK,
+    { key: 'espacio', label: 'cambiar propósito' },
+    enter('tareas'),
+    { key: KEYS.open, label: 'abrir' },
+    esc('volver'),
+  ],
+  fileTasks: [PICK, { key: 'espacio', label: 'asignar o quitar' }, esc('volver')],
+  detail: [esc('volver')],
+  createAsk: [PICK, enter('confirmar'), esc('volver')],
+  createConfirm: [
+    { key: KEYS.confirmYes, label: 'crear' },
+    { key: KEYS.changeAssignee, label: 'cambiar responsable' },
+    esc('cancelar'),
+  ],
+  createRunning: [{ key: '', label: 'Creando en Jira... no cierres la consola.' }],
+  createDone: [{ key: KEYS.open, label: 'abrir el padre en el navegador' }, esc('inicio')],
+  createFailed: [{ key: KEYS.retry, label: 'reintentar' }, esc('volver')],
+  assignee: [PICK, enter('cambiar'), FILTER, esc('volver')],
+  close: [
+    { key: KEYS.confirmYes, label: 'confirmar' },
+    { key: '', label: 'cualquier otra tecla cancela' },
+  ],
+  closed: [esc('inicio')],
+  choose: (count: number): Hint => [{ key: `1-${count}`, label: 'elegir' }],
+  knowledge: [esc('cancelar')],
+  knowledgeSettings: [{ key: '1-4', label: 'elegir' }, esc('inicio')],
+  management: [esc('salir sin guardar')],
+  managementCheck: [esc('cancelar')],
+  knowledgeBrowse: [
+    PICK,
+    enter('abrir carpeta o nota'),
+    { key: 'Backspace', label: 'subir' },
+    { key: KEYS.selectFolder, label: 'elegir esta carpeta' },
+    esc('cancelar'),
+  ],
+  reviewReadOnly: [MOVE, { key: KEYS.detail, label: 'detalle' }, esc('volver')],
+  tasks: [
+    MOVE,
+    MARK,
+    { key: KEYS.start, label: 'iniciar' },
+    { key: KEYS.finishDirect, label: 'finalizar' },
+    { key: KEYS.giveBack, label: 'devolver' },
+    { key: KEYS.removeTasks, label: 'borrar' },
+    { key: KEYS.pendingFilter, label: 'pendientes' },
+    { key: KEYS.retry, label: 'actualizar' },
+    { key: KEYS.open, label: 'abrir' },
+    { key: KEYS.viewPlan, label: 'ver plan' },
+    esc('inicio'),
+  ],
+  calibration: [{ key: KEYS.retry, label: 'actualizar' }, esc('inicio')],
+  points: [
+    MOVE,
+    { key: KEYS.start, label: 'iniciar con Claude' },
+    { key: KEYS.finishDirect, label: 'finalizar' },
+    { key: KEYS.giveBack, label: 'devolver a pendiente' },
+    { key: KEYS.retry, label: 'actualizar' },
+    esc('inicio'),
+  ],
+  linkEpic: [enter('conservar'), { key: KEYS.edit, label: 'cambiar la épica' }, esc('inicio')],
+  linkPicker: [PICK, enter('elegir'), FILTER, MANUAL_KEY, esc('volver o saltar')],
+  linkPoints: [
+    MOVE,
+    MARK,
+    { key: KEYS.edit, label: 'destino de lo marcado' },
+    { key: KEYS.create, label: 'crear en Jira' },
+    { key: KEYS.syncStatus, label: 'sincronizar estados' },
+    esc('inicio'),
+  ],
+  linkDone: [esc('inicio')],
+  myDay: [
+    MOVE,
+    { key: KEYS.start, label: 'iniciar' },
+    { key: KEYS.finishDirect, label: 'finalizar' },
+    { key: KEYS.retry, label: 'actualizar' },
+    { key: KEYS.open, label: 'abrir' },
+    esc('inicio'),
+  ],
+  options: [PICK, enter('confirmar'), esc('cancelar')],
+  yesNo: [{ key: `${KEYS.confirmYes}/${KEYS.confirmNo}`, label: '' }],
+  typeConfirm: [{ key: '', label: 'Escribe la palabra y pulsa Enter' }, esc('cancelar')],
+  chat: chatLegend([
+    { key: `Ctrl+${CHAT_KEYS.openInJira.toUpperCase()}`, label: 'abrir en Jira' },
+    { key: `Ctrl+${CHAT_KEYS.fullClaude.toUpperCase()}`, label: 'Claude completo (vuelves con /exit)' },
+  ]),
+  analysisChat: chatLegend([
+    { key: `Ctrl+${CHAT_KEYS.openInJira.toUpperCase()}`, label: 'abrir épica en Jira' },
+    { key: `Ctrl+${CHAT_KEYS.closeAnalysis.toUpperCase()}`, label: 'cerrar y documentar' },
+  ]),
+} satisfies Record<string, Hint | ((count: number) => Hint)>;
 export const SECONDS_PER_HOUR = 3600;
 export const SECONDS_PER_MINUTE = 60;
 export const FRAME_HORIZONTAL_OVERHEAD = 4;
 export const FRAME_BOTTOM_MARGIN = 1;
+export const HINT_ITEM_GAP = 3;
+export const HINT_DIVIDER_CHAR = '─';
 export const REVIEW_CHROME_ROWS = 15;
 export const REVIEW_MIN_VISIBLE_ROWS = 3;
 export const PROGRESS_VISIBLE_LINES = 12;
@@ -400,7 +512,7 @@ export const KNOWLEDGE_TEXTS = {
     none: 'Ninguna (no vuelvo a preguntar en esta carpeta)',
   },
   kindNextStep: 'Siguiente paso: elige una opción y pulsa Enter.',
-  kindKeysHint: '1-3 o ↑↓ elegir',
+  kindKeysHint: [{ key: '1-3 o ↑↓', label: 'elegir' }],
   routing: 'Preparando…',
   urlLabel: 'URL del MCP: ',
   urlNextStep: 'Escribe la URL (https) y pulsa Enter.',
@@ -548,7 +660,8 @@ export const POINTS_TEXTS = {
   real: (claude: string, elapsed: string) => `${claude} / ${elapsed}`,
   summary: (done: number, total: number) => `${done} de ${total} puntos finalizados`,
   nextStep: `Siguiente paso: elige un punto y pulsa ${KEYS.start} para trabajarlo con Claude.`,
-  reopenQuestion: (id: string) => `${id} ya está finalizado. ¿Lo reabro y lo inicio? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  reopenQuestion: (id: string) =>
+    `${id} ya está finalizado. ¿Lo reabro y lo inicio? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
   finishQuestion: (id: string) => `¿Terminaste ${id}? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
   working: 'Guardando...',
   finished: (id: string) => `${id} quedó finalizado.`,
@@ -623,8 +736,8 @@ export const PLANNING_TEXTS = {
   created: (key: string) => `${key} creada y En curso. Al salir del chat te pregunto si terminaste.`,
   createdNotStarted: (key: string) =>
     `${key} creada, pero no pude pasarla a En curso en Jira; su tiempo ya corre en jm.`,
-  continueHint: 'Enter o Esc seguir al chat',
-  formHint: '↑↓ o Tab cambiar de campo · Enter siguiente o crear · Esc no registrar',
+  continueHint: [{ key: 'Enter o Esc', label: 'seguir al chat' }],
+  formHint: [FIELD_SWITCH, enter('siguiente o crear'), esc('no registrar')],
 } as const;
 
 const MANAGEMENT_PROBLEM_REASONS = {
@@ -641,7 +754,7 @@ export const ANALYSIS_TEXTS = {
     text: 'Texto pegado (opcional)',
   },
   nameRequired: 'El análisis necesita un nombre.',
-  formHint: '↑↓ o Tab cambiar de campo · Enter siguiente o guardar · Esc cancelar',
+  formHint: [FIELD_SWITCH, enter('siguiente o guardar'), esc('cancelar')],
   sourcesHint: 'Tipos admitidos: .md .txt .pdf .eml .png .jpg · hasta 20 MB por archivo.',
   saving: 'Guardando las fuentes...',
   created: (id: string, name: string) => `Análisis ${id} creado: ${name}`,
@@ -649,7 +762,7 @@ export const ANALYSIS_TEXTS = {
   resultOk: (source: string, file: string) => `  listo: ${source} -> fuentes/${file}`,
   resultFailed: (source: string, message: string) => `  no se copió: ${source}: ${message}`,
   noSources: 'Sin fuentes por ahora: puedes agregarlas al entrar al análisis.',
-  resultsHint: 'Enter continuar',
+  resultsHint: [enter('continuar')],
   loading: 'Leyendo el análisis...',
   title: (id: string, name: string) => `Análisis ${id} · ${name}`,
   sourcesTitle: (count: number) => `Fuentes (${count}):`,
@@ -660,7 +773,7 @@ export const ANALYSIS_TEXTS = {
   trackingLine: (key: string, status: string) => `  ${key} · ${status}`,
   trackingStatus: { started: 'En curso', done: 'Finalizada' },
   nextStep: `Siguiente paso: ${KEYS.addSources} para agregar fuentes; el debate con Claude se abre con Enter desde el inicio.`,
-  detailHint: `${KEYS.addSources} agregar fuentes · Esc inicio`,
+  detailHint: [{ key: KEYS.addSources, label: 'agregar fuentes' }, esc('inicio')],
   addTitle: 'Agregar fuentes',
   remove: {
     loading: 'Leyendo el análisis...',
@@ -681,7 +794,7 @@ export const ANALYSIS_TEXTS = {
     whyManagement: (managementKey: string) =>
       `El análisis también es trabajo: queda en Jira bajo ${managementKey} (gestión) y se mide su tiempo de inicio a fin.`,
     formTitle: (name: string) => `Tarea de análisis de "${name}"`,
-    continueHint: 'Enter o Esc seguir al análisis',
+    continueHint: [{ key: 'Enter o Esc', label: 'seguir al análisis' }],
     stillOpen: (key: string) => `Sigues en la tarea de análisis ${key}; al salir te pregunto si terminaste.`,
     created: (key: string) => `${key} creada y En curso. Al salir del análisis te pregunto si terminaste.`,
     createdNotStarted: (key: string) =>
@@ -689,7 +802,14 @@ export const ANALYSIS_TEXTS = {
     whereTitle: '¿Dónde registro la tarea de análisis?',
     whereEmpty: `No encontré épicas en el proyecto. Pulsa ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
     whereNextStep: `Siguiente paso: elige una épica y pulsa Enter, → para ver sus historias o ${KEYS.manualKey} para escribir la clave.`,
-    whereHint: `↑↓ elegir · Enter elegir · → ver sus historias · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc no registrar`,
+    whereHint: [
+      PICK,
+      enter('elegir'),
+      { key: '→', label: 'ver sus historias' },
+      FILTER,
+      MANUAL_KEY,
+      esc('no registrar'),
+    ],
     whereProblem: (message: string) => `No pude usar ese destino: ${message}`,
   },
 } as const;
@@ -709,10 +829,14 @@ export const MANAGEMENT_TEXTS = {
   pickTitle: (projectKey: string) => `Épica de gestión de ${projectKey}`,
   noEpics: `No encontré épicas en el proyecto. Pulsa ${KEYS.manualKey} para escribir la clave de una historia o épica.`,
   pickNextStep: `Siguiente paso: elige una épica y pulsa Enter, → para ver sus historias o ${KEYS.manualKey} para escribir la clave.`,
-  pickHint: `↑↓ elegir · Enter guardar · → ver sus historias · escribe para filtrar · ${KEYS.manualKeyAlt} o ${KEYS.manualKey} clave a mano · Esc volver`,
+  pickHint: [PICK, enter('guardar'), { key: '→', label: 'ver sus historias' }, FILTER, MANUAL_KEY, esc('volver')],
   saving: 'Comprobando en Jira y guardando...',
   saveError: (message: string) => `No pude guardar la gestión: ${message}`,
-  askHint: `${KEYS.confirmYes} elegir · ${KEYS.confirmNo} no tengo (no vuelvo a preguntar) · Esc seguir sin guardar`,
+  askHint: [
+    { key: KEYS.confirmYes, label: 'elegir' },
+    { key: KEYS.confirmNo, label: 'no tengo (no vuelvo a preguntar)' },
+    esc('seguir sin guardar'),
+  ],
   fallback: (key: string, reason: ManagementProblem, message: string) =>
     `La de gestión ${key} ya no sirve (${reason === 'error' ? message : MANAGEMENT_PROBLEM_REASONS[reason]}); la Planificación quedó en la historia. Cámbiala con ${KEYS.management}.`,
 } as const;
@@ -735,6 +859,28 @@ export const FINISH_TEXTS = {
     failed.length === 0
       ? `${done} finalizadas.`
       : `${done} finalizadas, ${failed.length} con error: ${failed.join('; ')}`,
+} as const;
+
+export const AFTER_CHAT_TEXTS = {
+  planReadyQuestion: (key: string) =>
+    `El plan de ${key} está listo. ¿Creo las tareas en Jira ahora? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  // La historia ya tiene tareas en Jira: solo se crean las que salieron después
+  newTasksQuestion: (key: string, count: number) =>
+    count === 1
+      ? `Hay 1 tarea nueva en el plan de ${key}. ¿La creo en Jira ahora? (${KEYS.confirmYes}/${KEYS.confirmNo})`
+      : `Hay ${count} tareas nuevas en el plan de ${key}. ¿Las creo en Jira ahora? (${KEYS.confirmYes}/${KEYS.confirmNo})`,
+  planReadyLater: (key: string) => `Cuando quieras crear las tareas de ${key}, pulsa ${KEYS.review} sobre la historia.`,
+  creating: (key: string) => `Creando las tareas de ${key} en Jira...`,
+  created: (count: number, parentKey: string) =>
+    `${count} ${count === 1 ? 'tarea creada' : 'tareas creadas'} en ${parentKey}`,
+  failed: (key: string, message: string, createdCount: number) =>
+    `No pude crear todas las tareas de ${key}: ${message}${
+      createdCount > 0 ? ` (se crearon ${createdCount} antes del error)` : ''
+    }. Reintenta con ${KEYS.review} sobre la historia.`,
+  needsParent: (key: string) => `Hay que elegir el padre de las tareas de ${key}: las revisamos antes de crearlas.`,
+  hasExisting: (key: string) => `Ya hay tareas parecidas en Jira para ${key}: las revisamos antes de crearlas.`,
+  reloadError: (message: string) => `No pude recargar las historias: ${message}`,
+  noTasks: (key: string) => `El plan de ${key} no tiene tareas marcadas para crear: lo revisamos.`,
 } as const;
 
 export const CALIBRATION_TEXTS = {

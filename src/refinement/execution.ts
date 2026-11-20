@@ -1,5 +1,5 @@
 import type { JiraIssue, JiraTransition } from '../config/types';
-import type { JiraService } from '../services/jira';
+import { IssueNotFoundError, type JiraService } from '../services/jira';
 import { adfToMarkdown } from '../utils/adf';
 import { elapsedMsOf, realTimesOf, type RealTimes } from './calibration';
 import { storyLinkLine, taskNoteFrontmatter, wikiLink } from './note-links';
@@ -344,10 +344,26 @@ export async function loadTaskRows(ctx: ExecutionContext, storyKey: string): Pro
     rowFrom(issue, planTaskOf(plan, state, issue.key), pending(issue.key), real(issue.key)),
   );
   const seen = new Set(rows.map((row) => row.key));
-  for (const key of Object.values(state.createdIssues)) {
-    if (!seen.has(key)) rows.push(missingRow(key, planTaskOf(plan, state, key), pending(key), real(key)));
-  }
+  const unseen = Object.values(state.createdIssues).filter((key) => !seen.has(key));
+  const direct = await Promise.all(unseen.map((key) => directIssue(ctx.jira, key)));
+  unseen.forEach((key, index) => {
+    const issue = direct[index];
+    const planTask = planTaskOf(plan, state, key);
+    rows.push(
+      issue ? rowFrom(issue, planTask, pending(key), real(key)) : missingRow(key, planTask, pending(key), real(key)),
+    );
+  });
   return { storyKey, summary: state.summary, rows };
+}
+
+// La búsqueda de Jira tarda en indexar lo recién creado; leerla por su clave no depende de ese índice
+async function directIssue(jira: ExecutionJira, key: string): Promise<JiraIssue | null> {
+  try {
+    return await jira.getIssue(key);
+  } catch (err: unknown) {
+    if (err instanceof IssueNotFoundError) return null;
+    throw err;
+  }
 }
 
 export interface TaskContextInput {

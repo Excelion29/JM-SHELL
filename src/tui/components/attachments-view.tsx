@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from './key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import type { AttachmentPurpose } from '../../refinement/types.js';
 import type { ReviewFile, ReviewTask } from '../../refinement/review-types.js';
@@ -71,7 +72,7 @@ export function AttachmentsView({
           </Text>
         ))}
         {error && <Text color={COLORS.error}>{error}</Text>}
-        <Text color={COLORS.muted}>{FOOTER_HINTS.fileTasks}</Text>
+        <KeyLegend hint={FOOTER_HINTS.fileTasks} />
       </Box>
     );
   }
@@ -91,7 +92,7 @@ export function AttachmentsView({
       {file && <Text color={COLORS.muted}>{PURPOSE_HELP[file.purpose]}</Text>}
       {error && <Text color={COLORS.error}>{error}</Text>}
       <Text color={COLORS.muted}>{PLAN_TEXTS.filesNextStep}</Text>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.files}</Text>
+      <KeyLegend hint={FOOTER_HINTS.files} />
     </Box>
   );
 }

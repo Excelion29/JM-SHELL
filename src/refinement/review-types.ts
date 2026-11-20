@@ -161,6 +161,7 @@ export interface PlanBridge {
   toggleAttachmentTask: (key: string, file: string, taskId: string) => Promise<ReviewModel>;
   openAttachment: (key: string, file: string) => Promise<void>;
   prepareCreate: (key: string) => Promise<CreatePreview>;
+  countPendingTasks: (key: string) => Promise<number>;
   resolveTarget: (parentKey: string) => Promise<TargetResult>;
   findExisting: (key: string, target: CreationTarget) => Promise<ExistingMatch[]>;
   listAssignees: (key: string) => Promise<AssigneeView[]>;

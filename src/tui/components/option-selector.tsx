@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from './key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import { COLORS, FOOTER_HINTS, HOME_TEXTS } from '../texts.js';
 
@@ -28,7 +29,7 @@ export function OptionSelector({ title, options, onSelect, onCancel }: OptionSel
           {index === selected ? HOME_TEXTS.selectedMarker : ' '} {option}
         </Text>
       ))}
-      <Text color={COLORS.muted}>{FOOTER_HINTS.options}</Text>
+      <KeyLegend hint={FOOTER_HINTS.options} />
     </Box>
   );
 }

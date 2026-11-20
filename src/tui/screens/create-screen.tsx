@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import type {
   AssigneeView,
@@ -15,14 +16,12 @@ import { LoadGate } from '../components/load-gate.js';
 import { ManualKeyInput } from '../components/manual-key-input.js';
 import { PickerList } from '../components/picker-list.js';
 import { alignCreated } from '../components/task-table.js';
-import { useTerminalSize } from '../components/terminal-size.js';
+import { innerColumns, useTerminalSize } from '../components/terminal-size.js';
 import { useLoad } from '../components/use-load.js';
 import {
-  CHAT_DEFAULT_TERMINAL_COLUMNS,
   COLORS,
   CREATE_TEXTS,
   FOOTER_HINTS,
-  FRAME_HORIZONTAL_OVERHEAD,
   HOME_TEXTS,
   KEYS,
   PROGRESS_VISIBLE_LINES,
@@ -221,7 +220,7 @@ function AskTarget({
       ))}
       {checking && <Text>{CREATE_TEXTS.otherChecking}</Text>}
       {error && <Text color={COLORS.error}>{error}</Text>}
-      <Text color={COLORS.muted}>{FOOTER_HINTS.createAsk}</Text>
+      <KeyLegend hint={FOOTER_HINTS.createAsk} />
     </Box>
   );
 }
@@ -276,7 +275,7 @@ function Confirm({
         </>
       )}
       <Text color={COLORS.muted}>{CREATE_TEXTS.confirmNextStep}</Text>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.createConfirm}</Text>
+      <KeyLegend hint={FOOTER_HINTS.createConfirm} />
     </Box>
   );
 }
@@ -365,7 +364,7 @@ function Running({
           )}
         </Text>
       ))}
-      <Text color={COLORS.muted}>{FOOTER_HINTS.createRunning}</Text>
+      <KeyLegend hint={FOOTER_HINTS.createRunning} />
     </Box>
   );
 }
@@ -387,7 +386,7 @@ function Result({
   const size = useTerminalSize();
   const created = alignCreated(
     outcome.created.map((c) => ({ key: c.key, summary: c.summary, note: c.existing ? CREATE_TEXTS.existingNote : '' })),
-    (size.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS) - FRAME_HORIZONTAL_OVERHEAD,
+    innerColumns(size),
   );
 
   useInput((input, key) => {
@@ -415,14 +414,14 @@ function Result({
           {outcome.estimateSkipped && <Text color={COLORS.code}>{CREATE_TEXTS.estimateSkipped}</Text>}
           {openError && <Text color={COLORS.error}>{openError}</Text>}
           <Text color={COLORS.muted}>{CREATE_TEXTS.doneNextStep(outcome.parentKey)}</Text>
-          <Text color={COLORS.muted}>{FOOTER_HINTS.createDone}</Text>
+          <KeyLegend hint={FOOTER_HINTS.createDone} />
         </>
       ) : (
         <>
           <Text color={COLORS.error}>{outcome.message}</Text>
           <Text>{CREATE_TEXTS.failedKept(outcome.created.length)}</Text>
           <Text color={COLORS.muted}>{CREATE_TEXTS.failedNextStep}</Text>
-          <Text color={COLORS.muted}>{FOOTER_HINTS.createFailed}</Text>
+          <KeyLegend hint={FOOTER_HINTS.createFailed} />
         </>
       )}
     </Box>

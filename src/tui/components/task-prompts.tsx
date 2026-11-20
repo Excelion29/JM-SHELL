@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from './key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { COLORS, DELETE_CONFIRM_WORD, FOOTER_HINTS, KEYS } from '../texts.js';
@@ -22,7 +23,7 @@ export function YesNoPrompt({ question, onYes, onNo, onCancel = onNo }: YesNoPro
   return (
     <Box flexDirection="column">
       <Text bold>{question}</Text>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.yesNo}</Text>
+      <KeyLegend hint={FOOTER_HINTS.yesNo} />
     </Box>
   );
 }
@@ -50,7 +51,7 @@ export function TypedConfirm({ prompt, onConfirm, onMismatch, onCancel }: TypedC
           onSubmit={(typed) => (typed.trim() === DELETE_CONFIRM_WORD ? onConfirm() : onMismatch())}
         />
       </Box>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.typeConfirm}</Text>
+      <KeyLegend hint={FOOTER_HINTS.typeConfirm} />
     </Box>
   );
 }

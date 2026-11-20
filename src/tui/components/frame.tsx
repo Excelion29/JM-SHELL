@@ -1,17 +1,19 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { TerminalSizeContext, useTrackedTerminalSize } from './terminal-size.js';
-import { APP_NAME, COLORS, FRAME_BOTTOM_MARGIN, NO_PROJECT_LABEL } from '../texts.js';
+import { innerColumns, TerminalSizeContext, useTrackedTerminalSize } from './terminal-size.js';
+import { KeyLegend } from './key-legend.js';
+import { APP_NAME, COLORS, FRAME_BOTTOM_MARGIN, HINT_DIVIDER_CHAR, NO_PROJECT_LABEL, type Hint } from '../texts.js';
 
 interface FrameProps {
   projectKey: string | null;
-  hint: string;
+  hint: Hint;
   children: React.ReactNode;
 }
 
 // Ocupa la ventana menos una fila (Ink repinta todo si el alto llega a las filas): lo que no cabe se recorta dentro y el pie queda fijo abajo
 export function Frame({ projectKey, hint, children }: FrameProps) {
   const size = useTrackedTerminalSize();
+  const dividerWidth = innerColumns(size);
   return (
     <TerminalSizeContext.Provider value={size}>
       <Box
@@ -31,9 +33,10 @@ export function Frame({ projectKey, hint, children }: FrameProps) {
         <Box flexDirection="column" marginY={1} flexGrow={1} flexShrink={1} overflow="hidden">
           {children}
         </Box>
-        {hint && (
-          <Box flexShrink={0}>
-            <Text color={COLORS.muted}>{hint}</Text>
+        {hint.length > 0 && (
+          <Box flexDirection="column" flexShrink={0}>
+            <Text color={COLORS.muted}>{HINT_DIVIDER_CHAR.repeat(dividerWidth)}</Text>
+            <KeyLegend hint={hint} />
           </Box>
         )}
       </Box>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from './key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import { ANALYSIS_TEXTS as T, COLORS } from '../texts.js';
@@ -63,7 +64,7 @@ export function SourcesForm({ title, fields, onSubmit, onCancel, error = null }:
       {missingName && <Text color={COLORS.error}>{T.nameRequired}</Text>}
       {error && <Text color={COLORS.error}>{error}</Text>}
       <Text color={COLORS.muted}>{T.sourcesHint}</Text>
-      <Text color={COLORS.muted}>{T.formHint}</Text>
+      <KeyLegend hint={T.formHint} />
     </Box>
   );
 }

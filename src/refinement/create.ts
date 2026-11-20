@@ -228,6 +228,13 @@ export async function findExistingMatches(
   return matches;
 }
 
+// Tareas marcadas del plan que aún no están en Jira; local, sin llamar a Jira
+export async function countPendingTasks(store: StoryStore, storyKey: string): Promise<number> {
+  const plan = await loadPlan(store);
+  const state = await readState(store, storyKey);
+  return plan.tasks.filter((t) => t.include && !state?.createdIssues[t.id]).length;
+}
+
 export async function buildPreview(
   jira: CreateJira,
   store: StoryStore,

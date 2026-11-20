@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 // Solo tipos: se borra al compilar
@@ -13,7 +14,7 @@ import type { BrowseItem } from '../../refinement/types.js';
 import { EpicPicker } from '../components/epic-picker.js';
 import { ManualKeyInput } from '../components/manual-key-input.js';
 import { YesNoPrompt } from '../components/task-prompts.js';
-import { ANALYSIS_TEXTS, COLORS, MANAGEMENT_TEXTS, PLANNING_TEXTS as T } from '../texts.js';
+import { ANALYSIS_TEXTS, COLORS, MANAGEMENT_TEXTS, PLANNING_TEXTS as T, type Hint } from '../texts.js';
 
 // Sigue al chat (o al análisis): con un aviso para mostrar y la tarea abierta (para preguntar al salir), si las hay
 type OnDone = (notice: string | null, taskKey: string | null) => void;
@@ -45,7 +46,7 @@ export interface PlanningFlowLabels {
   question: string;
   why: string;
   formTitle: string;
-  continueHint: string;
+  continueHint: Hint;
   stillOpen: (key: string) => string;
   created: (key: string) => string;
   createdNotStarted: (key: string) => string;
@@ -162,7 +163,7 @@ export function PlanningFlow({ source, labels, where, onDone }: PlanningFlowProp
     return (
       <Box flexDirection="column">
         <Text color={COLORS.error}>{step.message}</Text>
-        <Text color={COLORS.muted}>{text.continueHint}</Text>
+        <KeyLegend hint={text.continueHint} />
       </Box>
     );
   }
@@ -210,7 +211,7 @@ export function PlanningFlow({ source, labels, where, onDone }: PlanningFlowProp
         </Box>
       ))}
       <Text color={COLORS.muted}>{T.suggested(suggestion.measured)}</Text>
-      <Text color={COLORS.muted}>{T.formHint}</Text>
+      <KeyLegend hint={T.formHint} />
     </Box>
   );
 }

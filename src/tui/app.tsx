@@ -8,8 +8,10 @@ import type { ChatBridge, KnowledgeStatus } from '../refinement/chat-types.js';
 import type { ManagementBridge, ManagementStatus } from '../refinement/management-types.js';
 import type { PlanBridge } from '../refinement/review-types.js';
 import type { TaskFinishTarget, TasksBridge } from '../refinement/tasks-types.js';
-import type { BrowseItem, ProjectItem, StorySummary } from '../refinement/types.js';
+import type { BrowseItem, Phase, ProjectItem, StorySummary } from '../refinement/types.js';
 import { KnowledgeConfirm, KnowledgePrompt } from './components/knowledge-prompt.js';
+import { DirectCreate, type DirectCreateResult } from './components/direct-create.js';
+import { YesNoPrompt } from './components/task-prompts.js';
 import { createAltScreen } from './terminal.js';
 import { PinPrompt } from './components/pin-prompt.js';
 import { BrowseScreen } from './screens/browse-screen.js';
@@ -31,10 +33,12 @@ import { TaskFinishScreen } from './screens/task-finish-screen.js';
 import { TasksScreen } from './screens/tasks-screen.js';
 import { ProjectScreen, SetProjectResult } from './screens/project-screen.js';
 import {
+  AFTER_CHAT_TEXTS,
   COLORS,
   FOOTER_HINTS,
   KNOWLEDGE_SETTINGS_TEXTS,
   HOME_TEXTS,
+  type Hint,
   KNOWLEDGE_TEXTS,
   MANAGEMENT_TEXTS,
   PIN_TEXTS,
@@ -55,7 +59,6 @@ export type AppAction =
   | { type: 'runTask'; storyKey: string | null; issueKey: string }
   // Claude completo con el contexto de un punto de análisis (sin Jira)
   | { type: 'runPoint'; analysisId: string; pointId: string };
-
 
 export interface AppProps {
   projectKey: string | null;
@@ -97,7 +100,9 @@ type Stage =
   | 'management'
   | 'planning'
   | 'chat'
+  | 'planReady'
   | 'review'
+  | 'planCreating'
   | 'close'
   | 'tasks'
   | 'taskFinish'
@@ -111,7 +116,21 @@ type Stage =
   | 'analysisPoints'
   | 'analysisLink';
 
-const NOTICE_STAGES: readonly Stage[] = ['home', 'chat', 'tasks', 'myDay', 'analysisChat', 'analysisDetail', 'analysisPoints'];
+const NOTICE_STAGES: readonly Stage[] = [
+  'home',
+  'chat',
+  'planReady',
+  'review',
+  'tasks',
+  'myDay',
+  'analysisChat',
+  'analysisDetail',
+  'analysisPoints',
+];
+// Fases con el plan listo y sin tareas creadas: tras el chat se ofrece crearlas
+const PLAN_READY_PHASES: readonly Phase[] = ['plan', 'reviewed'];
+// Fases con tareas ya en Jira: tras el chat se ofrece crear solo las nuevas del plan, si las hay
+const NEW_TASKS_PHASES: readonly Phase[] = ['created', 'in-progress'];
 // Destino de entrar a un análisis tras preguntar por su tarea; sus fuentes se ven con la tecla d del inicio
 const ANALYSIS_DESTINATION: Stage = 'analysisChat';
 
@@ -124,16 +143,16 @@ function initialStageOf(finishTask: unknown, finishPoint: unknown, chatKey: stri
 // La clave de la historia es PROYECTO-NÚMERO
 const projectOfKey = (key: string): string => key.slice(0, key.lastIndexOf('-'));
 
-function hintFor(stage: Stage, choiceCount: number): string {
+function hintFor(stage: Stage, choiceCount: number): Hint {
   if (stage === 'pin') return FOOTER_HINTS.pin;
   if (stage === 'home') return FOOTER_HINTS.home;
   if (stage === 'knowledge' || stage === 'knowledgeConfirm') return FOOTER_HINTS.knowledge;
   if (stage === 'knowledgeSettings') return FOOTER_HINTS.knowledgeSettings;
   if (stage === 'management') return FOOTER_HINTS.management;
   if (stage === 'managementCheck') return FOOTER_HINTS.managementCheck;
-  if (stage !== 'chat' && stage !== 'analysisChat') return '';
+  if (stage !== 'chat' && stage !== 'analysisChat') return [];
   const chatHint = stage === 'chat' ? FOOTER_HINTS.chat : FOOTER_HINTS.analysisChat;
-  return choiceCount > 0 ? `${FOOTER_HINTS.choose(choiceCount)} · ${chatHint}` : chatHint;
+  return choiceCount > 0 ? [...FOOTER_HINTS.choose(choiceCount), ...chatHint] : chatHint;
 }
 
 export function App({
@@ -170,6 +189,10 @@ export function App({
   // Planificación abierta de la historia del chat: al salir se pregunta si terminó y se vuelve al inicio
   const [planningKey, setPlanningKey] = useState<string | null>(null);
   const [finishToHome, setFinishToHome] = useState(false);
+  // Historia del chat cuya Planificación se pregunta al salir: después se ofrece crear las tareas si el plan quedó listo
+  const [chatStoryAfterFinish, setChatStoryAfterFinish] = useState<string | null>(null);
+  // Tareas nuevas del plan cuando la historia ya tiene tareas en Jira; null si aún no tiene ninguna
+  const [newTaskCount, setNewTaskCount] = useState<number | null>(null);
   // Análisis abierto y su tarea de seguimiento abierta: al salir se pregunta si terminó y se vuelve al inicio
   const [analysisId, setAnalysisId] = useState<string | null>(initialPointFinish?.analysisId ?? null);
   // Punto que se trabajó en Claude: al volver a la pantalla de puntos se pregunta si terminó
@@ -235,8 +258,10 @@ export function App({
           setStage('home');
           setNotice(TASKS_TEXTS.actionError((err as Error).message));
         });
-    else if (cancelled) void leaveChat();
-    else setStage(entryRoute);
+    else if (cancelled) {
+      setChatKey(null);
+      void leaveStoryScreen();
+    } else setStage(entryRoute);
   };
 
   // La gestión del proyecto se pregunta una sola vez: solo si nunca respondió, y luego sigue a `next`
@@ -268,14 +293,78 @@ export function App({
     if (planningKey && chatKey && tasks) {
       setFinishTarget({ storyKey: chatKey, issueKey: planningKey });
       setFinishToHome(true);
+      setChatStoryAfterFinish(chatKey);
       setPlanningKey(null);
       setChatKey(null);
       setStage('taskFinish');
       return;
     }
+    const key = chatKey;
     setChatKey(null);
-    setStories(await loadStories(projectKey));
+    await goHomeOrOfferTasks(key);
+  };
+
+  // Con el plan listo se ofrece crear las tareas; en cualquier otra fase se vuelve al inicio
+  const reloadStories = async (): Promise<StorySummary[] | string> => {
+    try {
+      const fresh = await loadStories(projectKey);
+      setStories(fresh);
+      return fresh;
+    } catch (err: unknown) {
+      return AFTER_CHAT_TEXTS.reloadError((err as Error).message);
+    }
+  };
+
+  const goHomeOrOfferTasks = async (key: string | null) => {
+    const fresh = await reloadStories();
+    if (typeof fresh === 'string') {
+      setStage('home');
+      queueMicrotask(() => setNotice(fresh));
+      return;
+    }
+    const phaseId = fresh.find((story) => story.key === key)?.phaseId;
+    if (key && phaseId && PLAN_READY_PHASES.includes(phaseId)) {
+      setNewTaskCount(null);
+      setStoryKey(key);
+      setStage('planReady');
+      return;
+    }
+    const pending = key && phaseId && NEW_TASKS_PHASES.includes(phaseId) ? await countNewTasks(key) : 0;
+    if (key && pending > 0) {
+      setNewTaskCount(pending);
+      setStoryKey(key);
+      setStage('planReady');
+    } else setStage('home');
+  };
+
+  // Sin plan legible no hay nada que ofrecer: se vuelve al inicio como antes
+  const countNewTasks = async (key: string): Promise<number> => {
+    try {
+      return await plan.countPendingTasks(key);
+    } catch {
+      return 0;
+    }
+  };
+
+  // Después de la tecla que respondió: el useInput global borra el aviso con cada pulsación
+  const noticeAfterKey = (notice: string) => queueMicrotask(() => setNotice(notice));
+
+  const declinePlanReady = (key: string) => {
+    setStoryKey(null);
     setStage('home');
+    noticeAfterKey(AFTER_CHAT_TEXTS.planReadyLater(key));
+  };
+
+  const finishDirectCreate = async (result: DirectCreateResult) => {
+    if (result.review && storyKey) {
+      openStoryScreen(storyKey, 'review');
+      noticeAfterKey(result.notice);
+      return;
+    }
+    setStoryKey(null);
+    const fresh = await reloadStories();
+    setStage('home');
+    noticeAfterKey(typeof fresh === 'string' ? `${result.notice} ${fresh}` : result.notice);
   };
 
   const handleAnalysis = (id: string) => {
@@ -396,7 +485,10 @@ export function App({
     setFinishTarget(null);
     if (finishToHome) {
       setFinishToHome(false);
-      void leaveStoryScreen();
+      const chatStory = chatStoryAfterFinish;
+      setChatStoryAfterFinish(null);
+      if (chatStory) void goHomeOrOfferTasks(chatStory);
+      else void leaveStoryScreen();
     } else if (target?.storyKey) openStoryScreen(target.storyKey, 'tasks');
     else void leaveStoryScreen();
   };
@@ -563,6 +655,20 @@ export function App({
           onHandoff={() => handleHandoff(chatKey)}
           onChoicesChange={setChoiceCount}
         />
+      )}
+      {stage === 'planReady' && storyKey && (
+        <YesNoPrompt
+          question={
+            newTaskCount === null
+              ? AFTER_CHAT_TEXTS.planReadyQuestion(storyKey)
+              : AFTER_CHAT_TEXTS.newTasksQuestion(storyKey, newTaskCount)
+          }
+          onYes={() => setStage('planCreating')}
+          onNo={() => declinePlanReady(storyKey)}
+        />
+      )}
+      {stage === 'planCreating' && storyKey && (
+        <DirectCreate storyKey={storyKey} plan={plan} onDone={(result) => void finishDirectCreate(result)} />
       )}
       {stage === 'review' && storyKey && (
         <PlanScreen

@@ -1,4 +1,5 @@
 import React from 'react';
+import { KeyLegend } from './key-legend.js';
 import { Box, Text, useInput } from 'ink';
 // Solo tipos: se borra al compilar
 import type { SourceResult } from '../../refinement/analysis-types.js';
@@ -26,7 +27,7 @@ export function SourceResults({ title, results, onContinue }: SourceResultsProps
           {result.ok ? T.resultOk(result.source, result.file) : T.resultFailed(result.source, result.message)}
         </Text>
       ))}
-      <Text color={COLORS.muted}>{T.resultsHint}</Text>
+      <KeyLegend hint={T.resultsHint} />
     </Box>
   );
 }

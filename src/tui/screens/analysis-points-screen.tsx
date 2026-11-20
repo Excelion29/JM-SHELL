@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 // Solo tipos: se borra al compilar
 import type { AnalysisPointsBridge, PointRow, PointsModel } from '../../refinement/analysis-types.js';
@@ -216,7 +217,7 @@ function PointsBody({
       {rows.length > 0 && <Text bold>{T.summary(done, rows.length)}</Text>}
       {message && <Text color={message.error ? COLORS.error : COLORS.accent}>{message.text}</Text>}
       <Text color={COLORS.muted}>{T.nextStep}</Text>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.points}</Text>
+      <KeyLegend hint={FOOTER_HINTS.points} />
     </Box>
   );
 }

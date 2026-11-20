@@ -80,6 +80,13 @@ async function openTasks(options: FakeTasksOptions = {}) {
   return app;
 }
 
+test('una tarea no encontrada en Jira lo dice en la columna de estado, aunque el título sea largo', async () => {
+  const longTitle = 'Un título muy largo que no cabe entero en la columna de la lista de tareas de la historia';
+  const missing = fakeRow('AQ-105', { title: longTitle, status: '', category: 'unknown', missing: true });
+  const app = await openTasks({ rows: [fakeRow('AQ-101'), missing] });
+  assert.ok(app.frame().includes(TASKS_TEXTS.missing));
+});
+
 test('t abre las tareas solo con la historia creada o en curso', async () => {
   const plan = setup({}, 'plan');
   await plan.press('t');

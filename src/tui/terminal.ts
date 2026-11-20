@@ -45,7 +45,8 @@ export function createAltScreen(stdout: Output): AltScreen {
   const enter = () => {
     if (!stdout.isTTY || active) return;
     active = true;
-    stdout.write(ENTER_ALT_SCREEN);
+    // Al volver de claude la pantalla alternativa puede traer restos de lo que dibujó: se entra y se limpia
+    stdout.write(ENTER_ALT_SCREEN + CLEAR_SCREEN);
     process.on('exit', leave);
     process.on('SIGINT', onSigint);
     process.on('SIGTERM', onSigterm);

@@ -68,15 +68,14 @@ function measuredLine(rows: TaskRow[]): string | null {
 }
 
 function rawCells(row: TaskRow): RowCells {
-  const notes = [
-    row.inPlan ? '' : TASKS_TEXTS.notInPlan,
-    row.missing ? TASKS_TEXTS.missing : '',
-    row.pendingDone ? TASKS_TEXTS.pendingDone : '',
-  ].filter(Boolean);
+  const notes = [row.inPlan ? '' : TASKS_TEXTS.notInPlan, row.pendingDone ? TASKS_TEXTS.pendingDone : ''].filter(
+    Boolean,
+  );
   return {
     key: row.key,
     title: notes.length > 0 ? `${row.title} (${notes.join(', ')})` : row.title,
-    status: row.status,
+    // En el estado y no al final del título: ahí la columna la cortaba y no se veía
+    status: row.missing ? TASKS_TEXTS.missing : row.status,
     assignee: row.assignee ?? TASKS_TEXTS.noAssignee,
     estimate: estimateText(row.estimateSeconds),
     real: realText(row),

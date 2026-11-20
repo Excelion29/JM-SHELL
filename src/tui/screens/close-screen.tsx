@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import type { ClosePreview, CloseResult, PlanBridge } from '../../refinement/review-types.js';
 import { LoadGate } from '../components/load-gate.js';
@@ -61,7 +62,7 @@ function CloseBody({ preview, storyKey, plan, onBack }: CloseScreenProps & { pre
         <Text>{CLOSE_TEXTS.doneDeleted(step.result.deleted.length)}</Text>
         <Text>{CLOSE_TEXTS.doneKept(step.result.kept.length)}</Text>
         <Text color={COLORS.muted}>{CLOSE_TEXTS.doneNextStep}</Text>
-        <Text color={COLORS.muted}>{FOOTER_HINTS.closed}</Text>
+        <KeyLegend hint={FOOTER_HINTS.closed} />
       </Box>
     );
   }
@@ -84,7 +85,7 @@ function CloseBody({ preview, storyKey, plan, onBack }: CloseScreenProps & { pre
       ))}
       {error && <Text color={COLORS.error}>{error}</Text>}
       <Text>{CLOSE_TEXTS.question}</Text>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.close}</Text>
+      <KeyLegend hint={FOOTER_HINTS.close} />
     </Box>
   );
 }

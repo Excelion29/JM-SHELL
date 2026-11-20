@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from './key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
 import type { EstimatePreview, ReviewTask, TaskPatch } from '../../refinement/review-types.js';
@@ -78,7 +79,7 @@ export function TaskEditForm({ task, previewEstimate, error, onSave, onCancel }:
       )}
       {!summaryValid && <Text color={COLORS.error}>{PLAN_TEXTS.emptySummary}</Text>}
       {error && <Text color={COLORS.error}>{error}</Text>}
-      <Text color={COLORS.muted}>{FOOTER_HINTS.edit}</Text>
+      <KeyLegend hint={FOOTER_HINTS.edit} />
     </Box>
   );
 }

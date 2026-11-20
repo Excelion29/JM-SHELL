@@ -1,19 +1,18 @@
 import React, { useMemo, useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import type { PlanBridge, ReviewModel, ReviewTask } from '../../refinement/review-types.js';
 import { AttachmentsView } from '../components/attachments-view.js';
 import { formatDuration, formatRatio } from '../components/duration.js';
 import { LoadGate } from '../components/load-gate.js';
 import { buildTaskCells, COLUMN_GAP, TaskCells } from '../components/task-table.js';
-import { useTerminalSize } from '../components/terminal-size.js';
+import { innerColumns, useTerminalSize } from '../components/terminal-size.js';
 import { TaskEditForm } from '../components/task-edit-form.js';
 import { useLoad } from '../components/use-load.js';
 import {
-  CHAT_DEFAULT_TERMINAL_COLUMNS,
   CHAT_DEFAULT_TERMINAL_ROWS,
   COLORS,
   FOOTER_HINTS,
-  FRAME_HORIZONTAL_OVERHEAD,
   HOME_TEXTS,
   KEYS,
   PLAN_TEXTS,
@@ -89,7 +88,7 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished, readOnly }: R
   const pending = useMemo(() => model.tasks.filter((t) => !t.jiraKey), [model.tasks]);
   const current = pending[selected];
   const size = useTerminalSize();
-  const available = (size.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS) - FRAME_HORIZONTAL_OVERHEAD;
+  const available = innerColumns(size);
   const cells = useMemo(() => buildTaskCells(pending, available), [pending, available]);
 
   useInput(
@@ -211,7 +210,7 @@ function ReviewBody({ initial, storyKey, plan, onBack, onFinished, readOnly }: R
         {model.createdCount > 0 && <Text color={COLORS.muted}>{PLAN_TEXTS.createdCount(model.createdCount)}</Text>}
         {error && <Text color={COLORS.error}>{error}</Text>}
         <Text color={COLORS.muted}>{allCreated ? PLAN_TEXTS.allCreated : PLAN_TEXTS.nextStep}</Text>
-        <Text color={COLORS.muted}>{readOnly ? FOOTER_HINTS.reviewReadOnly : FOOTER_HINTS.review}</Text>
+        <KeyLegend hint={readOnly ? FOOTER_HINTS.reviewReadOnly : FOOTER_HINTS.review} />
       </Box>
     </Box>
   );
@@ -273,7 +272,7 @@ function TaskDetail({ task, model, onBack }: { task: ReviewTask; model: ReviewMo
           - {f.file} ({PURPOSE_LABELS[f.purpose]})
         </Text>
       ))}
-      <Text color={COLORS.muted}>{FOOTER_HINTS.detail}</Text>
+      <KeyLegend hint={FOOTER_HINTS.detail} />
     </Box>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import type { PlanBridge } from '../../refinement/review-types.js';
 import type { DeleteResult, TaskRow, TasksBridge, TasksModel } from '../../refinement/tasks-types.js';
@@ -7,15 +8,13 @@ import { LoadGate } from '../components/load-gate.js';
 import { OptionSelector } from '../components/option-selector.js';
 import { TypedConfirm, YesNoPrompt } from '../components/task-prompts.js';
 import { buildRowCells, joinCells, realLine, summaryLine, visibleRows } from '../components/tasks-table.js';
-import { useTerminalSize } from '../components/terminal-size.js';
+import { innerColumns, useTerminalSize } from '../components/terminal-size.js';
 import { useLoad } from '../components/use-load.js';
 import {
-  CHAT_DEFAULT_TERMINAL_COLUMNS,
   CHAT_DEFAULT_TERMINAL_ROWS,
   COLORS,
   FINISH_TEXTS,
   FOOTER_HINTS,
-  FRAME_HORIZONTAL_OVERHEAD,
   HOME_TEXTS,
   KEYS,
   REVIEW_CHROME_ROWS,
@@ -75,7 +74,7 @@ function TasksBody({ initial, storyKey, tasks, plan, onBack, onRunTask }: TasksS
   const [message, setMessage] = useState<Message | null>(null);
   const [mode, setMode] = useState<Mode>({ name: 'list' });
   const size = useTerminalSize();
-  const available = (size.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS) - FRAME_HORIZONTAL_OVERHEAD;
+  const available = innerColumns(size);
 
   const rows = visibleRows(model.rows, pendingOnly);
   const current: TaskRow | undefined = rows[Math.min(selected, Math.max(0, rows.length - 1))];
@@ -289,7 +288,7 @@ function TasksBody({ initial, storyKey, tasks, plan, onBack, onRunTask }: TasksS
         {real && <Text color={COLORS.brand}>{real}</Text>}
         {message && <Text color={message.error ? COLORS.error : COLORS.accent}>{message.text}</Text>}
         <Text color={COLORS.muted}>{TASKS_TEXTS.nextStep}</Text>
-        <Text color={COLORS.muted}>{FOOTER_HINTS.tasks}</Text>
+        <KeyLegend hint={FOOTER_HINTS.tasks} />
       </Box>
     </Box>
   );
@@ -333,7 +332,7 @@ function DeleteReport({ results, onClose }: { results: DeleteResult[]; onClose: 
           {TASKS_TEXTS.deleteFailLine(r.key, r.message ?? '')}
         </Text>
       ))}
-      <Text color={COLORS.muted}>{FOOTER_HINTS.closed}</Text>
+      <KeyLegend hint={FOOTER_HINTS.closed} />
     </Box>
   );
 }

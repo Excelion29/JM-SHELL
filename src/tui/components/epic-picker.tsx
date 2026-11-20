@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 // Solo tipos: se borra al compilar
 import type { BrowseItem } from '../../refinement/types.js';
-import { BROWSE_LIMIT, BROWSE_TEXTS, EPIC_STORIES_TEXTS, KEYS } from '../texts.js';
+import { BROWSE_LIMIT, BROWSE_TEXTS, EPIC_STORIES_TEXTS, KEYS, type Hint } from '../texts.js';
 import { LoadGate } from './load-gate.js';
 import { PickerList } from './picker-list.js';
 import { useLoad } from './use-load.js';
@@ -10,7 +10,7 @@ export interface EpicPickerTexts {
   title: string;
   empty: string;
   nextStep: string;
-  hint: string;
+  hint: Hint;
 }
 
 interface EpicPickerProps {
@@ -76,7 +76,11 @@ function EpicStoriesPicker({ epic, fetchStories, onChoose, onManual, onBack }: E
           title={EPIC_STORIES_TEXTS.title(epic.key, epic.summary)}
           items={[
             { id: epic.key, label: EPIC_STORIES_TEXTS.useEpic(epic.key) },
-            ...stories.map((story) => ({ id: story.key, label: `${story.key} ${story.summary}`, detail: story.status })),
+            ...stories.map((story) => ({
+              id: story.key,
+              label: `${story.key} ${story.summary}`,
+              detail: story.status,
+            })),
           ]}
           limitReached={stories.length >= BROWSE_LIMIT}
           nextStep={EPIC_STORIES_TEXTS.nextStep}

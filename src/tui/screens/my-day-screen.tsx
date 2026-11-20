@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import type { MyDayModel, TasksBridge } from '../../refinement/tasks-types.js';
 import { DirectFinishFlow, type DirectFinishItem, type DirectFinishResult } from '../components/direct-finish.js';
@@ -7,19 +8,9 @@ import { formatDuration } from '../components/duration.js';
 import { OptionSelector } from '../components/option-selector.js';
 import { YesNoPrompt } from '../components/task-prompts.js';
 import { buildMyDayCells, joinCells } from '../components/tasks-table.js';
-import { useTerminalSize } from '../components/terminal-size.js';
+import { innerColumns, useTerminalSize } from '../components/terminal-size.js';
 import { useLoad } from '../components/use-load.js';
-import {
-  CHAT_DEFAULT_TERMINAL_COLUMNS,
-  COLORS,
-  FINISH_TEXTS,
-  FOOTER_HINTS,
-  FRAME_HORIZONTAL_OVERHEAD,
-  HOME_TEXTS,
-  KEYS,
-  MY_DAY_TEXTS,
-  TASKS_TEXTS,
-} from '../texts.js';
+import { COLORS, FINISH_TEXTS, FOOTER_HINTS, HOME_TEXTS, KEYS, MY_DAY_TEXTS, TASKS_TEXTS } from '../texts.js';
 
 interface MyDayScreenProps {
   tasks: TasksBridge;
@@ -54,7 +45,7 @@ function MyDayBody({
   const [mode, setMode] = useState<Mode>({ name: 'list' });
   const [error, setError] = useState<string | null>(null);
   const size = useTerminalSize();
-  const available = (size.columns ?? CHAT_DEFAULT_TERMINAL_COLUMNS) - FRAME_HORIZONTAL_OVERHEAD;
+  const available = innerColumns(size);
   const cells = useMemo(() => buildMyDayCells(model.rows, available), [model.rows, available]);
   const current = model.rows[selected];
 
@@ -164,7 +155,7 @@ function MyDayBody({
       </Text>
       {error && <Text color={COLORS.error}>{error}</Text>}
       <Text color={COLORS.muted}>{MY_DAY_TEXTS.nextStep}</Text>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.myDay}</Text>
+      <KeyLegend hint={FOOTER_HINTS.myDay} />
     </Box>
   );
 }

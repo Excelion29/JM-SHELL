@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 // Solo tipos: se borra al compilar
 import type { AnalysisBridge, AnalysisDetail, SourceResult } from '../../refinement/analysis-types.js';
@@ -98,7 +99,7 @@ function AnalysisView({ detail, analysis, reload, onBack }: AnalysisViewProps) {
         <Text key={task.issueKey}>{T.trackingLine(task.issueKey, T.trackingStatus[task.status])}</Text>
       ))}
       <Text color={COLORS.muted}>{T.nextStep}</Text>
-      <Text color={COLORS.muted}>{T.detailHint}</Text>
+      <KeyLegend hint={T.detailHint} />
     </Box>
   );
 }

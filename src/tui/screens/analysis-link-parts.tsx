@@ -1,4 +1,5 @@
 import React from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 // Solo tipos: se borra al compilar
 import type { LinkPointResult } from '../../refinement/analysis-types.js';
@@ -23,7 +24,7 @@ export function EpicKept({ epicKey, onKeep, onChange, onBack }: {
   return (
     <Box flexDirection="column">
       <Text bold>{T.epicCurrent(epicKey)}</Text>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.linkEpic}</Text>
+      <KeyLegend hint={FOOTER_HINTS.linkEpic} />
     </Box>
   );
 }
@@ -93,7 +94,7 @@ export function LinkResult({ results, mode, onBack }: LinkResultProps) {
       <Text bold>
         {mode === 'sync' ? T.syncSummary(results.length - withProblem, withProblem) : T.summary(created, results.length - created)}
       </Text>
-      <Text color={COLORS.muted}>{FOOTER_HINTS.linkDone}</Text>
+      <KeyLegend hint={FOOTER_HINTS.linkDone} />
     </Box>
   );
 }

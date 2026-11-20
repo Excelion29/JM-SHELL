@@ -269,7 +269,7 @@ test('base sin confirmar: cualquier otra tecla vuelve al inicio sin confiar ni a
 test('los dígitos 1-3 eligen la opción directo y la pista los menciona', async () => {
   const { fake, type, waitText, frame } = openApp({ status: 'unset' });
   await waitText(KNOWLEDGE_TEXTS.question);
-  assert.ok(frame().includes(KNOWLEDGE_TEXTS.kindKeysHint));
+  assert.ok(frame().includes('1-3 o ↑↓ elegir'));
   await type('3');
   await waitFor(() => fake.calls.opened.length > 0);
   assert.deepEqual(fake.calls.saved, [{ type: 'none' }]);

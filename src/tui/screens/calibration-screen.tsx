@@ -1,4 +1,5 @@
 import React from 'react';
+import { KeyLegend } from '../components/key-legend.js';
 import { Box, Text, useInput } from 'ink';
 // Solo tipos: se borra al compilar
 import type { CalibrationModel, TasksBridge } from '../../refinement/tasks-types.js';
@@ -107,7 +108,7 @@ function CalibrationBody({
       {model.excludedDirect > 0 && <Text color={COLORS.muted}>{T.excludedDirect(model.excludedDirect)}</Text>}
       {model.unreadable > 0 && <Text color={COLORS.error}>{T.unreadable(model.unreadable)}</Text>}
       {total.count > 0 && <Text color={COLORS.muted}>{T.note}</Text>}
-      <Text color={COLORS.muted}>{FOOTER_HINTS.calibration}</Text>
+      <KeyLegend hint={FOOTER_HINTS.calibration} />
     </Box>
   );
 }

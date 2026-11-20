@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { KeyLegend } from './key-legend.js';
 import { Box, Text, useInput } from 'ink';
-import { BROWSE_TEXTS, COLORS, FOOTER_HINTS, HOME_TEXTS, ROW_SEPARATOR, VISIBLE_ROWS } from '../texts.js';
+import { BROWSE_TEXTS, COLORS, FOOTER_HINTS, HOME_TEXTS, ROW_SEPARATOR, VISIBLE_ROWS, type Hint } from '../texts.js';
 
 export interface PickerItem {
   id: string;
@@ -13,7 +14,7 @@ interface PickerListProps {
   title: string;
   items: PickerItem[];
   nextStep: string;
-  hint: string;
+  hint: Hint;
   emptyText?: string;
   limitReached?: boolean;
   // Solo se activan con el filtro vacío: así no chocan con escribir texto
@@ -101,7 +102,7 @@ export function PickerList({
       })}
       {limitReached && <Text color={COLORS.muted}>{BROWSE_TEXTS.limitNote}</Text>}
       <Text color={COLORS.muted}>{nextStep}</Text>
-      <Text color={COLORS.muted}>{filter ? FOOTER_HINTS.filtering : hint}</Text>
+      <KeyLegend hint={filter ? FOOTER_HINTS.filtering : hint} />
     </Box>
   );
 }

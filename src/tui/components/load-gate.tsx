@@ -1,4 +1,5 @@
 import React from 'react';
+import { KeyLegend } from './key-legend.js';
 import { Box, Text, useInput } from 'ink';
 import { BROWSE_TEXTS, COLORS, FOOTER_HINTS, KEYS } from '../texts.js';
 import type { LoadState } from './use-load.js';
@@ -32,7 +33,7 @@ function Waiting<T>({ state, loadingText, onRetry, onBack }: Omit<LoadGateProps<
       ) : (
         <Text>{loadingText}</Text>
       )}
-      <Text color={COLORS.muted}>{FOOTER_HINTS.status}</Text>
+      <KeyLegend hint={FOOTER_HINTS.status} />
     </Box>
   );
 }
