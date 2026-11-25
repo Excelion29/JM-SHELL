@@ -14,6 +14,7 @@ import {
   SESSION_ID_PATTERN,
   spawnClaude,
 } from './claude';
+import { excelToolRules } from './excel-mcp';
 import { stripControlChars, stripTerminalControls } from './text';
 import { emptyTurnUsage, TurnUsage } from './usage';
 
@@ -198,7 +199,7 @@ export function buildChatSettings(key: string, kb: ChatKnowledge | null = null):
   return {
     disableAllHooks: true,
     permissions: {
-      allow: [...chatAllowedTools(key, kb).split(','), ...scopedKnowledgeRules(kb, key)],
+      allow: [...chatAllowedTools(key, kb).split(','), ...excelToolRules, ...scopedKnowledgeRules(kb, key)],
       deny: [...CHAT_DISALLOWED_TOOLS.split(','), ...analysisDenyRules(kb, key)],
     },
   };
@@ -213,7 +214,7 @@ export interface ChatArgsInput {
   agentsFile: string;
   settingsFile: string;
   kb?: ChatKnowledge | null;
-  // Solo con MCP: el mcp.json de la carpeta de trabajo y las copias de solo lectura de los adjuntos
+  // El mcp.json de la carpeta de trabajo (lector de Excel y, con MCP, la base) y las copias de los adjuntos
   mcpFile?: string;
   attachmentsDir?: string;
 }
@@ -223,7 +224,8 @@ function knowledgeArgs(kb: ChatKnowledge | null, mcpFile?: string, attachmentsDi
     if (!mcpFile || !attachmentsDir) throw new Error('Falta la carpeta de trabajo para la base de conocimiento.');
     return ['--mcp-config', mcpFile, '--add-dir', attachmentsDir];
   }
-  return kb?.type === 'local' ? ['--add-dir', kb.root] : [];
+  const excel = mcpFile ? ['--mcp-config', mcpFile] : [];
+  return kb?.type === 'local' ? [...excel, '--add-dir', kb.root] : excel;
 }
 
 // El texto del dev nunca: viaja por stdin. Todo lo de abajo lo genera jm.

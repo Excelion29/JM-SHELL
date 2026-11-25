@@ -9,10 +9,10 @@ import { WORK_ANALYSIS_DIR, WORK_ATTACHMENTS_DIR, writeReadOnlyCopy } from './wo
 
 export const SOURCES_DIR = 'fuentes';
 export const TEXT_SOURCE_FILE = 'texto.md';
-export const SOURCE_EXTENSIONS = ['.md', '.txt', '.pdf', '.eml', '.png', '.jpg', '.jpeg'] as const;
+export const SOURCE_EXTENSIONS = ['.md', '.txt', '.pdf', '.eml', '.png', '.jpg', '.jpeg', '.xls', '.xlsx', '.xlsm'] as const;
 // Tope de copias de solo lectura por análisis: una carpeta enorme en la bóveda no debe llenar el disco
 export const SOURCE_COPIES_MAX = 100;
-const BINARY_EXTENSIONS: readonly string[] = ['.pdf', '.png', '.jpg', '.jpeg'];
+const BINARY_EXTENSIONS: readonly string[] = ['.pdf', '.png', '.jpg', '.jpeg', '.xls', '.xlsx', '.xlsm'];
 const PATH_SEPARATORS = new Set([',', ';', '\n', '\r']);
 const QUOTES = new Set(['"', "'"]);
 const TEXT_SEPARATOR = '\n\n---\n\n';

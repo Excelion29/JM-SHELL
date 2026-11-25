@@ -10,7 +10,7 @@ export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const FALLBACK_NAME = 'file';
 const UNSAFE_CHARS = /[^\w.\- ]/g;
 const TRAILING_DOTS_SPACES = /[. ]+$/;
-const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+export const WINDOWS_RESERVED = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 
 export function sanitizeFilename(filename: string): string {
   const base = filename.split(/[\\/]/).pop() ?? '';

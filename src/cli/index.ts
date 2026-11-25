@@ -2,6 +2,7 @@
 import { shellCommand } from '../commands/shell';
 import { appCommand } from '../commands/app';
 import { buildProgram } from './program';
+import { EXCEL_MCP_COMMAND, runExcelMcp } from '../refinement/excel-mcp';
 
 const program = buildProgram();
 
@@ -16,6 +17,11 @@ program
   .command('app')
   .description('Abrir la app de terminal de JM-SHELL')
   .action(appCommand);
+
+// Lo lanza Claude Code (chat de jm o registrado con `claude mcp add`); ver excel-mcp.ts
+program
+  .command(`${EXCEL_MCP_COMMAND} [carpetas...]`, { hidden: true })
+  .action((roots: string[] = []) => runExcelMcp(roots));
 
 program.exitOverride(); // ya está en buildProgram pero por si acaso
 

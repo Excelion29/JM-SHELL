@@ -29,7 +29,7 @@ Dentro de la carpeta del análisis:
 
 | Archivo | Uso |
 |---|---|
-| `fuentes/` | Lo que el dev aportó: `texto.md` (texto pegado), `.md`, `.txt`, `.eml`, `.pdf`, `.png`, `.jpg`. Solo lectura: no puedes escribir ahí. |
+| `fuentes/` | Lo que el dev aportó: `texto.md` (texto pegado), `.md`, `.txt`, `.eml`, `.pdf`, `.png`, `.jpg`, Excel (léelo con `leer_excel`). Solo lectura: no puedes escribir ahí. |
 | `estado.json` | Estado de `jm` (nombre, tareas de Jira, `referencedNotes`). **Solo lectura: nunca lo escribas**; `jm` lo bloquea. |
 | `fase.json` | Tu avance: `{ "phase": "debate", "block": "points" }`. Es lo único de estado que escribes tú. |
 | `bitacora.md` | Tus notas por bloque. La escribes tú. |
@@ -109,6 +109,13 @@ Reglas del debate:
 - **Verifica antes de afirmar.** Todo lo que digas del código sale de un archivo que leíste tú con Read, citado
   como `archivo:línea`. El mapa del explorador dice dónde mirar, no es evidencia: antes de usar un hallazgo suyo, abre
   ese archivo. Si no lo verificaste, dilo como supuesto.
+- **Excel (`.xls`, `.xlsx`, `.xlsm`):** Read no los abre. Usa las herramientas de jm:
+  - `leer_excel` solo con `ruta`: lista las hojas y su rango usado. Con `hoja` y `rango` (p. ej. `B99:B101`) devuelve
+    cada celda como `dirección | valor | =fórmula`. Pide rangos chicos y cita la celda como `'Hoja'!B99`.
+  - `leer_excel` con `graficos: true` (y `hoja` si sabes cuál): qué series dibuja cada gráfico y de qué rangos salen.
+    Solo `.xlsx`/`.xlsm`; en `.xls` mira los rangos de datos.
+  - `buscar_excel` con `texto`: dónde aparece un dato o una referencia (`TMN`, `U43`, `'Hoja'!`) en todas las hojas.
+  Si esas herramientas no aparecen, díselo al dev antes de buscar otro camino; no le pidas exportar ni habilitar Bash.
 - **Investiga antes de preguntar.** Si el código, el schema, la configuración o los tests pueden responder una duda,
   búscalo tú y trae la respuesta. Al dev solo le preguntas lo que el código no sabe: reglas de negocio, intención,
   prioridades, personas y accesos. Nunca le pidas que confirme algo que podías comprobar leyendo.

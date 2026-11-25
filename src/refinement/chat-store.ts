@@ -1,11 +1,16 @@
+import * as path from 'path';
 import * as fs from 'fs-extra';
 import type { ChatKnowledge, ChatLine } from './chat-types';
 import { buildChatSettings, EXPLORER_AGENTS } from './claude-chat';
 import { CHAT_FILE, updateState } from './state';
 import type { StoryStore } from './story-store';
 import { KB_SERVER_NAME } from './kb-proxy';
+import { EXCEL_MCP_COMMAND, EXCEL_SERVER_NAME } from './excel-mcp';
 import { stripTerminalControls } from './text';
 import { addTurnUsage, TurnUsage } from './usage';
+
+// Entrada de jm compilada (dist/cli/index.js): Claude Code la lanza con el mismo node para leer Excel
+const JM_CLI_ENTRY = path.join(__dirname, '..', 'cli', 'index.js');
 import { CHAT_FILES, removeWorkFile, writeWorkFile } from './workdir';
 
 // La copia de la conversación no crece sin tope: al abrir se queda con lo más reciente
@@ -78,9 +83,19 @@ export function writeClaudeSettings(workDir: string, key: string, kb: ChatKnowle
   return writeWorkFile(workDir, CHAT_FILES.settings, `${JSON.stringify(buildChatSettings(key, kb), null, 2)}\n`);
 }
 
-// Apunta al intermediario local: ni la API key ni el certificado viajan en este archivo (el puerto cambia en cada arranque)
-export function writeMcpConfig(workDir: string, proxyUrl: string): string {
-  const config = { mcpServers: { [KB_SERVER_NAME]: { type: 'http', url: proxyUrl } } };
+// Lector de Excel siempre; con base MCP también el intermediario local: ni la API key ni el certificado
+// viajan en este archivo (el puerto cambia en cada arranque)
+export function writeMcpConfig(workDir: string, proxyUrl: string | null, excelRoots: readonly string[]): string {
+  const servers: Record<string, unknown> = {};
+  // Sin carpetas el lector no tiene dónde leer: no se ofrece (p. ej. al ejecutar una tarea, que ya tiene Bash)
+  if (excelRoots.length > 0)
+    servers[EXCEL_SERVER_NAME] = {
+      type: 'stdio',
+      command: process.execPath,
+      args: [JM_CLI_ENTRY, EXCEL_MCP_COMMAND, ...excelRoots],
+    };
+  if (proxyUrl) servers[KB_SERVER_NAME] = { type: 'http', url: proxyUrl };
+  const config = { mcpServers: servers };
   return writeWorkFile(workDir, CHAT_FILES.mcp, `${JSON.stringify(config, null, 2)}\n`);
 }
 

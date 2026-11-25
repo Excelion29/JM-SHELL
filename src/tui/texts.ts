@@ -768,7 +768,7 @@ export const ANALYSIS_TEXTS = {
   },
   nameRequired: 'El análisis necesita un nombre.',
   formHint: [FIELD_SWITCH, enter('siguiente o guardar'), esc('cancelar')],
-  sourcesHint: 'Tipos admitidos: .md .txt .pdf .eml .png .jpg · hasta 20 MB por archivo.',
+  sourcesHint: 'Tipos admitidos: .md .txt .pdf .eml .png .jpg .xls .xlsx · hasta 20 MB por archivo.',
   saving: 'Guardando las fuentes...',
   created: (id: string, name: string) => `Análisis ${id} creado: ${name}`,
   added: 'Fuentes agregadas',

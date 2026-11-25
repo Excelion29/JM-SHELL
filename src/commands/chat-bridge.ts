@@ -2,7 +2,7 @@ import * as fs from 'fs-extra';
 import openBrowser from 'open';
 import { JiraService } from '../services/jira';
 import { formatSeconds } from '../utils/time';
-import { ChatBridge, ChatHeader, ChatModel, ChatUiEvent } from '../refinement/chat-types';
+import { ChatBridge, ChatHeader, ChatKnowledge, ChatModel, ChatUiEvent } from '../refinement/chat-types';
 import {
   appendTranscript,
   openTranscript,
@@ -60,6 +60,13 @@ import {
 } from './knowledge-setup';
 
 const NO_BLOCK_LABEL = '—';
+// Donde el chat puede leer Excel: el proyecto y, con base conectada, donde viven las fuentes del análisis
+function excelRootsOf(root: string, kb: ChatKnowledge | null, attachmentsDir: string): string[] {
+  if (kb?.type === 'local') return [root, kb.root];
+  if (kb?.type === 'mcp') return [root, attachmentsDir];
+  return [root];
+}
+
 export const INVALID_POINTS_LABEL = 'puntos.json con errores';
 const pointsLabel = (count: number, expectedSeconds: number) =>
   `${count} ${count === 1 ? 'punto' : 'puntos'} · ${formatSeconds(expectedSeconds)} esperadas`;
@@ -230,8 +237,8 @@ export function createChatBridge(getJira: () => JiraService): ChatBridgeHandle {
   ) {
     const linkedContext = await linkedAnalysisContext(runtime);
     const storyStore = activeStore();
-    applyKnowledgeFiles(workDir, runtime, key);
     const files = workFilesOf(workDir, key);
+    applyKnowledgeFiles(workDir, runtime, key, excelRootsOf(root, runtime.kb, files.attachments));
     const skillFileName = isAnalysisKey(key) ? CHAT_FILES.analysisSkill : CHAT_FILES.skill;
     const current = new ChatSession({
       root,

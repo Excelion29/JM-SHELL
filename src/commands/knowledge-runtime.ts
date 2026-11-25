@@ -254,8 +254,14 @@ export async function openKnowledge(input: OpenKnowledgeInput): Promise<Knowledg
 }
 
 // Archivos que Claude lee al arrancar, en la carpeta de trabajo de jm; el de contexto se borra cuando ya no hay base
-export function applyKnowledgeFiles(workDir: string, runtime: KnowledgeRuntime, key: string): void {
-  if (runtime.proxyUrl) writeMcpConfig(workDir, runtime.proxyUrl);
+// excelRoots: carpetas donde el chat puede leer Excel con jm (el chat no tiene Bash y Read no abre Excel)
+export function applyKnowledgeFiles(
+  workDir: string,
+  runtime: KnowledgeRuntime,
+  key: string,
+  excelRoots: readonly string[] = [],
+): void {
+  if (runtime.proxyUrl || excelRoots.length > 0) writeMcpConfig(workDir, runtime.proxyUrl ?? null, excelRoots);
   // --add-dir exige que la carpeta exista aunque la historia aún no tenga adjuntos
   if (runtime.kb?.type === 'mcp') safeEnsureDirIn(workDir, workFilesOf(workDir, key).attachments);
   writeKnowledgeContext(workDir, runtime.context);

@@ -36,7 +36,7 @@ test('los archivos técnicos van a la carpeta de trabajo, el repo queda limpio y
   writeClaudeSettings(workDir, 'AQ-45', { type: 'mcp' });
   writeSkillCopy(workDir, skill);
   writeSkillCopy(workDir, skill, CHAT_FILES.analysisSkill);
-  writeMcpConfig(workDir, 'http://127.0.0.1:50123/mcp/abc');
+  writeMcpConfig(workDir, 'http://127.0.0.1:50123/mcp/abc', [root]);
   writeKnowledgeContext(workDir, 'contexto');
   writeTaskSettings(workDir);
   for (const file of Object.values(CHAT_FILES)) assert.ok(await fs.pathExists(path.join(workDir, file)), file);

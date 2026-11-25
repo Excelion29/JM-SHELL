@@ -1,3 +1,4 @@
+import { excelToolRules } from './excel-mcp';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs-extra';
@@ -70,7 +71,7 @@ test('con carpeta local: --add-dir y las reglas con ruta absoluta solo van en lo
   ]);
   assert.ok(!rules.some((rule) => rule.includes('00-indice')));
   const settings = buildChatSettings('AQ-45', LOCAL) as { permissions: { allow: string[] } };
-  assert.deepEqual(settings.permissions.allow, [...chatAllowedTools('AQ-45', LOCAL).split(','), ...rules]);
+  assert.deepEqual(settings.permissions.allow, [...chatAllowedTools('AQ-45', LOCAL).split(','), ...excelToolRules, ...rules]);
 });
 
 test('con la raíz de la bóveda como base Claude solo escribe en la carpeta JM-ADR', () => {
@@ -88,13 +89,17 @@ test('sin base los ajustes y los argumentos no cambian', () => {
   const args = buildChatArgs(BASE_INPUT);
   assert.ok(!args.includes('--mcp-config') && !args.includes('--add-dir'));
   const settings = buildChatSettings('AQ-45') as { permissions: { allow: string[] } };
-  assert.deepEqual(settings.permissions.allow, chatAllowedTools('AQ-45').split(','));
+  assert.deepEqual(settings.permissions.allow, [...chatAllowedTools('AQ-45').split(','), ...excelToolRules]);
   assert.deepEqual(scopedKnowledgeRules(MCP, 'AQ-45'), []);
 });
 
 test('los ajustes con MCP espejan el allowlist de argv', () => {
   const settings = buildChatSettings('AQ-45', MCP) as { permissions: { allow: string[] } };
-  assert.deepEqual(settings.permissions.allow, valueAfter(buildChatArgs(MCP_INPUT), '--allowedTools').split(','));
+  // El lector de Excel solo va en los ajustes: así argv no cambia
+  assert.deepEqual(settings.permissions.allow, [
+    ...valueAfter(buildChatArgs(MCP_INPUT), '--allowedTools').split(','),
+    ...excelToolRules,
+  ]);
 });
 
 test('assertSafeArgs: la carpeta tras --add-dir debe ser absoluta y sin metacaracteres', () => {
@@ -196,9 +201,10 @@ test('las banderas de una tarea empiezan con sus ajustes, con o sin base, y pasa
 
 test('mcp.json apunta al intermediario local y no lleva key, cabeceras ni variables', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jm-mcp-'));
-  writeMcpConfig(root, 'http://127.0.0.1:50123/mcp');
+  writeMcpConfig(root, 'http://127.0.0.1:50123/mcp', []);
   const raw = await fs.readFile(path.join(root, 'mcp.json'), 'utf8');
-  assert.deepEqual(JSON.parse(raw), { mcpServers: { jm_kb: { type: 'http', url: 'http://127.0.0.1:50123/mcp' } } });
+  const config = JSON.parse(raw);
+  assert.deepEqual(config.mcpServers.jm_kb, { type: 'http', url: 'http://127.0.0.1:50123/mcp' });
   assert.ok(!/authorization|bearer|\$\{/i.test(raw));
 });
 
@@ -287,4 +293,15 @@ test('trustAddDir: confiar en la carpeta de otro proyecto reemplaza la anterior'
   assert.doesNotThrow(() => assertSafeArgs(['--add-dir', 'C:\proyecto-b\notas']));
   resetTrustedAddDirs();
   assert.throws(() => assertSafeArgs(['--add-dir', 'C:\proyecto-b\notas']), /no permitido/);
+});
+
+test('mcp.json sin carpetas no ofrece el lector de Excel; con carpetas lo lanza con el mismo node', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'jm-mcp-excel-'));
+  writeMcpConfig(dir, 'http://127.0.0.1:50123/mcp', []);
+  assert.equal(JSON.parse(await fs.readFile(path.join(dir, 'mcp.json'), 'utf8')).mcpServers.jm_excel, undefined);
+  writeMcpConfig(dir, null, ['C:\proyecto']);
+  const config = JSON.parse(await fs.readFile(path.join(dir, 'mcp.json'), 'utf8'));
+  assert.equal(config.mcpServers.jm_kb, undefined);
+  assert.equal(config.mcpServers.jm_excel.command, process.execPath);
+  assert.deepEqual(config.mcpServers.jm_excel.args.slice(1), ['excel-mcp', 'C:\proyecto']);
 });
