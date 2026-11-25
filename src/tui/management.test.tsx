@@ -13,7 +13,7 @@ import {
   FakeTasksOptions,
   waitFor,
 } from './test-support.js';
-import { EPIC_STORIES_TEXTS, HOME_TEXTS, MANAGEMENT_TEXTS, PLANNING_TEXTS, PROJECT_TEXTS } from './texts.js';
+import { BROWSE_TEXTS, EPIC_STORIES_TEXTS, HOME_TEXTS, MANAGEMENT_TEXTS, PLANNING_TEXTS, PROJECT_TEXTS } from './texts.js';
 
 const ENTER = '\r';
 const ESC = '\u001b';
@@ -30,6 +30,7 @@ const EPIC_STORIES = [
   { key: 'AQ-20', summary: 'Reuniones', status: 'En curso' },
   { key: 'AQ-21', summary: 'Análisis de datos', status: 'En curso' },
 ];
+const LOOSE = [{ key: 'AQ-325', summary: 'Error al exportar', status: 'Por hacer', type: 'Error' }];
 
 interface SetupOptions {
   projectKey?: string | null;
@@ -49,7 +50,7 @@ function setup({ projectKey = 'AQ', management = {}, tasks = {}, story = STORY }
       unlocked
       unlock={async () => ({ ok: true })}
       fetchEpics={async () => EPICS}
-      fetchStories={async (epicKey) => (epicKey === 'AQ-8' ? EPIC_STORIES : [])}
+      fetchStories={async (epicKey) => (epicKey === 'AQ-8' ? EPIC_STORIES : epicKey === null ? LOOSE : [])}
       fetchProjects={async () => [{ key: 'AQ', name: 'Aquí' }]}
       setProject={async () => ({ ok: true })}
       loadStories={async () => [story]}
@@ -177,6 +178,7 @@ test('g en el inicio muestra la actual; s lista las épicas y Enter guarda la el
   assert.ok(app.frame().includes('AQ-3 · Vieja'));
   await app.press('s');
   await app.has('AQ-8 Otra épica');
+  await app.press(DOWN); // la primera fila es "Tickets sin épica"
   await app.press(DOWN);
   await app.press(ENTER);
   await app.has(HOME_TEXTS.title);
@@ -202,6 +204,7 @@ test('si Jira rechaza la clave se ve el motivo y no se sale ni se guarda', async
   await app.has(MANAGEMENT_TEXTS.question);
   await app.press('s');
   await app.has(EPICS[0].summary);
+  await app.press(DOWN); // la primera fila es "Tickets sin épica"
   await app.press(ENTER);
   await app.has(MANAGEMENT_TEXTS.saveError('AQ-7 ya está finalizada.'));
   assert.ok(!app.frame().includes(HOME_TEXTS.title));
@@ -247,6 +250,7 @@ test('g, s y → en una épica muestra sus historias; filtrar y Enter guarda la 
   await app.has(MANAGEMENT_TEXTS.question);
   await app.press('s');
   await app.has('AQ-8 Otra épica');
+  await app.press(DOWN); // la primera fila es "Tickets sin épica"
   await app.press(DOWN);
   await app.press(RIGHT);
   await app.has(EPIC_STORIES_TEXTS.useEpic('AQ-8'));
@@ -257,11 +261,26 @@ test('g, s y → en una épica muestra sus historias; filtrar y Enter guarda la 
   assert.deepEqual(app.management.calls.saved, [{ projectKey: 'AQ', key: 'AQ-21' }]);
 });
 
+test('g, s y Enter en "Tickets sin épica" lista los sueltos; Enter guarda el ticket', async () => {
+  const app = setup();
+  await app.press('g');
+  await app.press('s');
+  await app.has(BROWSE_TEXTS.noEpicLabel);
+  await app.press(ENTER);
+  await app.has(BROWSE_TEXTS.noEpicStoriesTitle);
+  await app.has('AQ-325 Error al exportar');
+  assert.ok(!app.frame().includes(EPIC_STORIES_TEXTS.useEpic('AQ-8')));
+  await app.press(ENTER);
+  await app.has(HOME_TEXTS.title);
+  assert.deepEqual(app.management.calls.saved, [{ projectKey: 'AQ', key: 'AQ-325' }]);
+});
+
 test('dentro de una épica, Enter en la primera fila guarda la misma épica', async () => {
   const app = setup();
   await app.press('g');
   await app.press('s');
   await app.has('AQ-8 Otra épica');
+  await app.press(DOWN); // la primera fila es "Tickets sin épica"
   await app.press(DOWN);
   await app.press(RIGHT);
   await app.has(EPIC_STORIES_TEXTS.useEpic('AQ-8'));
@@ -275,6 +294,7 @@ test('Esc dentro de una épica vuelve a la lista de épicas sin guardar', async 
   await app.press('g');
   await app.press('s');
   await app.has('AQ-8 Otra épica');
+  await app.press(DOWN); // la primera fila es "Tickets sin épica"
   await app.press(RIGHT);
   await app.has(EPIC_STORIES_TEXTS.useEpic('AQ-7'));
   await app.press(ESC);

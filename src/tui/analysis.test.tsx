@@ -156,6 +156,7 @@ test('Enter en un análisis pregunta por la tarea; sin gestión pide dónde, cre
   await app.press('s');
   await app.has(ANALYSIS_TEXTS.tracking.whereTitle);
   await app.has(EPIC.key);
+  await app.press('\u001b[B'); // la primera fila es "Tickets sin épica"
   await app.press(ENTER);
   await app.has(ANALYSIS_TEXTS.tracking.formTitle('Observaciones'));
   await app.press(ENTER);
@@ -210,6 +211,7 @@ test('si la de gestión no sirve vuelve a preguntar dónde con el motivo y no pi
   await app.press(ENTER);
   await app.has(ANALYSIS_TEXTS.tracking.whereProblem('La de gestión AQ-9 no sirve: ya está finalizada.'));
   await app.has(ANALYSIS_TEXTS.tracking.whereTitle);
+  await app.press('\u001b[B'); // la primera fila es "Tickets sin épica"
   await app.press(ENTER);
   await app.has(ANALYSIS_TEXTS.tracking.formTitle('Observaciones'));
   await app.press(ENTER);
@@ -407,6 +409,7 @@ test('sin gestión, → en una épica deja elegir una de sus historias como dest
   await app.press('s');
   await app.has(ANALYSIS_TEXTS.tracking.whereTitle);
   await app.has(EPIC.key);
+  await app.press('\u001b[B'); // la primera fila es "Tickets sin épica"
   await app.press('\u001b[C');
   await app.has('AQ-30 Reuniones');
   await app.press('\u001b[B');

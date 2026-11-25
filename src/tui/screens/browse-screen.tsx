@@ -3,6 +3,7 @@ import type { BrowseItem, StorySummary } from '../../refinement/types.js';
 import { LoadGate } from '../components/load-gate.js';
 import { ManualKeyInput } from '../components/manual-key-input.js';
 import { PickerItem, PickerList } from '../components/picker-list.js';
+import { toPickerItem } from '../components/issue-type-color.js';
 import { useLoad } from '../components/use-load.js';
 import { BROWSE_LIMIT, BROWSE_TEXTS, FOOTER_HINTS, KEYS, NO_EPIC_ID } from '../texts.js';
 
@@ -72,7 +73,7 @@ function EpicsLevel({ fetchEpics, shortcuts, onOpen, onBack }: EpicsLevelProps) 
       {(epics) => {
         const items: PickerItem[] = [
           { id: NO_EPIC_ID, label: BROWSE_TEXTS.noEpicLabel },
-          ...epics.map((epic) => ({ id: epic.key, label: `${epic.key} ${epic.summary}`, detail: epic.status })),
+          ...epics.map(toPickerItem),
         ];
         return (
           <PickerList
@@ -108,9 +109,7 @@ function StoriesLevel({ epic, localStories, fetchStories, shortcuts, onSelect, o
         const items: PickerItem[] = stories.map((story) => {
           const local = localStories.find((l) => l.key === story.key);
           return {
-            id: story.key,
-            label: `${story.key} ${story.summary}`,
-            detail: story.status,
+            ...toPickerItem(story),
             tag: local ? BROWSE_TEXTS.localMarker(local.phase) : undefined,
           };
         });

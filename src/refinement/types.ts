@@ -125,6 +125,8 @@ export interface BrowseItem {
   key: string;
   summary: string;
   status: string;
+  // Tipo de Jira (Épica, Historia, Error…): da el color de la clave en las listas
+  type?: string;
 }
 
 export interface ProjectItem {

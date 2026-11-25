@@ -15,7 +15,7 @@ interface ManagementScreenProps {
   projectKey: string;
   management: ManagementBridge;
   fetchEpics: () => Promise<BrowseItem[]>;
-  fetchStories: (epicKey: string) => Promise<BrowseItem[]>;
+  fetchStories: (epicKey: string | null) => Promise<BrowseItem[]>;
   // Sale de la pantalla con o sin haber guardado: sin guardar, la pregunta vuelve la próxima vez
   onDone: () => void;
 }

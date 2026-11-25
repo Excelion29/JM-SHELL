@@ -32,9 +32,10 @@ export function buildStoriesJql(projectKey: string, epicKey: string | null): str
 // El texto viene de Jira: se limpia antes de llegar a la terminal
 export function toBrowseItem(issue: JiraIssue): BrowseItem {
   return {
-    key: issue.key,
+    key: stripControlChars(issue.key),
     summary: stripControlChars(issue.fields.summary),
     status: stripControlChars(issue.fields.status.name),
+    type: stripControlChars(issue.fields.issuetype?.name ?? ''),
   };
 }
 

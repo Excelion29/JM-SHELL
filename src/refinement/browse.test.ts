@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildEpicsJql, buildStoriesJql, filterByProject, isValidProjectKey, sortByKey } from './browse';
+import { buildEpicsJql, buildStoriesJql, filterByProject, isValidProjectKey, sortByKey, toBrowseItem } from './browse';
 import { isValidIssueKey } from './state';
 
 test('buildEpicsJql arma el JQL con un proyecto válido', () => {
@@ -50,4 +50,25 @@ test('sortByKey ordena por el número de la clave, de menor a mayor', () => {
     ['PGC-9', 'PGC-15', 'PGC-24', 'PGC-25', 'PGC-100'],
   );
   assert.equal(items[0].key, 'PGC-25', 'no cambia el arreglo original');
+});
+
+test('toBrowseItem guarda el tipo de Jira para pintar la clave', () => {
+  const issue = {
+    id: '1',
+    key: 'PGC-325',
+    fields: {
+      summary: 'Falla al exportar',
+      status: { name: 'Por hacer' },
+      assignee: null,
+      duedate: null,
+      timeoriginalestimate: null,
+      issuetype: { name: 'Error' },
+    },
+  };
+  assert.deepEqual(toBrowseItem(issue), {
+    key: 'PGC-325',
+    summary: 'Falla al exportar',
+    status: 'Por hacer',
+    type: 'Error',
+  });
 });

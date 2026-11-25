@@ -5,6 +5,9 @@ import { BROWSE_TEXTS, COLORS, FOOTER_HINTS, HOME_TEXTS, ROW_SEPARATOR, VISIBLE_
 
 export interface PickerItem {
   id: string;
+  // Clave del ticket antes del texto, con su propio color (p. ej. según el tipo)
+  code?: string;
+  codeColor?: string;
   label: string;
   detail?: string;
   tag?: string;
@@ -27,7 +30,7 @@ interface PickerListProps {
 
 function matches(item: PickerItem, filter: string): boolean {
   const needle = filter.toLowerCase();
-  return `${item.label} ${item.detail ?? ''}`.toLowerCase().includes(needle);
+  return `${item.code ?? ''} ${item.label} ${item.detail ?? ''}`.toLowerCase().includes(needle);
 }
 
 export function windowStart(selected: number, total: number): number {
@@ -94,7 +97,9 @@ export function PickerList({
         const active = start + index === current;
         return (
           <Text key={item.id} color={active ? COLORS.brand : undefined}>
-            {active ? HOME_TEXTS.selectedMarker : ' '} {item.label}
+            {active ? HOME_TEXTS.selectedMarker : ' '}{' '}
+            {item.code && <Text color={item.codeColor}>{`${item.code} `}</Text>}
+            {item.label}
             {item.detail && <Text color={COLORS.muted}>{`${ROW_SEPARATOR}${item.detail}`}</Text>}
             {item.tag && <Text color={COLORS.accent}>{` ${item.tag}`}</Text>}
           </Text>

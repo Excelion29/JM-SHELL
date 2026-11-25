@@ -10,7 +10,7 @@ interface AnalysisTrackingScreenProps {
   name: string;
   analysis: AnalysisBridge;
   fetchEpics: () => Promise<BrowseItem[]>;
-  fetchStories: (epicKey: string) => Promise<BrowseItem[]>;
+  fetchStories: (epicKey: string | null) => Promise<BrowseItem[]>;
   // Sigue al análisis: con un aviso y la tarea abierta (para preguntar al salir), si las hay
   onDone: (notice: string | null, taskKey: string | null) => void;
 }

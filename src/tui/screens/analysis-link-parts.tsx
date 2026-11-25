@@ -7,6 +7,7 @@ import type { BrowseItem } from '../../refinement/types.js';
 import { BROWSE_LIMIT, BROWSE_TEXTS, COLORS, FOOTER_HINTS, KEYS, LINK_TEXTS as T } from '../texts.js';
 import { LoadGate } from '../components/load-gate.js';
 import { PickerList } from '../components/picker-list.js';
+import { toPickerItem } from '../components/issue-type-color.js';
 import { useLoad } from '../components/use-load.js';
 
 // Épica ya vinculada: Enter la conserva y e abre la lista para cambiarla
@@ -47,7 +48,7 @@ export function TargetPicker({ epicKey, fetchStories, onChoose, onManual, onBack
           title={T.targetTitle}
           items={[
             ...(epicKey ? [{ id: epicKey, label: T.epicOption(epicKey) }] : []),
-            ...stories.map((story) => ({ id: story.key, label: `${story.key} ${story.summary}`, detail: story.status })),
+            ...stories.map(toPickerItem),
           ]}
           emptyText={T.targetEmpty}
           limitReached={stories.length >= BROWSE_LIMIT}

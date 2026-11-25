@@ -123,14 +123,15 @@ export const EPIC_STORIES_TEXTS = {
   title: (epicKey: string, summary: string) => `Historias de ${epicKey} ${summary}`,
   useEpic: (epicKey: string) => `${epicKey} · usar esta épica`,
   nextStep: 'Siguiente paso: elige una historia (o la misma épica) y pulsa Enter.',
+  looseNextStep: 'Siguiente paso: elige el ticket y pulsa Enter.',
   hint: [PICK, enter('elegir'), FILTER, MANUAL_KEY, esc('volver a las épicas')],
 } as const;
 
 export const BROWSE_TEXTS = {
   epicsTitle: 'Épicas del proyecto',
-  noEpicLabel: 'Historias sin épica',
+  noEpicLabel: 'Tickets sin épica',
   storiesTitle: (epic: string) => `Historias de ${epic}`,
-  noEpicStoriesTitle: 'Historias sin épica',
+  noEpicStoriesTitle: 'Tickets sin épica (historias, errores, tareas)',
   loadingEpics: 'Buscando épicas...',
   loadingStories: 'Buscando historias...',
   loadingProjects: 'Buscando tus proyectos...',
@@ -374,6 +375,18 @@ export const RISK_LABELS = {
   medium: 'medio',
   high: 'alto',
 } as const;
+// Color de la clave según el tipo de ticket; los demás tipos quedan sin color
+export const ISSUE_TYPE_COLORS = {
+  epic: 'magenta',
+  story: 'green',
+  bug: 'red',
+} as const;
+export const ISSUE_TYPE_NAMES = {
+  epic: ['epic', 'épica', 'epica'],
+  story: ['story', 'historia'],
+  bug: ['bug', 'error', 'defecto', 'incidencia'],
+} as const;
+
 export const RISK_COLORS = {
   low: 'green',
   medium: 'yellow',

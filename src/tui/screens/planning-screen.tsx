@@ -55,7 +55,7 @@ export interface PlanningFlowLabels {
 // Solo el análisis sin historia pregunta dónde: no hay una historia donde caer por defecto
 export interface PlanningWhere {
   fetchEpics: () => Promise<BrowseItem[]>;
-  fetchStories: (epicKey: string) => Promise<BrowseItem[]>;
+  fetchStories: (epicKey: string | null) => Promise<BrowseItem[]>;
 }
 
 interface PlanningFlowProps {
